@@ -172,16 +172,22 @@ def get_blender_rot(euler_rotation):
     quat = rotation_quat(p * DTOR, y * DTOR, r * DTOR)
     return quat.normalized()
 
+def clamp(x, lo=-1.0, hi=1.0):
+    return max(lo, min(hi, x))
+
 def get_blitz_rot(rot):
     q = rot.normalized()
     m = q.to_matrix()
 
-    if abs(m[1][2]) < 0.999999:
-        pitch = asin(-m[1][2])
+    v = -m[1][2]
+    v = clamp(v)
+
+    if abs(v) < 0.999999:
+        pitch = asin(v)
         yaw   = atan2(m[0][2], m[2][2])
         roll  = atan2(m[1][0], m[1][1])
     else:
-        pitch = asin(-m[1][2])
+        pitch = asin(v)
         yaw   = atan2(-m[2][0], m[0][0])
         roll  = 0.0
 
@@ -270,6 +276,8 @@ def export_scene(context, filepath, game_title, report):
             for loop_index in tri.loops:
                 loop = mesh.loops[loop_index]
                 v = mesh.vertices[loop.vertex_index]
+                i, j, k = loop.normal
+                loop_normal = (i, j, k)
 
                 pos = pivot_matrix @ (ob_eval.matrix_world @ v.co)
 
@@ -289,14 +297,14 @@ def export_scene(context, filepath, game_title, report):
                     color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
                 if is_rmesh2:
-                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop.normal)
+                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal)
                 else:
                     key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color)
                 if key not in vertex_map:
                     vertex_map[key] = len(mesh_section["vertices"])
                     vert_dict = {"position": pos, "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}
                     if is_rmesh2:
-                        vert_dict["normal"] = loop.normal
+                        vert_dict["normal"] = loop_normal
 
                     mesh_section["vertices"].append(vert_dict)
 
@@ -341,7 +349,8 @@ def export_scene(context, filepath, game_title, report):
         ob = bpy.data.objects.get(object_name)
         if ob is not None:
             object_type = ObjectType(int(ob.rmesh.object_type))
-            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
+            loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
+            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
             if object_type == ObjectType.entity_screen:
                 entity_dict = {}
 
@@ -374,9 +383,18 @@ def export_scene(context, filepath, game_title, report):
 
                 entity_dict["entity_type"] = "light"
                 entity_dict["position"] = loc
-                entity_dict["range"] = ob.data.cutoff_distance
+                entity_dict["range"] = ob.data.shadow_soft_size * 1000
                 entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-                entity_dict["intensity"] = ob.data.energy  / 50
+                entity_dict["intensity"] = ob.data.energy / 50
+                if is_rmesh2:
+                    entity_dict["has_sprite"] = ob.rmesh.has_sprite
+                    entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
+                    entity_dict["casts_shadows"] = ob.data.use_shadow
+                    entity_dict["scattering"] = ob.rmesh.scattering
+                    entity_dict["ff_array"] = []
+                    for ff in range(31):
+                        entity_dict["ff_array"].append(0)
+
                 rmesh_dict["entities"].append(entity_dict)
 
             elif object_type == ObjectType.entity_light_fix:
@@ -386,8 +404,17 @@ def export_scene(context, filepath, game_title, report):
                 entity_dict["entity_type"] = "light_fix"
                 entity_dict["position"] = loc
                 entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-                entity_dict["intensity"] = ob.data.energy  / 50
-                entity_dict["range"] = ob.data.cutoff_distance
+                entity_dict["intensity"] = ob.data.energy / 50
+                entity_dict["range"] = ob.data.shadow_soft_size * 1000
+                if is_rmesh2:
+                    entity_dict["has_sprite"] = ob.rmesh.has_sprite
+                    entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
+                    entity_dict["casts_shadows"] = ob.data.use_shadow
+                    entity_dict["scattering"] = ob.rmesh.scattering
+                    entity_dict["ff_array"] = []
+                    for ff in range(31):
+                        entity_dict["ff_array"].append(0)
+
                 rmesh_dict["entities"].append(entity_dict)
 
             elif object_type == ObjectType.entity_spotlight:
@@ -396,13 +423,27 @@ def export_scene(context, filepath, game_title, report):
 
                 entity_dict["entity_type"] = "spotlight"
                 entity_dict["position"] = loc
-                entity_dict["range"] = ob.data.cutoff_distance
+                entity_dict["range"] = ob.data.shadow_soft_size * 1000
                 entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-                entity_dict["intensity"] = ob.data.energy  / 50
-                p, y, r = get_blitz_rot(rot)
-                entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
-                entity_dict["inner_cone_angle"] = 0
-                entity_dict["outer_cone_angle"] = 0
+                entity_dict["intensity"] = ob.data.energy / 50
+                if is_rmesh2:
+                    p, y, r = get_blitz_rot(rot)
+                    entity_dict["has_sprite"] = ob.rmesh.has_sprite
+                    entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
+                    entity_dict["casts_shadows"] = ob.data.use_shadow
+                    entity_dict["direction"] = [p, y]
+                    entity_dict["inner_cosine"] = degrees(ob.data.spot_size)
+                    entity_dict["scattering"] = ob.data.spot_blend
+                    entity_dict["ff_array"] = []
+                    for ff in range(31):
+                        entity_dict["ff_array"].append(0)
+
+                else:
+                    p, y, r = get_blitz_rot(rot)
+                    entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
+                    entity_dict["inner_cone_angle"] = 0
+                    entity_dict["outer_cone_angle"] = 0
+
                 rmesh_dict["entities"].append(entity_dict)
 
             elif object_type == ObjectType.entity_sound_emitter:
@@ -420,7 +461,6 @@ def export_scene(context, filepath, game_title, report):
                 entity_dict["entity_type"] = "model"
                 entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
                 rmesh_dict["entities"].append(entity_dict)
-
                 if is_rmesh2:
                     entity_dict["position"] = loc
                     entity_dict["euler_rotation"] = get_blitz_rot(rot)
@@ -454,7 +494,6 @@ def import_scene(context, filepath, report):
     game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
 
     pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
-    pivot_matrix2 = Matrix.Rotation(radians(90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))
 
     mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
     collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
@@ -475,6 +514,7 @@ def import_scene(context, filepath, report):
 
         vertices = [pivot_matrix @ Vector(vertex["position"]) for vertex in mesh_dict["vertices"]]
         triangles = [[triangle["c"], triangle["b"], triangle["a"]] for triangle in mesh_dict["triangles"]]
+        blender_normals = [(-Vector(vertex["normal"])).normalized() for vertex in mesh_dict["vertices"]]
         mesh.from_pydata(vertices, [], triangles)
 
         mat = bpy.data.materials.new(name="texture_%s" % mesh_idx)
@@ -529,10 +569,6 @@ def import_scene(context, filepath, report):
         layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
         layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
         layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
-
-        if is_rmesh2:
-            loop_normals = [Vector() for loop in mesh.loops]
-
         for poly in mesh.polygons:
             poly.use_smooth = True
             poly.material_index = mesh_idx
@@ -542,11 +578,9 @@ def import_scene(context, filepath, report):
                 layer_uv_0.data[loop_index].uv = (vertex["uv_render"][0], 1 - vertex["uv_render"][1])
                 layer_uv_1.data[loop_index].uv = (vertex["uv_lightmap"][0], 1 - vertex["uv_lightmap"][1])
                 layer_color.data[loop_index].color = (vertex["color"][0] / 255, vertex["color"][1] / 255, vertex["color"][2] / 255, 1.0)
-                if is_rmesh2:
-                    loop_normals[loop_index] = Vector(vertex["normal"])
 
-        if is_rmesh2:
-            mesh.normals_split_custom_set(loop_normals)
+        #if is_rmesh2:
+            #mesh.normals_split_custom_set_from_vertices(blender_normals)
 
         bm.from_mesh(mesh)
         bpy.data.meshes.remove(mesh)
@@ -590,9 +624,10 @@ def import_scene(context, filepath, report):
             object_mesh.rmesh.object_type = str(ObjectType.entity_save_screen.value)
             entity_collection.objects.link(object_mesh)
 
-            rotation = get_blender_rot(entity_dict["euler_rotation"])
-            global_transform = Matrix.LocRotScale(Vector(entity_dict["position"]), rotation, Vector(entity_dict["scale"]))
-            object_mesh.matrix_world = pivot_matrix @ global_transform
+            loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
+            global_transform = Matrix.LocRotScale(loc, rot, Vector(entity_dict["scale"]))
+            
+            object_mesh.matrix_world =  global_transform
 
             model_path = get_file(entity_dict["model_name"], False)
             texture_path = get_file(entity_dict["texture_name"], False)
@@ -616,6 +651,11 @@ def import_scene(context, filepath, report):
             object_data.shadow_soft_size = entity_dict["range"] / 1000
             r, g, b = entity_dict["color"].split(" ")
             object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+            if is_rmesh2:
+                object_mesh.rmesh.has_sprite = bool(entity_dict["has_sprite"])
+                object_mesh.rmesh.sprite_scale = entity_dict["sprite_scale"]
+                object_data.use_shadow = bool(entity_dict["casts_shadows"])
+                object_mesh.rmesh.scattering = entity_dict["scattering"]
 
         elif entity_dict["entity_type"] == "light_fix":
             object_data = bpy.data.lights.new("%s light_fix" % entity_idx, "POINT")
@@ -628,6 +668,11 @@ def import_scene(context, filepath, report):
             object_data.shadow_soft_size = entity_dict["range"] / 1000
             r, g, b = entity_dict["color"].split(" ")
             object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+            if is_rmesh2:
+                object_mesh.rmesh.has_sprite = bool(entity_dict["has_sprite"])
+                object_mesh.rmesh.sprite_scale = entity_dict["sprite_scale"]
+                object_data.use_shadow = bool(entity_dict["casts_shadows"])
+                object_mesh.rmesh.scattering = entity_dict["scattering"]
 
         elif entity_dict["entity_type"] == "spotlight":
             object_data = bpy.data.lights.new("%s spotlight" % entity_idx, "SPOT")
@@ -641,12 +686,15 @@ def import_scene(context, filepath, report):
             object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
 
             if is_rmesh2:
+                object_mesh.rmesh.has_sprite = bool(entity_dict["has_sprite"])
+                object_mesh.rmesh.sprite_scale = entity_dict["sprite_scale"]
                 object_data.use_shadow = bool(entity_dict["casts_shadows"])
                 x, y = entity_dict["direction"]
 
                 rotation = get_blender_rot([x, y, 0])
                 object_data.spot_size = radians(entity_dict["inner_cosine"])
                 object_data.spot_blend = entity_dict["scattering"]
+
             else:
                 outer_deg: float = max(1.0, min(180.0, entity_dict["outer_cone_angle"]))
                 inner_deg: float = max(1.0, min(180.0, entity_dict["inner_cone_angle"]))

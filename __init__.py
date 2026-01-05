@@ -126,12 +126,6 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
         description = "???"
         )
     
-    casts_shadows: BoolProperty(
-        name ="Casts Shadows",
-        description = "Casts Shadows",
-        default = False,
-        )
-    
     scattering: FloatProperty(
         name = "Scattering",
         description = "???"
@@ -153,6 +147,16 @@ def render_save_screen(context, layout, active_property):
     row = col.row()
     row.label(text='Texture Path:')
     row.prop(active_property, "texture_path", text='')
+
+def render_entity_light(context, layout, active_property):
+    box = layout.split()
+    col = box.column(align=True)
+    row = col.row()
+    row.label(text='Has Sprite:')
+    row.prop(active_property, "has_sprite", text='')
+    row = col.row()
+    row.label(text='Sprite Scale:')
+    row.prop(active_property, "sprite_scale", text='')
 
 def render_sound_emitter(context, layout, active_property):
     box = layout.split()
@@ -216,6 +220,12 @@ class RMESH_ObjectProps(Panel):
             render_screen(context, layout, ob_rmesh)
         elif object_type == ObjectType.entity_save_screen:
             render_save_screen(context, layout, ob_rmesh)
+        elif object_type == ObjectType.entity_light:
+            render_entity_light(context, layout, ob_rmesh)
+        elif object_type == ObjectType.entity_light_fix:
+            render_entity_light(context, layout, ob_rmesh)
+        elif object_type == ObjectType.entity_spotlight:
+            render_entity_light(context, layout, ob_rmesh)
         elif object_type == ObjectType.entity_sound_emitter:
             render_sound_emitter(context, layout, ob_rmesh)
         elif object_type == ObjectType.entity_model:

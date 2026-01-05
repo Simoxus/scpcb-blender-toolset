@@ -104,9 +104,6 @@ def read_rmesh(file_path):
                 vertex_dict["color"] = read_color(rmesh_stream)
                 if is_rmesh2:
                     vertex_dict["normal"] = read_vector(rmesh_stream)
-                    print(vertex_dict["position"])
-                    print(vertex_dict["normal"])
-                    print()
 
                 mesh_dict["vertices"].append(vertex_dict)
 
