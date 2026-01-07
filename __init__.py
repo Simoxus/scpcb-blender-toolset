@@ -37,6 +37,7 @@ if (4, 1, 0) <= bpy.app.version:
 class ObjectType(Enum):
     mesh = 0
     collision = auto()
+    trigger_box = auto()
     entity_screen = auto()
     entity_save_screen = auto()
     entity_waypoint = auto()
@@ -44,6 +45,7 @@ class ObjectType(Enum):
     entity_light_fix = auto()
     entity_spotlight = auto()
     entity_sound_emitter = auto()
+    entity_player_start = auto()
     entity_model = auto()
     entity_mesh = auto()
 
@@ -71,15 +73,17 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
         description="Set the classification for the RMESH object",
         items = ( ('0', "Mesh", "Mesh"),
                     ('1', "Collision", "Collision"),
-                    ('2', "Entity Screen", "Legacy?"),
-                    ('3', "Entity Save Screen", "Entity Save Screen"),
-                    ('4', "Entity Waypoint", "Entity Waypoint"),
-                    ('5', "Entity Light", "Entity Light"),
-                    ('6', "Entity Light Fix", "Entity Light Fix"),
-                    ('7', "Entity Spotlight", "Legacy?"),
-                    ('8', "Entity Sound Emitter", "Entity Sound Emitter"),
-                    ('9', "Entity Model", "Legacy?"),
-                    ('10', "Entity Mesh", "Entity Mesh")
+                    ('2', "Trigger Box", "Trigger Box"),
+                    ('3', "Entity Screen", "Entity Screen"),
+                    ('4', "Entity Save Screen", "Entity Save Screen"),
+                    ('5', "Entity Waypoint", "Entity Waypoint"),
+                    ('6', "Entity Light", "Entity Light"),
+                    ('7', "Entity Light Fix", "Entity Light Fix"),
+                    ('8', "Entity Spotlight", "Entity Spotlight"),
+                    ('9', "Entity Sound Emitter", "Entity Sound Emitter"),
+                    ('10', "Entity Player Start", "Entity Player Start"),
+                    ('11', "Entity Model", "Entity Model"),
+                    ('12', "Entity Mesh", "Entity Mesh")
                 )
         )
     
@@ -97,6 +101,12 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
             default="",
             maxlen=1024,
             subtype='DIR_PATH'
+    )
+
+    trigger_group: StringProperty(
+            name = "Trigger Group",
+            description="Group for this trigger",
+            default="",
     )
 
     sound_emitter_id: IntProperty(
@@ -130,6 +140,13 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
         name = "Scattering",
         description = "???"
         )
+
+def render_trigger(context, layout, active_property):
+    box = layout.split()
+    col = box.column(align=True)
+    row = col.row()
+    row.label(text='Trigger Group:')
+    row.prop(active_property, "trigger_group", text='')
 
 def render_screen(context, layout, active_property):
     box = layout.split()
@@ -216,7 +233,9 @@ class RMESH_ObjectProps(Panel):
         row.label(text='Object Type:')
         row.prop(ob_rmesh, "object_type", text='')
         object_type = ObjectType(int(ob_rmesh.object_type))
-        if object_type == ObjectType.entity_screen:
+        if object_type == ObjectType.trigger_box:
+            render_trigger(context, layout, ob_rmesh)
+        elif object_type == ObjectType.entity_screen:
             render_screen(context, layout, ob_rmesh)
         elif object_type == ObjectType.entity_save_screen:
             render_save_screen(context, layout, ob_rmesh)
@@ -242,7 +261,7 @@ class ExportRMESH(Operator, ExportHelper):
     game_title: EnumProperty(
         name="Game Title:",
         description="What game was the model file made for",
-        items=[ ('0', "Retail", "Import an RMESH intended for the original SCP CB"),
+        items=[ ('0', "Release", "Import an RMESH intended for the original SCP CB"),
                 ('1', "UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
                 ('2', "UER2", "Import an RMESH intended for SCP CB UER 2.0"),
             ]
@@ -264,6 +283,17 @@ class ImportRMESH(Operator, ImportHelper):
     bl_label = "Import RMESH"
     filename_ext = '.rmesh'
 
+    file_type: EnumProperty(
+        name="File Type:",
+        description="What game was the model file made for",
+        items=[ ('0', "Auto", "Attempt to automatically get the correct file type. May cause problems if the app is trying to guess between UER and release files."),
+                ('1', "RMESH", "Import an RMESH intended for the original SCP CB"),
+                ('2', "RMESH Trigger Box", "Import an RMESH intended for the original SCP CB"),
+                ('3', "RMESH UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
+                ('4', "RMESH UER 2", "Import an RMESH intended for SCP CB UER 2.0"),
+            ]
+        )
+
     filter_glob: StringProperty(
         default="*.rmesh",
         options={'HIDDEN'},
@@ -277,7 +307,7 @@ class ImportRMESH(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.import_scene(context, self.filepath, self.report)
+        return scene_rmesh.import_scene(context, self.filepath, self.file_type, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):

@@ -1,8 +1,7 @@
 import bpy
 
-from math import radians, cos, sin
+from mathutils import Matrix, Vector
 from bpy_extras.io_utils import unpack_list
-from mathutils import Euler, Matrix, Vector
 
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
