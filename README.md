@@ -12,6 +12,10 @@ A tool to import and export RMESH files from Ultimate Edition Reborn and the ori
  * Starman12976/Simoxus
    * For making the rmesh import script used during as reference.
    * [RoomMeshImportExport](https://github.com/Starman12976/RoomMeshImportExport)
+   
+ * Kusaanko
+   * For making the X import script used to handle model files for the original scp cb game.
+   * [XFileSupport_for_BVE](https://github.com/kusaanko/XFileSupport_for_BVE)
 
  * Discord user general_101
    * Getting the ball rolling I guess?
