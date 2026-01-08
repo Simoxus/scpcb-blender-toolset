@@ -11,7 +11,7 @@ from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 from mathutils import Matrix, Vector, Quaternion
 from math import radians, pi, degrees, asin, atan2
-from .process_rmesh import TextureType, write_rmesh, read_rmesh, FileType
+from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
@@ -116,10 +116,9 @@ def get_output_material_node(mat):
     return output_material_node
 
 def get_file(file_name, is_image=True):
-    file_name = os.path.basename(file_name).lower()
-    result = file_name.rsplit(".", 1)
-    if len(result) == 1 and not is_image:
-        file_name = "%s.b3d" % file_name
+    extension_set = ("bmp", "jpg", "jpeg", "png")
+    if not is_image:
+        extension_set = ("b3d", "x")
 
     file_asset = None
     file_path = ""
@@ -128,9 +127,12 @@ def get_file(file_name, is_image=True):
     if not is_string_empty(game_path):
         for root, dirs, files in os.walk(game_path):
             for file in files:
-                if file.lower() == file_name:
-                    file_path = os.path.join(root, file)
-                    break
+                for extension in extension_set:
+                    file_name_w_ext = os.path.basename(file_name).lower()
+                    file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
+                    if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
+                        file_path = os.path.join(root, file)
+                        break
 
     if is_image:
         if os.path.isfile(file_path):
@@ -196,11 +198,76 @@ def get_blitz_rot(rot):
 
     return (pitch * RTOD, yaw * RTOD, roll * RTOD)
 
-def export_scene(context, filepath, game_title, report):
-    is_rmesh2 = False
-    rmesh_file_type = "RoomMesh"
-    if game_title == "2":
-        is_rmesh2 = True
+def create_obj_from_node(bm, ob_data, random_color_gen, node, filepath):
+    node_mesh = node.mesh
+
+    first_obj = None
+    for child in node.children:
+        child = create_obj_from_node(bm, ob_data, random_color_gen, child, filepath)
+        if first_obj is None and child is not None:
+            first_obj = child
+
+    if len(node_mesh.vertices) > 0 and len(node_mesh.faces) > 0:
+        mesh = bpy.data.meshes.new("temp_mesh")
+
+        vertices = [Vector(vertex) for vertex in node_mesh.vertices]
+        triangles = [triangle for triangle in node_mesh.faces]
+        mesh.from_pydata(vertices, [], triangles)
+        mesh.transform(node.transform_matrix)
+        mesh.transform(Matrix.Scale(-0.00625, 4))
+
+        for material_node in node_mesh.materials:
+            mat = bpy.data.materials.new(name=material_node.name)
+            mesh.materials.append(mat)
+            ob_data.materials.append(mat)
+
+            mat.blend_method = 'CLIP'
+
+            mat.use_nodes = True
+            nodes = mat.node_tree.nodes
+            principled = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+
+            color = (1.0, 1.0, 1.0)
+            mat.specular_intensity = 0.0
+            color = material_node.face_color
+            mat.specular_intensity = material_node.power
+            mat.specular_color = material_node.specular_color
+            principled.inputs['Base Color'].default_value = color
+            mat.diffuse_color = random_color_gen.next()
+            if material_node.texture_path and material_node.texture_path != "":
+                path = "/".join(bpy.path.abspath(filepath).split(os.path.sep)[0:-1])
+                path = path + "/" + material_node.texture_path
+                if os.path.exists(path):
+                    material_node.texture_path = path
+
+            if material_node.texture_path and os.path.exists(material_node.texture_path):
+                texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                texture.location = (-300, 150)
+
+                texture.image = bpy.data.images.load(filepath=material_node.texture_path)
+                texture.image.colorspace_settings.name = 'sRGB'
+
+                mat.node_tree.links.new(principled.inputs['Base Color'], texture.outputs['Color'])
+
+        uv_render = mesh.uv_layers.new(name="UVMap_Render")
+        for poly_idx, poly in enumerate(mesh.polygons):
+            poly.use_smooth = True
+            poly.material_index = node_mesh.material_face_indexes[poly_idx]
+            for loop_index in poly.loop_indices:
+                vert_index = mesh.loops[loop_index].vertex_index
+                u, v = node_mesh.tex_coords[vert_index]
+                uv_render.data[loop_index].uv = (u, 1 - v)
+
+        bm.from_mesh(mesh)
+        bpy.data.meshes.remove(mesh)
+
+def export_scene(context, filepath, file_type, report):
+    file_type = ExportFileType(int(file_type))
+    if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_uer:
+        rmesh_file_type = "RoomMesh"
+    elif file_type == ExportFileType.rmesh_tb:
+        rmesh_file_type = "RoomMesh.HasTriggerBox"
+    elif file_type == ExportFileType.rmesh_uer2:
         rmesh_file_type = "RoomMesh2"
 
     rmesh_dict = {
@@ -297,14 +364,14 @@ def export_scene(context, filepath, game_title, report):
                     r, g, b, a = layer_color.data[loop_index].color
                     color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
-                if is_rmesh2:
+                if file_type == ExportFileType.rmesh_uer2:
                     key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal)
                 else:
                     key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color)
                 if key not in vertex_map:
                     vertex_map[key] = len(mesh_section["vertices"])
                     vert_dict = {"position": pos, "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}
-                    if is_rmesh2:
+                    if file_type == ExportFileType.rmesh_uer2:
                         vert_dict["normal"] = loop_normal
 
                     mesh_section["vertices"].append(vert_dict)
@@ -338,6 +405,30 @@ def export_scene(context, filepath, game_title, report):
 
             ob_eval.to_mesh_clear()
             rmesh_dict["collision_meshes"].append(mesh_dict)
+
+    if file_type == ExportFileType.rmesh_tb:
+        trigger_box_collection = get_referenced_collection("trigger_boxes", context.scene.collection, False)
+        for ob in trigger_box_collection.objects:
+            if ob.type == 'MESH':
+                ob_eval = ob.evaluated_get(depsgraph)
+                mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+                mesh.calc_loop_triangles()
+
+                mesh_dict = {
+                    "vertices": [],
+                    "triangles": []
+                }
+                for v in mesh.vertices:
+                    pos = pivot_matrix @ (ob_eval.matrix_world @ v.co)
+                    mesh_dict["vertices"].append({"position": pos})
+
+                for tri in mesh.loop_triangles:
+                    tri_indices = [mesh.loops[loop_index].vertex_index for loop_index in tri.loops]
+                    mesh_dict["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
+
+                ob_eval.to_mesh_clear()
+                rmesh_dict["collision_meshes"].append(mesh_dict)
+
 
     object_names = []
     ALLOWED_TYPES = ('MESH', 'EMPTY', 'LIGHT', 'SPEAKER')
@@ -387,7 +478,7 @@ def export_scene(context, filepath, game_title, report):
                 entity_dict["range"] = ob.data.shadow_soft_size * 1000
                 entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
                 entity_dict["intensity"] = ob.data.energy / 50
-                if is_rmesh2:
+                if file_type == ExportFileType.rmesh_uer2:
                     entity_dict["has_sprite"] = ob.rmesh.has_sprite
                     entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
                     entity_dict["casts_shadows"] = ob.data.use_shadow
@@ -407,7 +498,7 @@ def export_scene(context, filepath, game_title, report):
                 entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
                 entity_dict["intensity"] = ob.data.energy / 50
                 entity_dict["range"] = ob.data.shadow_soft_size * 1000
-                if is_rmesh2:
+                if file_type == ExportFileType.rmesh_uer2:
                     entity_dict["has_sprite"] = ob.rmesh.has_sprite
                     entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
                     entity_dict["casts_shadows"] = ob.data.use_shadow
@@ -427,7 +518,7 @@ def export_scene(context, filepath, game_title, report):
                 entity_dict["range"] = ob.data.shadow_soft_size * 1000
                 entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
                 entity_dict["intensity"] = ob.data.energy / 50
-                if is_rmesh2:
+                if file_type == ExportFileType.rmesh_uer2:
                     p, y, r = get_blitz_rot(rot)
                     entity_dict["has_sprite"] = ob.rmesh.has_sprite
                     entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
@@ -462,7 +553,7 @@ def export_scene(context, filepath, game_title, report):
                 entity_dict["entity_type"] = "model"
                 entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
                 rmesh_dict["entities"].append(entity_dict)
-                if is_rmesh2:
+                if file_type == ExportFileType.rmesh_uer2:
                     entity_dict["position"] = loc
                     entity_dict["euler_rotation"] = get_blitz_rot(rot)
                     entity_dict["scale"] = scale
@@ -485,40 +576,8 @@ def export_scene(context, filepath, game_title, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
-def create_obj_from_node(bm, ob_data, random_color_gen, node):
-    node_mesh = node.mesh
-
-    first_obj = None
-    for child in node.children:
-        child = create_obj_from_node(bm, ob_data, random_color_gen, child)
-        if first_obj is None and child is not None:
-            first_obj = child
-
-    if len(node_mesh.vertices) > 0 and len(node_mesh.faces) > 0:
-        mesh = bpy.data.meshes.new("temp_mesh")
-        
-        vertices = [Vector(vertex) for vertex in node_mesh.vertices]
-        triangles = [triangle for triangle in node_mesh.faces]
-        mesh.from_pydata(vertices, [], triangles)
-        mesh.transform(node.transform_matrix)
-        mesh.transform(Matrix.Scale(-0.00625, 4))
-
-        for material in node_mesh.materials:
-            mat = bpy.data.materials.new(name=material.name)
-            mat.diffuse_color = random_color_gen.next()
-            mesh.materials.append(mat)
-            ob_data.materials.append(mat)
-
-        for face_idx, material_idx in enumerate(node_mesh.material_face_indexes):
-            poly = mesh.polygons[face_idx]
-            poly.use_smooth = True
-            poly.material_index = material_idx
-
-        bm.from_mesh(mesh)
-        bpy.data.meshes.remove(mesh)
-
 def import_scene(context, filepath, file_type, report):
-    file_type_enum, rmesh_dict = read_rmesh(filepath, file_type)
+    file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
     game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
 
@@ -632,7 +691,7 @@ def import_scene(context, filepath, file_type, report):
         for poly in coll_mesh.polygons:
             poly.use_smooth = True
 
-    if file_type_enum == FileType.rmesh_tb:
+    if file_type == ImportFileType.rmesh_tb:
         trigger_box_collection = get_referenced_collection("trigger_boxes", context.scene.collection, True)
         for trigger_box_idx, trigger_box_dict in enumerate(rmesh_dict["trigger_boxes"]):
             for trigger_idx, trigger_dict in enumerate(trigger_box_dict["meshes"]):
@@ -700,7 +759,7 @@ def import_scene(context, filepath, file_type, report):
             object_data.shadow_soft_size = entity_dict["range"] / 1000
             r, g, b = entity_dict["color"].split(" ")
             object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
-            if file_type_enum == FileType.rmesh_uer2:
+            if file_type == ImportFileType.rmesh_uer2:
                 object_mesh.rmesh.has_sprite = bool(entity_dict["has_sprite"])
                 object_mesh.rmesh.sprite_scale = entity_dict["sprite_scale"]
                 object_data.use_shadow = bool(entity_dict["casts_shadows"])
@@ -717,7 +776,7 @@ def import_scene(context, filepath, file_type, report):
             object_data.shadow_soft_size = entity_dict["range"] / 1000
             r, g, b = entity_dict["color"].split(" ")
             object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
-            if file_type_enum == FileType.rmesh_uer2:
+            if file_type == ImportFileType.rmesh_uer2:
                 object_mesh.rmesh.has_sprite = bool(entity_dict["has_sprite"])
                 object_mesh.rmesh.sprite_scale = entity_dict["sprite_scale"]
                 object_data.use_shadow = bool(entity_dict["casts_shadows"])
@@ -734,7 +793,7 @@ def import_scene(context, filepath, file_type, report):
             r, g, b = entity_dict["color"].split(" ")
             object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
 
-            if file_type_enum == FileType.rmesh_uer2:
+            if file_type == ImportFileType.rmesh_uer2:
                 object_mesh.rmesh.has_sprite = bool(entity_dict["has_sprite"])
                 object_mesh.rmesh.sprite_scale = entity_dict["sprite_scale"]
                 object_data.use_shadow = bool(entity_dict["casts_shadows"])
@@ -789,7 +848,7 @@ def import_scene(context, filepath, file_type, report):
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
                 bm = bmesh.new()
-                create_obj_from_node(bm, ob_data, random_color_gen, importer.execute(str(model_path)))
+                create_obj_from_node(bm, ob_data, random_color_gen, importer.execute(str(model_path)), model_path)
                 bm.to_mesh(ob_data)
                 bm.free()
 
@@ -797,7 +856,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.rmesh.object_type = str(ObjectType.entity_model.value)
             object_mesh.rmesh.model_path = model_path
             entity_collection.objects.link(object_mesh)
-            if not file_type_enum == FileType.rmesh_uer:
+            if not file_type == ImportFileType.rmesh_uer:
                 loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
                 global_transform = Matrix.LocRotScale(loc, rot, Vector(entity_dict["scale"]))
                 
@@ -865,5 +924,5 @@ def import_scene(context, filepath, file_type, report):
     for error in error_log:
         report({'WARNING'}, error)
 
-    report({'INFO'}, "Export completed successfully")
+    report({'INFO'}, "Import completed successfully")
     return {'FINISHED'}

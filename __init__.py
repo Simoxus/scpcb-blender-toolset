@@ -258,12 +258,13 @@ class ExportRMESH(Operator, ExportHelper):
     bl_label = 'Export RMESH'
     filename_ext = '.rmesh'
 
-    game_title: EnumProperty(
-        name="Game Title:",
+    file_type: EnumProperty(
+        name="File Type:",
         description="What game was the model file made for",
-        items=[ ('0', "Release", "Import an RMESH intended for the original SCP CB"),
-                ('1', "UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
-                ('2', "UER2", "Import an RMESH intended for SCP CB UER 2.0"),
+        items=[ ('0', "RMESH", "Import an RMESH intended for the original SCP CB"),
+                ('1', "RMESH Trigger Box", "Import an RMESH intended for the original SCP CB"),
+                ('2', "RMESH UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
+                ('3', "RMESH UER 2", "Import an RMESH intended for SCP CB UER 2.0"),
             ]
         )
 
@@ -275,7 +276,7 @@ class ExportRMESH(Operator, ExportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.export_scene(context, self.filepath, self.game_title, self.report)
+        return scene_rmesh.export_scene(context, self.filepath, self.file_type, self.report)
 
 class ImportRMESH(Operator, ImportHelper):
     """Import an RMESH file"""
