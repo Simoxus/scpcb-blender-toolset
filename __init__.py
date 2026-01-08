@@ -35,7 +35,8 @@ if (4, 1, 0) <= bpy.app.version:
     from bpy.types import FileHandler
 
 class ObjectType(Enum):
-    mesh = 0
+    exclude = 0
+    mesh = auto()
     collision = auto()
     trigger_box = auto()
     entity_screen = auto()
@@ -71,19 +72,20 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
     object_type: EnumProperty(
         name="Type",
         description="Set the classification for the RMESH object",
-        items = ( ('0', "Mesh", "Mesh"),
-                    ('1', "Collision", "Collision"),
-                    ('2', "Trigger Box", "Trigger Box"),
-                    ('3', "Entity Screen", "Entity Screen"),
-                    ('4', "Entity Save Screen", "Entity Save Screen"),
-                    ('5', "Entity Waypoint", "Entity Waypoint"),
-                    ('6', "Entity Light", "Entity Light"),
-                    ('7', "Entity Light Fix", "Entity Light Fix"),
-                    ('8', "Entity Spotlight", "Entity Spotlight"),
-                    ('9', "Entity Sound Emitter", "Entity Sound Emitter"),
-                    ('10', "Entity Player Start", "Entity Player Start"),
-                    ('11', "Entity Model", "Entity Model"),
-                    ('12', "Entity Mesh", "Entity Mesh")
+        items = ( ('0', "Exclude", "Object is excluded from export"),
+                    ('1', "Mesh", "Object is valid for CB/UER/UER2"),
+                    ('2', "Collision", "Object is valid for CB/UER/UER2"),
+                    ('3', "Trigger Box", "Object is valid for CB"),
+                    ('4', "Entity Screen", "Object is valid for CB/UER/UER2"),
+                    ('5', "Entity Save Screen", "Object is valid for CB/UER/UER2"),
+                    ('6', "Entity Waypoint", "Object is valid for CB/UER/UER2"),
+                    ('7', "Entity Light", "Object is valid for CB/UER/UER2"),
+                    ('8', "Entity Light Fix", "Object is valid for UER/UER2"),
+                    ('9', "Entity Spotlight", "Object is valid for CB/UER/UER2"),
+                    ('10', "Entity Sound Emitter", "Object is valid for CB/UER/UER2"),
+                    ('11', "Entity Player Start", "Object is valid for CB"),
+                    ('12', "Entity Model", "Object is valid for CB/UER/UER2"),
+                    ('13', "Entity Mesh", "Object is valid for CB/UER/UER2")
                 )
         )
     

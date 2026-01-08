@@ -261,6 +261,59 @@ def create_obj_from_node(bm, ob_data, random_color_gen, node, filepath):
         bm.from_mesh(mesh)
         bpy.data.meshes.remove(mesh)
 
+def collect_objects():
+    mesh_list = []
+    collision_list = []
+    trigger_box_list = []
+    entity_list = []
+
+    for ob in bpy.data.objects:
+        ob_type = ObjectType(int(ob.rmesh.object_type))
+        if ob_type == ObjectType.mesh:
+            if ob.type == 'MESH':
+                mesh_list.append(ob)
+        elif ob_type == ObjectType.collision:
+            if ob.type == 'MESH':
+                collision_list.append(ob)
+        elif ob_type == ObjectType.trigger_box:
+            if ob.type == 'MESH':
+                trigger_box_list.append(ob)
+        elif ob_type == ObjectType.entity_screen:
+            entity_list.append(ob)
+        elif ob_type == ObjectType.entity_save_screen:
+            entity_list.append(ob)
+        elif ob_type == ObjectType.entity_waypoint:
+            entity_list.append(ob)
+        elif ob_type == ObjectType.entity_light:
+            if ob.type == 'LIGHT' and ob.data.type == 'POINT':
+                entity_list.append(ob)
+        elif ob_type == ObjectType.entity_light_fix:
+            if ob.type == 'LIGHT' and ob.data.type == 'POINT':
+                entity_list.append(ob)
+        elif ob_type == ObjectType.entity_spotlight:
+            if ob.type == 'LIGHT' and ob.data.type == 'SPOT':
+                entity_list.append(ob)
+        elif ob_type == ObjectType.entity_sound_emitter:
+            if ob.type == 'SPEAKER':
+                entity_list.append(ob)
+        elif ob_type == ObjectType.entity_player_start:
+            entity_list.append(ob)
+        elif ob_type == ObjectType.entity_model:
+            entity_list.append(ob)
+        elif ob_type == ObjectType.entity_mesh:
+            entity_list.append(ob)
+
+    entity_list.sort(key=lambda obj: natural_key(obj.name)) # Doing this cause no idea if the game cares about order for entities. Probably not but better be safe. - Gen
+
+    return mesh_list, collision_list, trigger_box_list, entity_list
+
+def is_string_empty(string):
+    is_empty = False
+    if not string == None and (len(string) == 0 or string.isspace()):
+        is_empty = True
+
+    return is_empty
+
 def export_scene(context, filepath, file_type, report):
     file_type = ExportFileType(int(file_type))
     if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_uer:
@@ -274,23 +327,19 @@ def export_scene(context, filepath, file_type, report):
         "rmesh_file_type": rmesh_file_type,
         "meshes": [],
         "collision_meshes": [],
+        "trigger_boxes": [],
         "entities": []
     }
 
     game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
 
-    mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
-    collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
-    entity_collection = get_referenced_collection("entities", context.scene.collection, False)
+    mesh_list, collision_list, trigger_box_list, entity_list = collect_objects()
 
     pivot_matrix = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(160.0, 4)
     depsgraph = context.evaluated_depsgraph_get()
 
     section_data = {}
-    for ob in mesh_collection.objects:
-        if ob.type != 'MESH':
-            continue
-
+    for ob in mesh_list:
         ob_eval = ob.evaluated_get(depsgraph)
         mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
         mesh.calc_loop_triangles()
@@ -385,7 +434,7 @@ def export_scene(context, filepath, file_type, report):
     for mesh_dict in section_data.values():
         rmesh_dict["meshes"].append(mesh_dict)
 
-    for ob in collision_collection.objects:
+    for ob in collision_list:
         if ob.type == 'MESH':
             ob_eval = ob.evaluated_get(depsgraph)
             mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
@@ -407,9 +456,22 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["collision_meshes"].append(mesh_dict)
 
     if file_type == ExportFileType.rmesh_tb:
-        trigger_box_collection = get_referenced_collection("trigger_boxes", context.scene.collection, False)
-        for ob in trigger_box_collection.objects:
+        for ob in trigger_box_list:
             if ob.type == 'MESH':
+                trigger_group = ob.rmesh.trigger_group
+                if is_string_empty(trigger_group):
+                    trigger_group = "unnamed"
+
+                trigger_entry = None
+                for trigger_dict in rmesh_dict["trigger_boxes"]:
+                    if trigger_dict["name"] == trigger_group:
+                        trigger_entry = trigger_dict
+                        break
+
+                if trigger_entry is None:
+                    trigger_entry = {"meshes": [], "name": trigger_group}
+                    rmesh_dict["trigger_boxes"].append(trigger_entry)
+                    
                 ob_eval = ob.evaluated_get(depsgraph)
                 mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
                 mesh.calc_loop_triangles()
@@ -426,152 +488,143 @@ def export_scene(context, filepath, file_type, report):
                     tri_indices = [mesh.loops[loop_index].vertex_index for loop_index in tri.loops]
                     mesh_dict["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
 
+                trigger_entry["meshes"].append(mesh_dict)
                 ob_eval.to_mesh_clear()
-                rmesh_dict["collision_meshes"].append(mesh_dict)
 
+    for ob in entity_list:
+        object_type = ObjectType(int(ob.rmesh.object_type))
+        loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
+        inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
+        if object_type == ObjectType.entity_screen:
+            entity_dict = {}
 
-    object_names = []
-    ALLOWED_TYPES = ('MESH', 'EMPTY', 'LIGHT', 'SPEAKER')
-    for ob in entity_collection.objects:
-        if ob.type in ALLOWED_TYPES:
-            object_names.append(ob.name)
+            entity_dict["entity_type"] = "screen"
+            entity_dict["position"] = loc
+            entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
+            rmesh_dict["entities"].append(entity_dict)
 
-    object_names.sort(key=natural_key)
-    for object_name in object_names:
-        ob = bpy.data.objects.get(object_name)
-        if ob is not None:
-            object_type = ObjectType(int(ob.rmesh.object_type))
-            loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
-            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
-            if object_type == ObjectType.entity_screen:
-                entity_dict = {}
+        elif object_type == ObjectType.entity_save_screen:
+            entity_dict = {}
 
-                entity_dict["entity_type"] = "screen"
+            entity_dict["entity_type"] = "save_screen"
+            entity_dict["position"] = loc
+            entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
+            entity_dict["euler_rotation"] = get_blitz_rot(rot)
+            entity_dict["scale"] = scale
+            entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_waypoint:
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "waypoint"
+            entity_dict["position"] = loc
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_light:
+            r, g, b = ob.data.color
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "light"
+            entity_dict["position"] = loc
+            entity_dict["range"] = ob.data.shadow_soft_size * 1000
+            entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
+            entity_dict["intensity"] = ob.data.energy / 50
+            if file_type == ExportFileType.rmesh_uer2:
+                entity_dict["has_sprite"] = ob.rmesh.has_sprite
+                entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
+                entity_dict["casts_shadows"] = ob.data.use_shadow
+                entity_dict["scattering"] = ob.rmesh.scattering
+                entity_dict["ff_array"] = []
+                for ff in range(31):
+                    entity_dict["ff_array"].append(0)
+
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_light_fix:
+            r, g, b = ob.data.color
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "light_fix"
+            entity_dict["position"] = loc
+            entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
+            entity_dict["intensity"] = ob.data.energy / 50
+            entity_dict["range"] = ob.data.shadow_soft_size * 1000
+            if file_type == ExportFileType.rmesh_uer2:
+                entity_dict["has_sprite"] = ob.rmesh.has_sprite
+                entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
+                entity_dict["casts_shadows"] = ob.data.use_shadow
+                entity_dict["scattering"] = ob.rmesh.scattering
+                entity_dict["ff_array"] = []
+                for ff in range(31):
+                    entity_dict["ff_array"].append(0)
+
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_spotlight:
+            r, g, b = ob.data.color
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "spotlight"
+            entity_dict["position"] = loc
+            entity_dict["range"] = ob.data.shadow_soft_size * 1000
+            entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
+            entity_dict["intensity"] = ob.data.energy / 50
+            if file_type == ExportFileType.rmesh_uer2:
+                p, y, r = get_blitz_rot(rot)
+                entity_dict["has_sprite"] = ob.rmesh.has_sprite
+                entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
+                entity_dict["casts_shadows"] = ob.data.use_shadow
+                entity_dict["direction"] = [p, y]
+                entity_dict["inner_cosine"] = degrees(ob.data.spot_size)
+                entity_dict["scattering"] = ob.data.spot_blend
+                entity_dict["ff_array"] = []
+                for ff in range(31):
+                    entity_dict["ff_array"].append(0)
+
+            else:
+                outer_deg = degrees(ob.data.spot_size)
+                p, y, r = get_blitz_rot(rot)
+                entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
+                entity_dict["inner_cone_angle"] = ob.data.spot_blend * outer_deg
+                entity_dict["outer_cone_angle"] = outer_deg
+
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_sound_emitter:
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "soundemitter"
+            entity_dict["position"] = loc
+            entity_dict["id"] = ob.rmesh.sound_emitter_id
+            entity_dict["range"] = ob.data.distance_max
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_model:
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "model"
+            entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
+            rmesh_dict["entities"].append(entity_dict)
+            if not file_type == ExportFileType.rmesh_uer:
                 entity_dict["position"] = loc
-                entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
-                rmesh_dict["entities"].append(entity_dict)
-
-            elif object_type == ObjectType.entity_save_screen:
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "save_screen"
-                entity_dict["position"] = loc
-                entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
                 entity_dict["euler_rotation"] = get_blitz_rot(rot)
                 entity_dict["scale"] = scale
-                entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
-                rmesh_dict["entities"].append(entity_dict)
 
-            elif object_type == ObjectType.entity_waypoint:
-                entity_dict = {}
+        elif object_type == ObjectType.entity_mesh:
+            entity_dict = {}
 
-                entity_dict["entity_type"] = "waypoint"
-                entity_dict["position"] = loc
-                rmesh_dict["entities"].append(entity_dict)
+            entity_dict["entity_type"] = "mesh"
+            entity_dict["position"] = loc
+            entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
+            entity_dict["euler_rotation"] = get_blitz_rot(rot)
+            entity_dict["scale"] = scale
+            entity_dict["has_collision"] = int(ob.rmesh.has_collision)
+            entity_dict["fx"] = ob.rmesh.fx
+            entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
+            rmesh_dict["entities"].append(entity_dict)
 
-            elif object_type == ObjectType.entity_light:
-                r, g, b = ob.data.color
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "light"
-                entity_dict["position"] = loc
-                entity_dict["range"] = ob.data.shadow_soft_size * 1000
-                entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-                entity_dict["intensity"] = ob.data.energy / 50
-                if file_type == ExportFileType.rmesh_uer2:
-                    entity_dict["has_sprite"] = ob.rmesh.has_sprite
-                    entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
-                    entity_dict["casts_shadows"] = ob.data.use_shadow
-                    entity_dict["scattering"] = ob.rmesh.scattering
-                    entity_dict["ff_array"] = []
-                    for ff in range(31):
-                        entity_dict["ff_array"].append(0)
-
-                rmesh_dict["entities"].append(entity_dict)
-
-            elif object_type == ObjectType.entity_light_fix:
-                r, g, b = ob.data.color
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "light_fix"
-                entity_dict["position"] = loc
-                entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-                entity_dict["intensity"] = ob.data.energy / 50
-                entity_dict["range"] = ob.data.shadow_soft_size * 1000
-                if file_type == ExportFileType.rmesh_uer2:
-                    entity_dict["has_sprite"] = ob.rmesh.has_sprite
-                    entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
-                    entity_dict["casts_shadows"] = ob.data.use_shadow
-                    entity_dict["scattering"] = ob.rmesh.scattering
-                    entity_dict["ff_array"] = []
-                    for ff in range(31):
-                        entity_dict["ff_array"].append(0)
-
-                rmesh_dict["entities"].append(entity_dict)
-
-            elif object_type == ObjectType.entity_spotlight:
-                r, g, b = ob.data.color
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "spotlight"
-                entity_dict["position"] = loc
-                entity_dict["range"] = ob.data.shadow_soft_size * 1000
-                entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-                entity_dict["intensity"] = ob.data.energy / 50
-                if file_type == ExportFileType.rmesh_uer2:
-                    p, y, r = get_blitz_rot(rot)
-                    entity_dict["has_sprite"] = ob.rmesh.has_sprite
-                    entity_dict["sprite_scale"] = ob.rmesh.sprite_scale
-                    entity_dict["casts_shadows"] = ob.data.use_shadow
-                    entity_dict["direction"] = [p, y]
-                    entity_dict["inner_cosine"] = degrees(ob.data.spot_size)
-                    entity_dict["scattering"] = ob.data.spot_blend
-                    entity_dict["ff_array"] = []
-                    for ff in range(31):
-                        entity_dict["ff_array"].append(0)
-
-                else:
-                    p, y, r = get_blitz_rot(rot)
-                    entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
-                    entity_dict["inner_cone_angle"] = 0
-                    entity_dict["outer_cone_angle"] = 0
-
-                rmesh_dict["entities"].append(entity_dict)
-
-            elif object_type == ObjectType.entity_sound_emitter:
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "soundemitter"
-                entity_dict["position"] = loc
-                entity_dict["id"] = ob.rmesh.sound_emitter_id
-                entity_dict["range"] = ob.data.distance_max
-                rmesh_dict["entities"].append(entity_dict)
-
-            elif object_type == ObjectType.entity_model:
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "model"
-                entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
-                rmesh_dict["entities"].append(entity_dict)
-                if file_type == ExportFileType.rmesh_uer2:
-                    entity_dict["position"] = loc
-                    entity_dict["euler_rotation"] = get_blitz_rot(rot)
-                    entity_dict["scale"] = scale
-
-            elif object_type == ObjectType.entity_mesh:
-                entity_dict = {}
-
-                entity_dict["entity_type"] = "mesh"
-                entity_dict["position"] = loc
-                entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
-                entity_dict["euler_rotation"] = get_blitz_rot(rot)
-                entity_dict["scale"] = scale
-                entity_dict["has_collision"] = int(ob.rmesh.has_collision)
-                entity_dict["fx"] = ob.rmesh.fx
-                entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
-                rmesh_dict["entities"].append(entity_dict)
-
-    write_rmesh(rmesh_dict, filepath)
+    write_rmesh(rmesh_dict, filepath, file_type)
 
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
