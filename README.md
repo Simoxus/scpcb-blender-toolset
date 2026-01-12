@@ -1,7 +1,7 @@
 # SCP-CB-RMESH-Tool
 
 ## Toolset Description
-A tool to import and export RMESH files from Ultimate Edition Reborn and the original SCP CB Containment Breach.
+A tool to import and export RMESH files from Ultimate Edition Reborn and the original SCP Containment Breach.
 
 ## Credits
 
@@ -10,7 +10,7 @@ A tool to import and export RMESH files from Ultimate Edition Reborn and the ori
    * [io_scene_b3d](https://github.com/joric/io_scene_b3d)
 
  * Starman12976/Simoxus
-   * For making the rmesh import script used during as reference.
+   * For making the rmesh import script used as reference.
    * [RoomMeshImportExport](https://github.com/Starman12976/RoomMeshImportExport)
    
  * Kusaanko
