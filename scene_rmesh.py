@@ -500,7 +500,7 @@ def export_scene(context, filepath, file_type, report):
 
             entity_dict["entity_type"] = "screen"
             entity_dict["position"] = loc
-            entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
+            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.texture_path))
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_save_screen:
@@ -511,7 +511,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.model_path))
             entity_dict["euler_rotation"] = get_blitz_rot(rot)
             entity_dict["scale"] = scale
-            entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
+            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.texture_path))
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_waypoint:
@@ -621,7 +621,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["scale"] = scale
             entity_dict["has_collision"] = int(ob.rmesh.has_collision)
             entity_dict["fx"] = ob.rmesh.fx
-            entity_dict["texture_name"] = bpy.path.abspath(ob.rmesh.texture_path).split(game_path, 1)[0]
+            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.rmesh.texture_path))
             rmesh_dict["entities"].append(entity_dict)
 
     write_rmesh(rmesh_dict, filepath, file_type)
