@@ -115,17 +115,17 @@ def get_output_material_node(mat):
 
     return output_material_node
 
-def get_file(file_name, is_image=True):
+def get_file(file_name, use_image_set=True, generate_image_node=True, directory_path=""):
     extension_set = ("bmp", "jpg", "jpeg", "png")
-    if not is_image:
+    if not use_image_set:
         extension_set = ("b3d", "x")
 
     file_asset = None
     file_path = ""
     game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
-
-    if not is_string_empty(game_path):
-        for root, dirs, files in os.walk(game_path):
+    asset_directory = os.path.join(game_path, directory_path)
+    if not is_string_empty(asset_directory):
+        for root, dirs, files in os.walk(asset_directory):
             for file in files:
                 for extension in extension_set:
                     file_name_w_ext = os.path.basename(file_name).lower()
@@ -134,7 +134,7 @@ def get_file(file_name, is_image=True):
                         file_path = os.path.join(root, file)
                         break
 
-    if is_image:
+    if use_image_set and generate_image_node:
         if os.path.isfile(file_path):
             file_asset = bpy.data.images.load(file_path, check_existing=True)
     else:
@@ -771,7 +771,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.rmesh.object_type = str(ObjectType.entity_screen.value)
             object_mesh.empty_display_type = 'IMAGE'
 
-            file_path = get_file(entity_dict["texture_name"], False)
+            file_path = get_file(entity_dict["texture_name"], True, False, r"GFX\screens")
             object_mesh.rmesh.texture_path = file_path
             if os.path.isfile(file_path):
                 file_asset = bpy.data.images.load(file_path, check_existing=True)
@@ -791,7 +791,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.matrix_world =  global_transform
 
             model_path = get_file(entity_dict["model_name"], False)
-            texture_path = get_file(entity_dict["texture_name"], False)
+            texture_path = get_file(entity_dict["texture_name"], True, False)
             object_mesh.rmesh.model_path = model_path
             object_mesh.rmesh.texture_path = texture_path
 
@@ -917,7 +917,7 @@ def import_scene(context, filepath, file_type, report):
                 
         elif entity_dict["entity_type"] == "mesh":
             model_path = get_file(entity_dict["model_name"], False)
-            texture_path = get_file(entity_dict["texture_name"], False)
+            texture_path = get_file(entity_dict["texture_name"], True, False)
             ob_data = entity_meshes.get(model_path)
             
             if ob_data is None and model_path:
