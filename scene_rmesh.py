@@ -211,7 +211,7 @@ def create_obj_from_node(bm, ob_data, random_color_gen, node, filepath):
         mesh = bpy.data.meshes.new("temp_mesh")
 
         vertices = [Vector(vertex) for vertex in node_mesh.vertices]
-        triangles = [triangle for triangle in node_mesh.faces]
+        triangles = [triangle[::-1] for triangle in node_mesh.faces]
         mesh.from_pydata(vertices, [], triangles)
         mesh.transform(node.transform_matrix)
         mesh.transform(Matrix.Scale(-0.00625, 4))
@@ -586,8 +586,8 @@ def export_scene(context, filepath, file_type, report):
                 outer_deg = degrees(ob.data.spot_size)
                 p, y, r = get_blitz_rot(rot)
                 entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
-                entity_dict["inner_cone_angle"] = ob.data.spot_blend * outer_deg
-                entity_dict["outer_cone_angle"] = outer_deg
+                entity_dict["inner_cone_angle"] = int(ob.data.spot_blend * outer_deg)
+                entity_dict["outer_cone_angle"] = int(outer_deg)
 
             rmesh_dict["entities"].append(entity_dict)
 
