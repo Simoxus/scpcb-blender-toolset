@@ -431,54 +431,79 @@ def parse_x_a_txt(text):
                 next_token = tokens.next()
                 x_dict["xof_header"] = "%s %s" % (x_dict["xof_header"], next_token)
             
-            tokens.next()
-            tokens.next()
-            tokens.next()
-            tokens.next()
-            tokens.next()
-            tokens.next()
-            tokens.next()
-            tokens.next()
-            tokens.next()
+            a = tokens.next()
+            b = tokens.next()
+            c = tokens.next()
+            d = tokens.next()
+            e = tokens.next()
+            f = tokens.next()
+            g = tokens.next()
+            h = tokens.next()
+            i = tokens.next()
+
 
         elif next_token == "Material":
-            template_dict = {
-                "name": "",
-                "guid": "",
-                "fields": []
-            }
+            material_dict = {"name": None, 
+                            "diffuse": (0.0, 0.0, 0.0, 0.0), 
+                            "power": 0.0, 
+                            "specular": (0.0, 0.0, 0.0), 
+                            "emissive": (0.0, 0.0, 0.0), 
+                            "texture": None
+                            }
+            
+            next_token = tokens.next()
+            print(next_token)
+            if next_token != "{":
+                material_dict["name"] = next_token
+                a = tokens.next()
+                print(a)
+
+            dr = float(tokens.next())
+            print(dr)
+            tokens.next()
+            dg = float(tokens.next())
+            tokens.next()
+            db = float(tokens.next())
+            tokens.next()
+            da = float(tokens.next())
+            tokens.next()
+            tokens.next()
+
+            material_dict["diffuse"] = (dr, dg, db, da)
+
+            material_dict["power"] = float(tokens.next())
+            tokens.next()
+
+            sr = float(tokens.next())
+            tokens.next()
+            sg = float(tokens.next())
+            tokens.next()
+            sb = float(tokens.next())
+            tokens.next()
+            tokens.next()
+
+            material_dict["specular"] = (sr, sg, sb)
+
+            er = float(tokens.next())
+            tokens.next()
+            eg = float(tokens.next())
+            tokens.next()
+            eb = float(tokens.next())
+            tokens.next()
+            tokens.next()
+
+            material_dict["emissive"] = (er, eg, eb)
 
             next_token = tokens.next()
-            if next_token != "{":
-                template_dict["name"] = next_token
-                next_token = tokens.next()
+            if next_token == "TextureFilename":
+                tokens.next()
+                material_dict["texture"] = tokens.next().strip('"')
+                tokens.next()
+                tokens.next()
 
-            if next_token == "{":
-                next_token = tokens.next()
-                while next_token != "}" and tokens.left() > 0:
-                    if next_token.startswith("<"):
-                        template_dict["guid"] = next_token
-                    else:
-                        field_dict = {}
+            tokens.next()
 
-                        field_keys = []
-                        while next_token != ";" and tokens.left() > 0:
-                            field_keys.append(next_token)
-                            next_token = tokens.next()
-                        if len(field_keys) == 2:
-                            field_dict["type"] = field_keys[0]
-                            field_dict["name"] = field_keys[1]
-                        elif len(field_keys) == 3:
-                            field_dict["is_array"] = field_keys[0]
-                            field_dict["type"] = field_keys[1]
-                            field_dict["name"] = field_keys[2]
-                        else:
-                            print("Template with more than 3 or 2 entries")
-
-                        template_dict["fields"].append(field_dict)
-                    next_token = tokens.next()
-
-            x_dict["templates"].append(template_dict)
+            x_dict["materials"].append(material_dict)
 
         elif next_token == "Frame":
             parse_frame(tokens, x_dict["frames"])

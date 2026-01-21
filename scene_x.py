@@ -5,7 +5,7 @@ from mathutils import Matrix, Vector
 from .process_x import write_x, read_x
 from math import sqrt
 
-def create_object(arm_ob, parent_bone, mesh_dict, filepath, bm=None, ob_data=None, is_simple=False, world_transform=None):
+def create_object(arm_ob, parent_bone, x_dict, mesh_dict, filepath, bm=None, ob_data=None, is_simple=False, world_transform=None, material_list=[]):
     mesh_name = mesh_dict["name"]
     if mesh_name == None:
         if parent_bone is not None:
@@ -31,57 +31,65 @@ def create_object(arm_ob, parent_bone, mesh_dict, filepath, bm=None, ob_data=Non
     for poly_idx, poly in enumerate(mesh.polygons):
         poly.use_smooth = True
 
-    for material_dict in mesh_dict["materials"]:
-        mat = bpy.data.materials.new(name=material_dict["name"])
-        mesh.materials.append(mat)
-        if is_simple:
-            ob_data.materials.append(mat)
+    if not x_dict["xof_header"] == "xof 0302txt 0064":
+        for material_dict in mesh_dict["materials"]:
+            mat = bpy.data.materials.new(name=material_dict["name"])
+            mesh.materials.append(mat)
+            if is_simple:
+                ob_data.materials.append(mat)
 
-        mat.use_nodes = True
-        nodes = mat.node_tree.nodes
-        bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+            mat.use_nodes = True
+            nodes = mat.node_tree.nodes
+            bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
 
-        r, g, b, a = material_dict["diffuse"]
-        mat.diffuse_color = (r, g, b, a)
-        bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
-        bsdf.inputs["Alpha"].default_value = a
-        if a < 1.0:
-            mat.blend_method = 'BLEND'
-        else:
-            mat.blend_method = 'CLIP'
+            r, g, b, a = material_dict["diffuse"]
+            mat.diffuse_color = (r, g, b, a)
+            bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
+            bsdf.inputs["Alpha"].default_value = a
+            if a < 1.0:
+                mat.blend_method = 'BLEND'
+            else:
+                mat.blend_method = 'CLIP'
 
-        roughness = sqrt(2 / (material_dict["power"] + 2))
-        bsdf.inputs["Roughness"].default_value = roughness
+            roughness = sqrt(2 / (material_dict["power"] + 2))
+            bsdf.inputs["Roughness"].default_value = roughness
 
-        sr, sg, sb = material_dict["specular"]
-        spec_strength = max(sr, sg, sb)
-        bsdf.inputs["Specular IOR Level"].default_value = spec_strength
+            sr, sg, sb = material_dict["specular"]
+            spec_strength = max(sr, sg, sb)
+            bsdf.inputs["Specular IOR Level"].default_value = spec_strength
 
-        er, eg, eb = material_dict["emissive"]
-        bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0)
-        
-        texture_path = None
-        if material_dict["texture"] and material_dict["texture"] != "":
-            parent_dir = filepath.parent
-            texture_path = parent_dir / material_dict["texture"]
+            er, eg, eb = material_dict["emissive"]
+            bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0)
+            
+            texture_path = None
+            if material_dict["texture"] and material_dict["texture"] != "":
+                parent_dir = filepath.parent
+                texture_path = parent_dir / material_dict["texture"]
+                if texture_path.exists():
+                    texture_path = texture_path
+
             if texture_path.exists():
-                texture_path = texture_path
+                texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                texture.location = (-300, 150)
 
-        if texture_path.exists():
-            texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
-            texture.location = (-300, 150)
+                texture.image = bpy.data.images.load(filepath=str(texture_path), check_existing=True)
+                texture.image.colorspace_settings.name = 'sRGB'
 
-            texture.image = bpy.data.images.load(filepath=str(texture_path), check_existing=True)
-            texture.image.colorspace_settings.name = 'sRGB'
-
-            mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+                mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+    else:
+        for mat in material_list:
+            mesh.materials.append(mat)
+            if is_simple:
+                ob_data.materials.append(mat)
 
     loop_normals = [Vector((0.0, 0.0, 1.0))] * len(mesh.loops)
     for poly_idx, poly in enumerate(mesh.polygons):
         poly.material_index = mesh_dict["material_indices"][poly_idx]
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
-            loop_normals[loop_index] = mesh_dict["normals"][vert_index]
+            if not x_dict["xof_header"] == "xof 0302txt 0064":
+                loop_normals[loop_index] = mesh_dict["normals"][vert_index]
+
             u, v = mesh_dict["texcoords"][vert_index]
             uv_render.data[loop_index].uv = (u, 1 - v)
 
@@ -95,7 +103,8 @@ def create_object(arm_ob, parent_bone, mesh_dict, filepath, bm=None, ob_data=Non
                 group_index = object_mesh.vertex_groups.keys().index(group_name)
                 object_mesh.vertex_groups[group_index].add([skin_element], skin_weight["weights"][skin_idx], 'ADD')
 
-    mesh.normals_split_custom_set(loop_normals)
+    if not x_dict["xof_header"] == "xof 0302txt 0064":
+        mesh.normals_split_custom_set(loop_normals)
 
     entity_mesh = mesh
     if not is_simple:
@@ -130,7 +139,7 @@ def x_matrix_to_blender(mat):
 
     return Matrix(matrix)
 
-def create_bone(filepath, rigid_obs, arm_ob, frame, parent_bone=None, bm=None, ob_data=None, is_simple=False):
+def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm=None, ob_data=None, is_simple=False, material_list=[]):
     name = frame["name"]
     world_transform = x_matrix_to_blender(frame["transform"])
 
@@ -151,7 +160,7 @@ def create_bone(filepath, rigid_obs, arm_ob, frame, parent_bone=None, bm=None, o
         bone.matrix = world_transform
 
     for mesh_dict in frame["meshes"]:
-        object_mesh = create_object(arm_ob, bone, mesh_dict, filepath, bm, ob_data, is_simple, world_transform)
+        object_mesh = create_object(arm_ob, bone, x_dict, mesh_dict, filepath, bm, ob_data, is_simple, world_transform, material_list)
         if is_simple:
             bm.from_mesh(object_mesh)
             bpy.data.meshes.remove(object_mesh)
@@ -159,7 +168,7 @@ def create_bone(filepath, rigid_obs, arm_ob, frame, parent_bone=None, bm=None, o
         rigid_obs.append([object_mesh, bone_name, world_transform])
 
     for child in frame.get("children", []):
-        create_bone(filepath, rigid_obs, arm_ob, child, bone, bm, ob_data, is_simple)
+        create_bone(filepath, rigid_obs, arm_ob, x_dict, child, bone, bm, ob_data, is_simple, material_list)
 
 def export_scene(context, output_path, report):
     is_binary = False
@@ -174,6 +183,7 @@ def export_scene(context, output_path, report):
     return {'FINISHED'}
 
 def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=False):
+    material_list = []
     x_dict = read_x(filepath)
     if x_dict:
         arm_ob = None
@@ -185,9 +195,54 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
             context.view_layer.objects.active = arm_ob
             bpy.ops.object.mode_set(mode='EDIT')
 
+        if x_dict["xof_header"] == "xof 0302txt 0064":
+            for material_dict in x_dict["materials"]:
+                mat = bpy.data.materials.new(name=material_dict["name"])
+
+                mat.use_nodes = True
+                nodes = mat.node_tree.nodes
+                bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+
+                r, g, b, a = material_dict["diffuse"]
+                mat.diffuse_color = (r, g, b, a)
+                bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
+                bsdf.inputs["Alpha"].default_value = a
+                if a < 1.0:
+                    mat.blend_method = 'BLEND'
+                else:
+                    mat.blend_method = 'CLIP'
+
+                roughness = sqrt(2 / (material_dict["power"] + 2))
+                bsdf.inputs["Roughness"].default_value = roughness
+
+                sr, sg, sb = material_dict["specular"]
+                spec_strength = max(sr, sg, sb)
+                bsdf.inputs["Specular IOR Level"].default_value = spec_strength
+
+                er, eg, eb = material_dict["emissive"]
+                bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0)
+                
+                texture_path = None
+                if material_dict["texture"] and material_dict["texture"] != "":
+                    parent_dir = filepath.parent
+                    texture_path = parent_dir / material_dict["texture"]
+                    if texture_path.exists():
+                        texture_path = texture_path
+
+                if texture_path.exists():
+                    texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                    texture.location = (-300, 150)
+
+                    texture.image = bpy.data.images.load(filepath=str(texture_path), check_existing=True)
+                    texture.image.colorspace_settings.name = 'sRGB'
+
+                    mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+
+                material_list.append(mat)
+
         rigid_obs = []
         for bone in x_dict["frames"]:
-            create_bone(filepath, rigid_obs, arm_ob, bone, None, bm, ob_data, is_simple)
+            create_bone(filepath, rigid_obs, arm_ob, x_dict, bone, None, bm, ob_data, is_simple, material_list)
 
         if not is_simple:
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -198,11 +253,12 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
                 object_mesh.parent_bone = parent_bone_name
                 object_mesh.matrix_world = transform
 
-        for mesh_dict in x_dict["meshes"]:
-            object_mesh = create_object(arm_ob, None, mesh_dict, filepath, bm, ob_data, is_simple)
-            if is_simple:
-                bm.from_mesh(object_mesh)
-                bpy.data.meshes.remove(object_mesh)
+        if not x_dict["xof_header"] == "xof 0302txt 0064":
+            for mesh_dict in x_dict["meshes"]:
+                object_mesh = create_object(arm_ob, None, x_dict, mesh_dict, filepath, bm, ob_data, is_simple, material_list=material_list)
+                if is_simple:
+                    bm.from_mesh(object_mesh)
+                    bpy.data.meshes.remove(object_mesh)
 
     report({'INFO'}, "Import completed successfully")
     return {'FINISHED'}
