@@ -11,6 +11,8 @@ bl_info = {
 
 import bpy
 
+from pathlib import Path
+
 from bpy.types import (
         PropertyGroup,
         Operator,
@@ -278,7 +280,7 @@ class ExportRMESH(Operator, ExportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.export_scene(context, self.filepath, self.file_type, self.report)
+        return scene_rmesh.export_scene(context, Path(self.filepath), self.file_type, self.report)
 
 class ImportRMESH(Operator, ImportHelper):
     """Import an RMESH file"""
@@ -310,7 +312,7 @@ class ImportRMESH(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.import_scene(context, self.filepath, self.file_type, self.report)
+        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):
@@ -354,7 +356,7 @@ class ImportX(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_x
 
-        return scene_x.import_scene(context, self.filepath, self.report)
+        return scene_x.import_scene(context, Path(self.filepath), self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):
@@ -398,7 +400,7 @@ class ImportB3D(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_b3d
 
-        return scene_b3d.import_scene(context, self.filepath, self.report)
+        return scene_b3d.import_scene(context, Path(self.filepath), self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):

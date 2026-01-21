@@ -62,16 +62,16 @@ def create_object(arm_ob, parent_bone, mesh_dict, filepath, bm=None, ob_data=Non
         
         texture_path = None
         if material_dict["texture"] and material_dict["texture"] != "":
-            path = "/".join(bpy.path.abspath(filepath).split(os.path.sep)[0:-1])
-            path = path + "/" + material_dict["texture"]
-            if os.path.exists(path):
-                texture_path = path
+            parent_dir = filepath.parent
+            texture_path = parent_dir / material_dict["texture"]
+            if texture_path.exists():
+                texture_path = texture_path
 
-        if texture_path and os.path.exists(texture_path):
+        if texture_path.exists():
             texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
             texture.location = (-300, 150)
 
-            texture.image = bpy.data.images.load(filepath=texture_path, check_existing=True)
+            texture.image = bpy.data.images.load(filepath=str(texture_path), check_existing=True)
             texture.image.colorspace_settings.name = 'sRGB'
 
             mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
@@ -164,7 +164,7 @@ def create_bone(filepath, rigid_obs, arm_ob, frame, parent_bone=None, bm=None, o
 def export_scene(context, output_path, report):
     is_binary = False
     is_compressed = False
-    with open(output_path, "wb") as x_stream:
+    with output_path.open("wb") as x_stream:
         if is_binary:
             print("NOT SUPPORTED")
         else:

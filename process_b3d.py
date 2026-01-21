@@ -34,7 +34,7 @@ class B3DParser:
 
     def parse(self, filepath):
         filesize = os.stat(filepath).st_size
-        self.fp = open(filepath,'rb')
+        self.fp = filepath.open("rb")
         stack = []
         while self.fp.tell() <= filesize-8:
 

@@ -25,7 +25,7 @@ def test_encoding(filepath):
     UTF_8_BOM = b'\xef\xbb\xbf'
     UTF_16_BE_BOM = b'\xfe\xff'
     UTF_16_LE_BOM = b'\xff\xfe'
-    data = open(filepath, 'rb')
+    data = filepath.open("rb")
     file_size = os.path.getsize(filepath)
     BOM = data.read(3)
     encoding = None
@@ -85,7 +85,7 @@ class TextAsset:
         self._elements = []
         self._index = 0
         if not isinstance(file, TextIOWrapper):
-            with open(file, "r", encoding=test_encoding(file)) as file:
+            with file.open("r", encoding=test_encoding(file)) as file:
                 self.__init_from_textio(file.read())
 
         else:
@@ -419,23 +419,29 @@ def parse_x_a_txt(text):
         "file_type": FileType.text.value,
         "compressed": CompressionType.uncompressed.value,
         "float_size": FloatType._32.value,
-        "templates": [],
-        "anim_ticks_per_second": None,
-        "frames": [],
-        "meshes": [],
-        "animation_set": []
+        "materials": [],
+        "frames": []
     }
     
     while tokens.left() != 0:
-        idx = 0
         next_token = tokens.next()
         if next_token == "xof":
             x_dict["xof_header"] = next_token
             while len(x_dict["xof_header"]) < 16 and tokens.left() > 0:
                 next_token = tokens.next()
                 x_dict["xof_header"] = "%s %s" % (x_dict["xof_header"], next_token)
+            
+            tokens.next()
+            tokens.next()
+            tokens.next()
+            tokens.next()
+            tokens.next()
+            tokens.next()
+            tokens.next()
+            tokens.next()
+            tokens.next()
 
-        elif next_token == "template":
+        elif next_token == "Material":
             template_dict = {
                 "name": "",
                 "guid": "",
@@ -474,57 +480,8 @@ def parse_x_a_txt(text):
 
             x_dict["templates"].append(template_dict)
 
-        elif next_token == "AnimTicksPerSecond":
-            tokens.next()
-            x_dict["anim_ticks_per_second"] = int(tokens.next())
-
         elif next_token == "Frame":
             parse_frame(tokens, x_dict["frames"])
-
-        elif next_token == "Mesh":
-            parse_mesh(tokens, x_dict["meshes"])
-
-        elif next_token == "AnimationSet":
-            anim_dict = {"name": None, "frame_data": []}
-            next_token = tokens.next()
-            if next_token != "{":
-                anim_dict["name"] = next_token
-                next_token = tokens.next()
-
-            next_token = tokens.next()
-            while next_token != "}" and tokens.left() > 0:
-                if next_token == "Animation":
-                    frame_data_dict = {"frame_name": None, "key_type": 0, "keyframes": []}
-                    tokens.next()
-                    tokens.next()
-                    tokens.next()
-                    frame_data_dict["key_type"] = int(tokens.next())
-                    tokens.next()
-                    key_count = int(tokens.next())
-                    tokens.next()
-                    for key_idx in range(key_count):
-                        keyframe_dict = {"keyframe_index": 0, "transform": []}
-                        keyframe_dict["keyframe_index"] = int(tokens.next())
-                        tokens.next()
-                        keyframe_length = int(tokens.next())
-                        tokens.next()
-                        for keyframe_idx in range(keyframe_length):
-                            keyframe_dict["transform"].append(float(tokens.next()))
-                            tokens.next()
-                        tokens.next()
-                        tokens.next()
-
-                        frame_data_dict["keyframes"].append(keyframe_dict)
-
-                    tokens.next()
-                    tokens.next()
-                    frame_data_dict["frame_name"] = tokens.next()
-                    tokens.next()
-                    tokens.next()
-
-                    anim_dict["frame_data"].append(frame_data_dict)
-                next_token = tokens.next()
-            x_dict["animation_set"].append(anim_dict)
 
     return x_dict
 
@@ -646,7 +603,7 @@ def read_x(file_path):
     version = 0
     is_binary = False
     is_compressed = False
-    with open(file_path, "rb") as x_stream:
+    with file_path.open("rb") as x_stream:
         file_header = x_stream.read(16).decode('utf-8')
         if file_header == "xof 0302txt 0064":
             version = 0
@@ -668,14 +625,8 @@ def read_x(file_path):
     else:
         if version == 0:
             x_dict = parse_x_a_txt(file_path)
-            json_path = r"C:\Users\Steven\Desktop\test2.json"
-            with open(json_path, 'w', encoding ='utf8') as json_file:
-                json.dump(x_dict, json_file, ensure_ascii = True, indent=4)
         elif version == 1:
             x_dict = parse_x_b_txt(file_path)
-            json_path = r"C:\Users\Steven\Desktop\test2.json"
-            with open(json_path, 'w', encoding ='utf8') as json_file:
-                json.dump(x_dict, json_file, ensure_ascii = True, indent=4)
 
     return x_dict
 

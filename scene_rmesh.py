@@ -3,6 +3,7 @@ import os
 import bpy
 import bmesh
 
+from pathlib import Path
 from . import ObjectType
 from .process_b3d import B3DTree
 from .scene_x import import_scene as import_x
@@ -793,7 +794,7 @@ def import_scene(context, filepath, file_type, report):
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
                 bm = bmesh.new()
                 is_simple=True
-                import_x(context, model_path, report, bm, ob_data, is_simple)
+                import_x(context, Path(model_path), report, bm, ob_data, is_simple)
                 bm.to_mesh(ob_data)
                 bm.free()
 
@@ -814,7 +815,7 @@ def import_scene(context, filepath, file_type, report):
             
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
-                data = B3DTree().parse(model_path)
+                data = B3DTree().parse(Path(model_path))
                 for i, texture in enumerate(data['textures'] if 'textures' in data else []):
                     texture_name = os.path.basename(texture['name'])
                     for mat in data.materials:
