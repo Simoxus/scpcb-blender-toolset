@@ -52,3 +52,9 @@ def import_node_recursive(node, material_mapping, bm):
 
     for x in node.nodes:
         import_node_recursive(x, material_mapping, bm)
+
+def export_scene(context, filepath, report):
+    print()
+
+def import_scene(context, filepath, report):
+    print()

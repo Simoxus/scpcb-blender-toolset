@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "SCP UER Toolset",
+    "name": "SCP CB Toolset",
     "author": "General_101",
     "version": (1, 0, 0),
     "blender": (5, 0, 0),
     "location": "File > Import-Export",
-    "description": "Import-Export SCP UER RMESH files",
+    "description": "Import-Export SCP CB and UER game assets",
     "warning": "",
     "support": 'COMMUNITY',
     "category": "Import-Export"}
@@ -319,12 +319,120 @@ class ImportRMESH(Operator, ImportHelper):
             context.window_manager.fileselect_add(self)
             return {'RUNNING_MODAL'}
 
+class ExportX(Operator, ExportHelper):
+    """Write an X file"""
+    bl_idname = 'export_scene.ex'
+    bl_label = 'Export X'
+    filename_ext = '.x'
+
+    filter_glob: StringProperty(
+        default="*.rmesh",
+        options={'HIDDEN'},
+        )
+
+    def execute(self, context):
+        from . import scene_x
+
+        return scene_x.export_scene(context, self.filepath, self.report)
+
+class ImportX(Operator, ImportHelper):
+    """Import an X file"""
+    bl_idname = "import_scene.ix"
+    bl_label = "Import X"
+    filename_ext = '.x'
+
+    filter_glob: StringProperty(
+        default="*.x",
+        options={'HIDDEN'},
+        )
+
+    filepath: StringProperty(
+        subtype='FILE_PATH', 
+        options={'SKIP_SAVE'}
+        )
+
+    def execute(self, context):
+        from . import scene_x
+
+        return scene_x.import_scene(context, self.filepath, self.report)
+
+    if (4, 1, 0) <= bpy.app.version:
+        def invoke(self, context, event):
+            if self.filepath:
+                return self.execute(context)
+            context.window_manager.fileselect_add(self)
+            return {'RUNNING_MODAL'}
+
+class ExportB3D(Operator, ExportHelper):
+    """Write an B3D file"""
+    bl_idname = 'export_scene.eb3d'
+    bl_label = 'Export B3D'
+    filename_ext = '.b3d'
+
+    filter_glob: StringProperty(
+        default="*.b3d",
+        options={'HIDDEN'},
+        )
+
+    def execute(self, context):
+        from . import scene_b3d
+
+        return scene_b3d.export_scene(context, self.filepath, self.report)
+
+class ImportB3D(Operator, ImportHelper):
+    """Import a B3D file"""
+    bl_idname = "import_scene.ib3d"
+    bl_label = "Import B3D"
+    filename_ext = '.b3d'
+
+    filter_glob: StringProperty(
+        default="*.b3d",
+        options={'HIDDEN'},
+        )
+
+    filepath: StringProperty(
+        subtype='FILE_PATH', 
+        options={'SKIP_SAVE'}
+        )
+
+    def execute(self, context):
+        from . import scene_b3d
+
+        return scene_b3d.import_scene(context, self.filepath, self.report)
+
+    if (4, 1, 0) <= bpy.app.version:
+        def invoke(self, context, event):
+            if self.filepath:
+                return self.execute(context)
+            context.window_manager.fileselect_add(self)
+            return {'RUNNING_MODAL'}
+
 if (4, 1, 0) <= bpy.app.version:
     class ImportRMESH_FileHandler(FileHandler):
         bl_idname = "RMESH_FH_import"
         bl_label = "File handler for RMESH import"
-        bl_import_operator = "import_scene.rmesh"
+        bl_import_operator = "import_scene.ermesh"
         bl_file_extensions = ".rmesh"
+
+        @classmethod
+        def poll_drop(cls, context):
+            return (context.area and context.area.type == 'VIEW_3D')
+
+    class ImportX_FileHandler(FileHandler):
+        bl_idname = "X_FH_import"
+        bl_label = "File handler for X import"
+        bl_import_operator = "import_scene.ix"
+        bl_file_extensions = ".x"
+
+        @classmethod
+        def poll_drop(cls, context):
+            return (context.area and context.area.type == 'VIEW_3D')
+
+    class ImportB3D_FileHandler(FileHandler):
+        bl_idname = "B3D_FH_import"
+        bl_label = "File handler for B3D import"
+        bl_import_operator = "import_scene.ib3d"
+        bl_file_extensions = ".b3d"
 
         @classmethod
         def poll_drop(cls, context):
@@ -332,19 +440,29 @@ if (4, 1, 0) <= bpy.app.version:
 
 def menu_func_export(self, context):
     self.layout.operator(ExportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
+    self.layout.operator(ExportX.bl_idname, text='SCP X (.x)')
+    self.layout.operator(ExportX.bl_idname, text='SCP B3D (.b3d)')
 
 def menu_func_import(self, context):
     self.layout.operator(ImportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
+    self.layout.operator(ImportX.bl_idname, text='SCP X (.x)')
+    self.layout.operator(ImportX.bl_idname, text='SCP B3D (.b3d)')
 
 classesscp = [
     ImportRMESH,
     ExportRMESH,
+    ImportX,
+    ExportX,
+    ImportB3D,
+    ExportB3D,
     RMESHObjectPropertiesGroup,
     RMESH_ObjectProps
 ]
 
 if (4, 1, 0) <= bpy.app.version:
     classesscp.append(ImportRMESH_FileHandler)
+    classesscp.append(ImportX_FileHandler)
+    classesscp.append(ImportB3D_FileHandler)
 
 def register():
     bpy.utils.register_class(SCPCBAddonPrefs)

@@ -89,6 +89,7 @@ def read_rmesh(file_path, file_type):
         if file_type == ImportFileType.rmesh_auto:
             if rmesh_dict["rmesh_file_type"] == "RoomMesh":
                 raise ValueError('Auto is not supported for "RoomMesh" since it can either apply to SCP Containment Breach or Ultimate Reborn 1.5.6.')
+                #file_type = ImportFileType.rmesh
 
             elif rmesh_dict["rmesh_file_type"] == "RoomMesh.HasTriggerBox":
                 file_type = ImportFileType.rmesh_tb
@@ -458,3 +459,134 @@ def write_rmesh(rmesh_dict, output_path, file_type):
 
         if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_tb:
             write_string(rmesh_stream, "EOF")
+
+if True:
+    if True:
+        input_path = r"C:\Program Files (x86)\Steam\steamapps\common\SCP - Containment Breach\GFX\map\room205_opt.rmesh"
+        json_path = r"C:\Users\Steven\Desktop\room205_opt.json"
+
+        file_type, rmesh_dict = read_rmesh(input_path, ImportFileType.rmesh)
+        with open(json_path, 'w', encoding ='utf8') as json_file:
+            json.dump(rmesh_dict, json_file, ensure_ascii = True, indent=4)
+            
+    elif False:
+        json_path = r"C:\Users\Steven\Desktop\cont1_038.json"
+        output_path = r"C:\Users\Steven\Desktop\cont1_038.rmesh"
+
+        with open(json_path, 'r', encoding ='utf8') as json_file:
+            data = json.load(json_file)
+            write_rmesh(data, output_path)
+
+    elif False:
+        game_path = r"C:\Users\Steven\Downloads\SCP - Containment Breach v1.3.11"
+        for root, dirs, files in os.walk(game_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path.lower().endswith(".rmesh"):
+                    file_type, rmesh_dict = read_rmesh(file_path, ImportFileType.rmesh_auto)
+                    for entity in rmesh_dict["entities"]:
+                        if entity["entity_type"] == "spotlight":
+                            print(file_path)
+
+    elif False:
+        input_path = r"C:\Users\Steven\Downloads\SCP - Containment Breach v1.3.11\GFX\map\173.rmesh"
+        output_path = r"C:\Users\Steven\Desktop\173.rmesh"
+
+        file_type, rmesh_dict = read_rmesh(input_path, ImportFileType.rmesh_auto)
+        write_rmesh(rmesh_dict, output_path, ExportFileType.rmesh)
+
+    elif False:
+        import math
+
+        # ------------------------
+        # Minimal 3D vector class
+        # ------------------------
+        class Vec3:
+            def __init__(self, x,y,z):
+                self.x=float(x)
+                self.y=float(y)
+                self.z=float(z)
+            def __add__(self, other):
+                return Vec3(self.x+other.x,self.y+other.y,self.z+other.z)
+            def __iadd__(self, other):
+                self.x+=other.x; self.y+=other.y; self.z+=other.z
+                return self
+            def __sub__(self, other):
+                return Vec3(self.x-other.x,self.y-other.y,self.z-other.z)
+            def cross(self, other):
+                return Vec3(
+                    self.y*other.z - self.z*other.y,
+                    self.z*other.x - self.x*other.z,
+                    self.x*other.y - self.y*other.x
+                )
+            def length_squared(self):
+                return self.x**2 + self.y**2 + self.z**2
+            def normalize(self):
+                l = math.sqrt(self.length_squared())
+                if l==0: return Vec3(0,0,1)
+                self.x/=l; self.y/=l; self.z/=l
+                return self
+            def __neg__(self):
+                return Vec3(-self.x,-self.y,-self.z)
+            def __repr__(self):
+                return f"({self.x:.3f}, {self.y:.3f}, {self.z:.3f})"
+            def dot(self, other):
+                return self.x*other.x + self.y*other.y + self.z*other.z
+
+        # Media3D-style vertex normal generator
+        def generate_media3d_vertex_normals(vertices, triangles, fix_winding=True):
+            """
+            vertices  : list of dicts with 'position': (x,y,z)
+            triangles : list of dicts with 'a','b','c' indices into vertices
+            fix_winding : bool, optionally flips normals outward
+            returns   : list[Vec3] per vertex normal
+            """
+            normals = [None]*len(vertices)  # store normal per vertex
+
+            # Optional: compute mesh center for outward check
+            if fix_winding:
+                center = Vec3(0,0,0)
+                for v in vertices:
+                    pos = v["position"]
+                    center += Vec3(*pos)
+                center = Vec3(center.x/len(vertices),
+                            center.y/len(vertices),
+                            center.z/len(vertices))
+
+            # Assign face normals directly to triangle vertices
+            for tri in triangles:
+                i0,i1,i2 = tri["a"], tri["b"], tri["c"]
+                v0 = Vec3(*vertices[i0]["position"])
+                v1 = Vec3(*vertices[i1]["position"])
+                v2 = Vec3(*vertices[i2]["position"])
+
+                # Compute face normal
+                n = (v1 - v0).cross(v2 - v0)
+                if n.length_squared()==0:
+                    n = Vec3(0,0,1)
+                else:
+                    n = n.normalize()
+
+                # Optional: fix outward direction
+                if fix_winding and n.dot(v0 - center) < 0:
+                    n = -n
+
+                # Assign to vertices of this triangle
+                normals[i0] = n
+                normals[i1] = n
+                normals[i2] = n
+
+            # Safety: normalize all normals
+            for i,n in enumerate(normals):
+                if n is None or n.length_squared()==0:
+                    normals[i] = Vec3(0,0,1)
+                else:
+                    normals[i] = n.normalize()
+
+            return normals
+        input_path = r"C:\Users\Steven\Desktop\test.rmesh"
+        rmesh_dict = read_rmesh(input_path)
+        for mesh in rmesh_dict["meshes"]:
+            normals = generate_media3d_vertex_normals(mesh["vertices"], mesh["triangles"], fix_winding=False)
+        for normal in normals:
+            print(normal)

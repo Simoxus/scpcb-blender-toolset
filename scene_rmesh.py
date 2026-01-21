@@ -2,14 +2,14 @@ import re
 import os
 import bpy
 import bmesh
-import colorsys
 
 from . import ObjectType
-from .bve import direct_x
 from .process_b3d import B3DTree
+from .scene_x import import_scene as import_x
 from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 from mathutils import Matrix, Vector, Quaternion
+from .common_functions import RandomColorGenerator
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 
@@ -22,54 +22,6 @@ def is_string_empty(string):
         is_empty = True
 
     return is_empty
-
-def lim32(n):
-    """Simulate a 32 bit unsigned interger overflow"""
-    return n & 0xFFFFFFFF
-
-# Ported from https://github.com/preshing/RandomSequence
-class PreshingSequenceGenerator32:
-    """Peusdo-random sequence generator that repeats every 2**32 elements"""
-    @staticmethod
-    def __permuteQPR(x):
-        prime = 4294967291
-        if x >= prime: # The 5 integers out of range are mapped to themselves.
-            return x
-
-        residue = lim32(x**2 % prime)
-        if x <= (prime // 2):
-            return residue
-
-        else:
-            return lim32(prime - residue)
-
-    def __init__(self, seed_base = None, seed_offset = None):
-        import time
-        if seed_base == None:
-            seed_base = lim32(int(time.time() * 100000000)) ^ 0xac1fd838
-
-        if seed_offset == None:
-            seed_offset = lim32(int(time.time() * 100000000)) ^ 0x0b8dedd3
-
-        self.__index = PreshingSequenceGenerator32.__permuteQPR(lim32(PreshingSequenceGenerator32.__permuteQPR(seed_base) + 0x682f0161))
-        self.__intermediate_offset = PreshingSequenceGenerator32.__permuteQPR(lim32(PreshingSequenceGenerator32.__permuteQPR(seed_offset) + 0x46790905))
-
-    def next(self):
-        self.__index = lim32(self.__index + 1)
-        index_permut = PreshingSequenceGenerator32.__permuteQPR(self.__index)
-        return PreshingSequenceGenerator32.__permuteQPR(lim32(index_permut + self.__intermediate_offset) ^ 0x5bf03635)
-
-class RandomColorGenerator(PreshingSequenceGenerator32):
-    def next(self):
-        rng = super().next()
-        h = (rng >> 16) / 0xFFF # [0, 1]
-        saturation_raw = (rng & 0xFF) / 0xFF
-        brightness_raw = (rng >> 8 & 0xFF) / 0xFF
-        v = brightness_raw * 0.3 + 0.5 # [0.5, 0.8]
-        s = saturation_raw * 0.4 + 0.6 # [0.3, 1]
-        rgb = colorsys.hsv_to_rgb(h, s, v)
-        colors = (rgb[0], rgb[1] , rgb[2], 1)
-        return colors
 
 def natural_key(s):
     return [int(t) if t.isdigit() else t.lower()
@@ -198,69 +150,6 @@ def get_blitz_rot(rot):
 
     return (pitch * RTOD, yaw * RTOD, roll * RTOD)
 
-def create_obj_from_node(bm, ob_data, random_color_gen, node, filepath):
-    node_mesh = node.mesh
-
-    first_obj = None
-    for child in node.children:
-        child = create_obj_from_node(bm, ob_data, random_color_gen, child, filepath)
-        if first_obj is None and child is not None:
-            first_obj = child
-
-    if len(node_mesh.vertices) > 0 and len(node_mesh.faces) > 0:
-        mesh = bpy.data.meshes.new("temp_mesh")
-
-        vertices = [Vector(vertex) for vertex in node_mesh.vertices]
-        triangles = [triangle[::-1] for triangle in node_mesh.faces]
-        mesh.from_pydata(vertices, [], triangles)
-        mesh.transform(node.transform_matrix)
-        mesh.transform(Matrix.Scale(-0.00625, 4))
-
-        for material_node in node_mesh.materials:
-            mat = bpy.data.materials.new(name=material_node.name)
-            mesh.materials.append(mat)
-            ob_data.materials.append(mat)
-
-            mat.blend_method = 'CLIP'
-
-            mat.use_nodes = True
-            nodes = mat.node_tree.nodes
-            principled = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
-
-            color = (1.0, 1.0, 1.0)
-            mat.specular_intensity = 0.0
-            color = material_node.face_color
-            mat.specular_intensity = material_node.power
-            mat.specular_color = material_node.specular_color
-            principled.inputs['Base Color'].default_value = color
-            mat.diffuse_color = random_color_gen.next()
-            if material_node.texture_path and material_node.texture_path != "":
-                path = "/".join(bpy.path.abspath(filepath).split(os.path.sep)[0:-1])
-                path = path + "/" + material_node.texture_path
-                if os.path.exists(path):
-                    material_node.texture_path = path
-
-            if material_node.texture_path and os.path.exists(material_node.texture_path):
-                texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                texture.location = (-300, 150)
-
-                texture.image = bpy.data.images.load(filepath=material_node.texture_path)
-                texture.image.colorspace_settings.name = 'sRGB'
-
-                mat.node_tree.links.new(principled.inputs['Base Color'], texture.outputs['Color'])
-
-        uv_render = mesh.uv_layers.new(name="UVMap_Render")
-        for poly_idx, poly in enumerate(mesh.polygons):
-            poly.use_smooth = True
-            poly.material_index = node_mesh.material_face_indexes[poly_idx]
-            for loop_index in poly.loop_indices:
-                vert_index = mesh.loops[loop_index].vertex_index
-                u, v = node_mesh.tex_coords[vert_index]
-                uv_render.data[loop_index].uv = (u, 1 - v)
-
-        bm.from_mesh(mesh)
-        bpy.data.meshes.remove(mesh)
-
 def collect_objects():
     mesh_list = []
     collision_list = []
@@ -315,6 +204,9 @@ def is_string_empty(string):
     return is_empty
 
 def export_scene(context, filepath, file_type, report):
+    if context.view_layer.objects.active is not None:
+        bpy.ops.object.mode_set(mode='OBJECT')
+
     file_type = ExportFileType(int(file_type))
     if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_uer:
         rmesh_file_type = "RoomMesh"
@@ -895,13 +787,13 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.matrix_world =  global_transform
 
         elif entity_dict["entity_type"] == "model":
-            importer = direct_x.ImportDirectXXFile()
             model_path = get_file(entity_dict["model_name"], False)
             ob_data = entity_meshes.get(model_path)
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
                 bm = bmesh.new()
-                create_obj_from_node(bm, ob_data, random_color_gen, importer.execute(str(model_path)), model_path)
+                is_simple=True
+                import_x(context, model_path, report, bm, ob_data, is_simple)
                 bm.to_mesh(ob_data)
                 bm.free()
 
