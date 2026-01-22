@@ -1,3 +1,5 @@
+import os
+import bpy
 import colorsys
 
 def lim32(n):
@@ -47,3 +49,52 @@ class RandomColorGenerator(PreshingSequenceGenerator32):
         rgb = colorsys.hsv_to_rgb(h, s, v)
         colors = (rgb[0], rgb[1] , rgb[2], 1)
         return colors
+    
+def is_string_empty(string):
+    is_empty = False
+    if not string == None and (len(string) == 0 or string.isspace()):
+        is_empty = True
+
+    return is_empty
+
+def get_file(file_name, use_image_set=True, generate_image_node=True, directory_path=""):
+    extension_set = ("bmp", "jpg", "jpeg", "png")
+    if not use_image_set:
+        extension_set = ("b3d", "x")
+
+    file_asset = None
+    file_path = None
+    game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
+    asset_directory = os.path.join(game_path, directory_path)
+    if not is_string_empty(asset_directory) and file_name is not None:
+        if not is_string_empty(directory_path):
+            for file in os.listdir(asset_directory):
+                absolute_file_path = os.path.join(asset_directory, file)
+                if os.path.isfile(absolute_file_path):
+                    for extension in extension_set:
+                        file_name_w_ext = os.path.basename(file_name).lower()
+                        file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
+                        if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
+                            file_path = os.path.join(asset_directory, file)
+                            break
+
+        if file_path is None:
+            for root, dirs, files in os.walk(game_path):
+                for file in files:
+                    for extension in extension_set:
+                        file_name_w_ext = os.path.basename(file_name).lower()
+                        file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
+                        if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
+                            file_path = os.path.join(root, file)
+                            break
+
+        if file_path is None:
+            file_path = ""
+
+    if use_image_set and generate_image_node:
+        if file_path is not None and os.path.isfile(file_path):
+            file_asset = bpy.data.images.load(file_path, check_existing=True)
+    else:
+        file_asset = file_path
+        
+    return file_asset

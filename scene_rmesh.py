@@ -10,7 +10,7 @@ from .scene_x import import_scene as import_x
 from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 from mathutils import Matrix, Vector, Quaternion
-from .common_functions import RandomColorGenerator
+from .common_functions import RandomColorGenerator, get_file
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 
@@ -67,48 +67,6 @@ def get_output_material_node(mat):
         output_material_node = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
 
     return output_material_node
-
-def get_file(filepath, file_name, use_image_set=True, generate_image_node=True, directory_path=""):
-    extension_set = ("bmp", "jpg", "jpeg", "png")
-    if not use_image_set:
-        extension_set = ("b3d", "x")
-
-    file_asset = None
-    file_path = None
-    game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
-    asset_directory = os.path.join(game_path, directory_path)
-    if not is_string_empty(asset_directory):
-        if not is_string_empty(directory_path):
-            for file in os.listdir(asset_directory):
-                absolute_file_path = os.path.join(asset_directory, file)
-                if os.path.isfile(absolute_file_path):
-                    for extension in extension_set:
-                        file_name_w_ext = os.path.basename(file_name).lower()
-                        file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
-                        if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
-                            file_path = os.path.join(asset_directory, file)
-                            break
-
-        if file_path is None:
-            for root, dirs, files in os.walk(game_path):
-                for file in files:
-                    for extension in extension_set:
-                        file_name_w_ext = os.path.basename(file_name).lower()
-                        file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
-                        if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
-                            file_path = os.path.join(root, file)
-                            break
-
-        if file_path is None:
-            file_path = ""
-
-    if use_image_set and generate_image_node:
-        if os.path.isfile(file_path):
-            file_asset = bpy.data.images.load(file_path, check_existing=True)
-    else:
-        file_asset = file_path
-        
-    return file_asset
 
 def get_material_name(ob, tri):
     mat_name = "UNASSIGNED"
@@ -211,13 +169,6 @@ def collect_objects():
     entity_list.sort(key=lambda obj: natural_key(obj.name)) # Doing this cause no idea if the game cares about order for entities. Probably not but better be safe. - Gen
 
     return mesh_list, collision_list, trigger_box_list, entity_list
-
-def is_string_empty(string):
-    is_empty = False
-    if not string == None and (len(string) == 0 or string.isspace()):
-        is_empty = True
-
-    return is_empty
 
 def export_scene(context, filepath, file_type, report):
     if context.view_layer.objects.active is not None:
@@ -595,7 +546,7 @@ def import_scene(context, filepath, file_type, report):
         for texture_idx, texture_dict in enumerate(mesh_dict["textures"]):
             if texture_idx == 0:
                 lightmap_type = TextureType(texture_dict["texture_type"])
-                texture_lightmap_data = get_file(filepath, texture_dict["texture_name"], directory_path=local_asset_path)
+                texture_lightmap_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
                 if texture_lightmap_data:
                     texture_lightmap = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture_lightmap.image = texture_lightmap_data
@@ -606,7 +557,7 @@ def import_scene(context, filepath, file_type, report):
 
             elif texture_idx == 1:
                 diffuse_type = TextureType(texture_dict["texture_type"])
-                texture_diffuse_data = get_file(filepath, texture_dict["texture_name"], directory_path=local_asset_path)
+                texture_diffuse_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
                 if texture_diffuse_data:
                     texture_diffuse = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture_diffuse.image = texture_diffuse_data
@@ -683,7 +634,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.rmesh.object_type = str(ObjectType.entity_screen.value)
             object_mesh.empty_display_type = 'IMAGE'
 
-            file_path = get_file(filepath, entity_dict["texture_name"], True, False, local_screen_path)
+            file_path = get_file(entity_dict["texture_name"], True, False, local_screen_path)
             object_mesh.rmesh.texture_path = file_path
             if os.path.isfile(file_path):
                 file_asset = bpy.data.images.load(file_path, check_existing=True)
@@ -702,8 +653,8 @@ def import_scene(context, filepath, file_type, report):
             
             object_mesh.matrix_world =  global_transform
 
-            model_path = get_file(filepath, entity_dict["model_name"], False)
-            texture_path = get_file(filepath, entity_dict["texture_name"], True, False)
+            model_path = get_file(entity_dict["model_name"], False)
+            texture_path = get_file(entity_dict["texture_name"], True, False)
             object_mesh.rmesh.model_path = model_path
             object_mesh.rmesh.texture_path = texture_path
 
@@ -807,7 +758,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.matrix_world =  global_transform
 
         elif entity_dict["entity_type"] == "model":
-            model_path = get_file(filepath, entity_dict["model_name"], False, directory_path=local_prop_path)
+            model_path = get_file(entity_dict["model_name"], False, directory_path=local_prop_path)
             ob_data = entity_meshes.get(model_path)
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
@@ -828,8 +779,8 @@ def import_scene(context, filepath, file_type, report):
                 object_mesh.matrix_world =  global_transform
                 
         elif entity_dict["entity_type"] == "mesh":
-            model_path = get_file(filepath, entity_dict["model_name"], False)
-            texture_path = get_file(filepath, entity_dict["texture_name"], True, False)
+            model_path = get_file(entity_dict["model_name"], False)
+            texture_path = get_file(entity_dict["texture_name"], True, False)
             ob_data = entity_meshes.get(model_path)
             
             if ob_data is None and model_path:

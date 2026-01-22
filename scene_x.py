@@ -1,11 +1,13 @@
 import os
 import bpy
 
+from math import sqrt, radians
+from pathlib import Path
 from mathutils import Matrix, Vector
 from .process_x import write_x, read_x
-from math import sqrt
+from .common_functions import RandomColorGenerator, get_file, is_string_empty
 
-def create_object(arm_ob, parent_bone, x_dict, mesh_dict, filepath, bm=None, ob_data=None, is_simple=False, world_transform=None, material_list=[]):
+def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set()):
     mesh_name = mesh_dict["name"]
     if mesh_name == None:
         if parent_bone is not None:
@@ -18,6 +20,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, filepath, bm=None, ob_
     vertices = [Vector(vertex) for vertex in mesh_dict["vertices"]]
     triangles = [triangle for triangle in mesh_dict["faces"]]
     mesh.from_pydata(vertices, [], triangles)
+
+    pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
     if not is_simple:
         object_mesh = bpy.data.objects.new(mesh_name, mesh)
@@ -61,21 +65,15 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, filepath, bm=None, ob_
             er, eg, eb = material_dict["emissive"]
             bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0)
             
-            texture_path = None
-            if material_dict["texture"] and material_dict["texture"] != "":
-                parent_dir = filepath.parent
-                texture_path = parent_dir / material_dict["texture"]
-                if texture_path.exists():
-                    texture_path = texture_path
-
-            if texture_path.exists():
+            texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
+            if texture_node:
                 texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
                 texture.location = (-300, 150)
-
-                texture.image = bpy.data.images.load(filepath=str(texture_path), check_existing=True)
-                texture.image.colorspace_settings.name = 'sRGB'
-
+                texture.image = texture_node
                 mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+            else:
+                    error_log.add('Failed to retrive "%s"' % material_dict["texture"])
+
     else:
         for mat in material_list:
             mesh.materials.append(mat)
@@ -83,8 +81,20 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, filepath, bm=None, ob_
                 ob_data.materials.append(mat)
 
     loop_normals = [Vector((0.0, 0.0, 1.0))] * len(mesh.loops)
+    if x_dict["xof_header"] == "xof 0302txt 0064":
+        for mat_data_idx, material_face in enumerate(mesh_dict["material_indices"]):
+            material_index = 0
+            material_data = mesh_dict["materials"][mat_data_idx]
+            for mat_idx, material in enumerate(material_list):
+                if material.name == material_data["name"]:
+                    material_index = mat_idx
+
+            mesh.polygons[material_face].material_index = material_index
+
     for poly_idx, poly in enumerate(mesh.polygons):
-        poly.material_index = mesh_dict["material_indices"][poly_idx]
+        if not x_dict["xof_header"] == "xof 0302txt 0064":
+            poly.material_index = mesh_dict["material_indices"][poly_idx]
+
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
             if not x_dict["xof_header"] == "xof 0302txt 0064":
@@ -139,7 +149,7 @@ def x_matrix_to_blender(mat):
 
     return Matrix(matrix)
 
-def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm=None, ob_data=None, is_simple=False, material_list=[]):
+def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm=None, ob_data=None, is_simple=False, material_list=[], local_asset_path="", error_log=set()):
     name = frame["name"]
     world_transform = x_matrix_to_blender(frame["transform"])
 
@@ -160,7 +170,7 @@ def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm
         bone.matrix = world_transform
 
     for mesh_dict in frame["meshes"]:
-        object_mesh = create_object(arm_ob, bone, x_dict, mesh_dict, filepath, bm, ob_data, is_simple, world_transform, material_list)
+        object_mesh = create_object(arm_ob, bone, x_dict, mesh_dict, ob_data, is_simple, world_transform, material_list, local_asset_path, error_log)
         if is_simple:
             bm.from_mesh(object_mesh)
             bpy.data.meshes.remove(object_mesh)
@@ -168,7 +178,7 @@ def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm
         rigid_obs.append([object_mesh, bone_name, world_transform])
 
     for child in frame.get("children", []):
-        create_bone(filepath, rigid_obs, arm_ob, x_dict, child, bone, bm, ob_data, is_simple, material_list)
+        create_bone(filepath, rigid_obs, arm_ob, x_dict, child, bone, bm, ob_data, is_simple, material_list, local_asset_path, error_log)
 
 def export_scene(context, output_path, report):
     is_binary = False
@@ -186,6 +196,14 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
     material_list = []
     x_dict = read_x(filepath)
     if x_dict:
+        error_log = set()
+
+        game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)
+
+        local_asset_path = ""
+        if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
+            local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
+
         arm_ob = None
         if not is_simple:
             arm_data = bpy.data.armatures.new("Armature")
@@ -222,27 +240,22 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
                 er, eg, eb = material_dict["emissive"]
                 bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0)
                 
-                texture_path = None
-                if material_dict["texture"] and material_dict["texture"] != "":
-                    parent_dir = filepath.parent
-                    texture_path = parent_dir / material_dict["texture"]
-                    if texture_path.exists():
-                        texture_path = texture_path
-
-                if texture_path.exists():
+                texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
+                if texture_node:
                     texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture.location = (-300, 150)
-
-                    texture.image = bpy.data.images.load(filepath=str(texture_path), check_existing=True)
-                    texture.image.colorspace_settings.name = 'sRGB'
-
+                    texture.image = texture_node
                     mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+
+                else:
+                    error_log.add('Failed to retrive "%s"' % material_dict["texture"])
+
 
                 material_list.append(mat)
 
         rigid_obs = []
         for bone in x_dict["frames"]:
-            create_bone(filepath, rigid_obs, arm_ob, x_dict, bone, None, bm, ob_data, is_simple, material_list)
+            create_bone(filepath, rigid_obs, arm_ob, x_dict, bone, None, bm, ob_data, is_simple, material_list, local_asset_path, error_log)
 
         if not is_simple:
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -255,10 +268,13 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
 
         if not x_dict["xof_header"] == "xof 0302txt 0064":
             for mesh_dict in x_dict["meshes"]:
-                object_mesh = create_object(arm_ob, None, x_dict, mesh_dict, filepath, bm, ob_data, is_simple, material_list=material_list)
+                object_mesh = create_object(arm_ob, None, x_dict, mesh_dict, ob_data, is_simple, None, material_list, local_asset_path, error_log)
                 if is_simple:
                     bm.from_mesh(object_mesh)
                     bpy.data.meshes.remove(object_mesh)
+
+        for error in error_log:
+            report({'WARNING'}, error)
 
     report({'INFO'}, "Import completed successfully")
     return {'FINISHED'}
