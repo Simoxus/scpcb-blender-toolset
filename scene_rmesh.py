@@ -78,19 +78,19 @@ def get_file(filepath, file_name, use_image_set=True, generate_image_node=True, 
     game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
     asset_directory = os.path.join(game_path, directory_path)
     if not is_string_empty(asset_directory):
-        file_directory = os.path.dirname(filepath)
-        for file in os.listdir(file_directory):
-            absolute_file_path = os.path.join(file_directory, file)
-            if os.path.isfile(absolute_file_path):
-                for extension in extension_set:
-                    file_name_w_ext = os.path.basename(file_name).lower()
-                    file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
-                    if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
-                        file_path = os.path.join(file_directory, file)
-                        break
+        if not is_string_empty(directory_path):
+            for file in os.listdir(asset_directory):
+                absolute_file_path = os.path.join(asset_directory, file)
+                if os.path.isfile(absolute_file_path):
+                    for extension in extension_set:
+                        file_name_w_ext = os.path.basename(file_name).lower()
+                        file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
+                        if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
+                            file_path = os.path.join(asset_directory, file)
+                            break
 
         if file_path is None:
-            for root, dirs, files in os.walk(asset_directory):
+            for root, dirs, files in os.walk(game_path):
                 for file in files:
                     for extension in extension_set:
                         file_name_w_ext = os.path.basename(file_name).lower()
@@ -540,7 +540,7 @@ def import_scene(context, filepath, file_type, report):
 
     game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)
 
-    pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
+    pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
     mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
     collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
@@ -554,6 +554,12 @@ def import_scene(context, filepath, file_type, report):
     mesh_collection.objects.link(object_mesh)
 
     error_log = set()
+
+    local_asset_path = ""
+    local_prop_path = r"GFX\map\Props"
+    local_screen_path = r"GFX\screens"
+    if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
+        local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
 
     bm = bmesh.new()
     for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
@@ -589,7 +595,7 @@ def import_scene(context, filepath, file_type, report):
         for texture_idx, texture_dict in enumerate(mesh_dict["textures"]):
             if texture_idx == 0:
                 lightmap_type = TextureType(texture_dict["texture_type"])
-                texture_lightmap_data = get_file(filepath, texture_dict["texture_name"])
+                texture_lightmap_data = get_file(filepath, texture_dict["texture_name"], directory_path=local_asset_path)
                 if texture_lightmap_data:
                     texture_lightmap = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture_lightmap.image = texture_lightmap_data
@@ -600,7 +606,7 @@ def import_scene(context, filepath, file_type, report):
 
             elif texture_idx == 1:
                 diffuse_type = TextureType(texture_dict["texture_type"])
-                texture_diffuse_data = get_file(filepath, texture_dict["texture_name"])
+                texture_diffuse_data = get_file(filepath, texture_dict["texture_name"], directory_path=local_asset_path)
                 if texture_diffuse_data:
                     texture_diffuse = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture_diffuse.image = texture_diffuse_data
@@ -677,7 +683,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.rmesh.object_type = str(ObjectType.entity_screen.value)
             object_mesh.empty_display_type = 'IMAGE'
 
-            file_path = get_file(filepath, entity_dict["texture_name"], True, False, r"GFX\screens")
+            file_path = get_file(filepath, entity_dict["texture_name"], True, False, local_screen_path)
             object_mesh.rmesh.texture_path = file_path
             if os.path.isfile(file_path):
                 file_asset = bpy.data.images.load(file_path, check_existing=True)
@@ -801,7 +807,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.matrix_world =  global_transform
 
         elif entity_dict["entity_type"] == "model":
-            model_path = get_file(filepath, entity_dict["model_name"], False)
+            model_path = get_file(filepath, entity_dict["model_name"], False, directory_path=local_prop_path)
             ob_data = entity_meshes.get(model_path)
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)

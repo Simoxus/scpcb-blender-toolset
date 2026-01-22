@@ -151,7 +151,7 @@ class TextAsset:
         except:
             raise ParseError()
 
-def parse_mesh(tokens, frame_meshes):
+def parse_mesh(x_dict, tokens, frame_meshes):
     mesh_dict = {
         "name": None,
         "vertices": [],
@@ -269,66 +269,76 @@ def parse_mesh(tokens, frame_meshes):
                 mesh_dict["material_indices"].append(int(tokens.next()))
                 tokens.next()
 
-    
-            for mat_idx in range(material_count):
-                material_dict = {"name": None, 
-                                "diffuse": (0.0, 0.0, 0.0, 0.0), 
-                                "power": 0.0, 
-                                "specular": (0.0, 0.0, 0.0), 
-                                "emissive": (0.0, 0.0, 0.0), 
-                                "texture": None
-                                }
-                
-                next_token = tokens.next()
-                if next_token == "Material":
+            if x_dict["xof_header"] == "xof 0302txt 0064":
+                tokens.next()
+                for mat_idx in range(material_count):
+                   material_dict = {"name": None}
+                   tokens.next()
+                   material_dict["name"] = tokens.next()
+                   tokens.next()
+
+                   mesh_dict["materials"].append(material_dict)
+
+            else:
+                for mat_idx in range(material_count):
+                    material_dict = {"name": None, 
+                                    "diffuse": (0.0, 0.0, 0.0, 0.0), 
+                                    "power": 0.0, 
+                                    "specular": (0.0, 0.0, 0.0), 
+                                    "emissive": (0.0, 0.0, 0.0), 
+                                    "texture": None
+                                    }
+                    
                     next_token = tokens.next()
-                    if next_token != "{":
-                        material_dict["name"] = next_token
+                    if next_token == "Material":
+                        next_token = tokens.next()
+                        if next_token != "{":
+                            material_dict["name"] = next_token
+                            tokens.next()
+
+                        dr = float(tokens.next())
                         tokens.next()
-
-                    dr = float(tokens.next())
-                    tokens.next()
-                    dg = float(tokens.next())
-                    tokens.next()
-                    db = float(tokens.next())
-                    tokens.next()
-                    da = float(tokens.next())
-                    tokens.next()
-                    tokens.next()
-
-                    material_dict["diffuse"] = (dr, dg, db, da)
-
-                    material_dict["power"] = float(tokens.next())
-                    tokens.next()
-
-                    sr = float(tokens.next())
-                    tokens.next()
-                    sg = float(tokens.next())
-                    tokens.next()
-                    sb = float(tokens.next())
-                    tokens.next()
-                    tokens.next()
-
-                    material_dict["specular"] = (sr, sg, sb)
-
-                    er = float(tokens.next())
-                    tokens.next()
-                    eg = float(tokens.next())
-                    tokens.next()
-                    eb = float(tokens.next())
-                    tokens.next()
-                    tokens.next()
-
-                    material_dict["emissive"] = (er, eg, eb)
-
-                    next_token = tokens.next()
-                    if next_token == "TextureFilename":
+                        dg = float(tokens.next())
                         tokens.next()
-                        material_dict["texture"] = tokens.next().strip('"')
+                        db = float(tokens.next())
+                        tokens.next()
+                        da = float(tokens.next())
                         tokens.next()
                         tokens.next()
 
-                    tokens.next()
+                        material_dict["diffuse"] = (dr, dg, db, da)
+
+                        material_dict["power"] = float(tokens.next())
+                        tokens.next()
+
+                        sr = float(tokens.next())
+                        tokens.next()
+                        sg = float(tokens.next())
+                        tokens.next()
+                        sb = float(tokens.next())
+                        tokens.next()
+                        tokens.next()
+
+                        material_dict["specular"] = (sr, sg, sb)
+
+                        er = float(tokens.next())
+                        tokens.next()
+                        eg = float(tokens.next())
+                        tokens.next()
+                        eb = float(tokens.next())
+                        tokens.next()
+                        tokens.next()
+
+                        material_dict["emissive"] = (er, eg, eb)
+
+                        next_token = tokens.next()
+                        if next_token == "TextureFilename":
+                            tokens.next()
+                            material_dict["texture"] = tokens.next().strip('"')
+                            tokens.next()
+                            tokens.next()
+
+                        tokens.next()
 
                     mesh_dict["materials"].append(material_dict)
 
@@ -376,7 +386,7 @@ def parse_mesh(tokens, frame_meshes):
 
     frame_meshes.append(mesh_dict)
 
-def parse_frame(tokens, children_dict):
+def parse_frame(x_dict, tokens, children_dict):
     frame_dict = {
         "name": "",
         "transform": [],
@@ -401,10 +411,10 @@ def parse_frame(tokens, children_dict):
             tokens.next()
             
         elif next_token == "Mesh":
-            parse_mesh(tokens, frame_dict["meshes"])
+            parse_mesh(x_dict, tokens, frame_dict["meshes"])
 
         elif next_token == "Frame":
-            parse_frame(tokens, frame_dict["children"])
+            parse_frame(x_dict, tokens, frame_dict["children"])
 
         if tokens.left() != 0:
             next_token = tokens.next()
@@ -441,7 +451,6 @@ def parse_x_a_txt(text):
             h = tokens.next()
             i = tokens.next()
 
-
         elif next_token == "Material":
             material_dict = {"name": None, 
                             "diffuse": (0.0, 0.0, 0.0, 0.0), 
@@ -452,14 +461,11 @@ def parse_x_a_txt(text):
                             }
             
             next_token = tokens.next()
-            print(next_token)
             if next_token != "{":
                 material_dict["name"] = next_token
-                a = tokens.next()
-                print(a)
+                tokens.next()
 
             dr = float(tokens.next())
-            print(dr)
             tokens.next()
             dg = float(tokens.next())
             tokens.next()
@@ -506,7 +512,7 @@ def parse_x_a_txt(text):
             x_dict["materials"].append(material_dict)
 
         elif next_token == "Frame":
-            parse_frame(tokens, x_dict["frames"])
+            parse_frame(x_dict, tokens, x_dict["frames"])
 
     return x_dict
 
@@ -574,10 +580,10 @@ def parse_x_b_txt(text):
             x_dict["anim_ticks_per_second"] = int(tokens.next())
 
         elif next_token == "Frame":
-            parse_frame(tokens, x_dict["frames"])
+            parse_frame(x_dict, tokens, x_dict["frames"])
 
         elif next_token == "Mesh":
-            parse_mesh(tokens, x_dict["meshes"])
+            parse_mesh(x_dict, tokens, x_dict["meshes"])
 
         elif next_token == "AnimationSet":
             anim_dict = {"name": None, "frame_data": []}

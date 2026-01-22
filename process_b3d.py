@@ -215,19 +215,12 @@ class B3DTree(B3DList):
 
 def dump(node, level=0):
     for node in node.nodes:
-        print(node.name)
         dump(node, level+1)
 
 if __name__ == '__main__':
     import sys
     if len(sys.argv)<2:
-        print('Usage: B3DParser.py [filename.b3d]')
         sys.exit(0)
     filepath = sys.argv[1]
-    #B3DDebugParser().parse(filepath) # text dump
-    #data = B3DList().parse(filepath) # json list
     data = B3DTree().parse(filepath) # json tree
-    import json
-    print(json.dumps(data, indent=1))
-    #dump(data)
 
