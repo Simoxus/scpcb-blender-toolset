@@ -9,7 +9,7 @@ from .process_b3d import B3DTree
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
-from mathutils import Matrix, Vector, Quaternion
+from mathutils import Matrix, Vector, Quaternion, Euler
 from .common_functions import RandomColorGenerator, get_file
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
@@ -350,9 +350,8 @@ def export_scene(context, filepath, file_type, report):
 
     for ob in entity_list:
         object_type = ObjectType(int(ob.rmesh.object_type))
-        loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
-        inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
         if object_type == ObjectType.entity_screen:
+            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
             entity_dict = {}
 
             entity_dict["entity_type"] = "screen"
@@ -361,6 +360,9 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_save_screen:
+            loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
+            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
+
             entity_dict = {}
 
             entity_dict["entity_type"] = "save_screen"
@@ -372,6 +374,7 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_waypoint:
+            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
             entity_dict = {}
 
             entity_dict["entity_type"] = "waypoint"
@@ -379,6 +382,7 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_light:
+            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
             r, g, b = ob.data.color
             entity_dict = {}
 
@@ -399,6 +403,7 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_light_fix:
+            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
             r, g, b = ob.data.color
             entity_dict = {}
 
@@ -419,6 +424,7 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_spotlight:
+            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
             r, g, b = ob.data.color
             entity_dict = {}
 
@@ -449,6 +455,7 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_sound_emitter:
+            loc, rot, scale = (pivot_matrix @ ob.matrix_world).decompose()
             entity_dict = {}
 
             entity_dict["entity_type"] = "soundemitter"
@@ -458,6 +465,8 @@ def export_scene(context, filepath, file_type, report):
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_model:
+            loc, rot, inverted_scale = (pivot_matrix @ (ob.matrix_world @ Matrix.Rotation(radians(-90), 4, 'X'))).decompose()
+            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
             entity_dict = {}
 
             entity_dict["entity_type"] = "model"
@@ -469,6 +478,9 @@ def export_scene(context, filepath, file_type, report):
                 entity_dict["scale"] = scale
 
         elif object_type == ObjectType.entity_mesh:
+            loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
+            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
+
             entity_dict = {}
 
             entity_dict["entity_type"] = "mesh"
@@ -642,6 +654,7 @@ def import_scene(context, filepath, file_type, report):
 
             entity_collection.objects.link(object_mesh)
             object_mesh.location = pivot_matrix @ Vector(entity_dict["position"])
+            object_mesh.rotation_euler = Euler((radians(90), 0, radians(90)))
 
         elif entity_dict["entity_type"] == "save_screen":
             object_mesh = bpy.data.objects.new("%s save_screen" % entity_idx, None)
@@ -764,7 +777,7 @@ def import_scene(context, filepath, file_type, report):
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
                 bm = bmesh.new()
                 is_simple=True
-                import_x(context, Path(model_path), report, bm, ob_data, is_simple)
+                import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
                 bm.to_mesh(ob_data)
                 bm.free()
 
@@ -774,7 +787,7 @@ def import_scene(context, filepath, file_type, report):
             entity_collection.objects.link(object_mesh)
             if not file_type == ImportFileType.rmesh_uer:
                 loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
-                global_transform = Matrix.LocRotScale(loc, rot, Vector(entity_dict["scale"]))
+                global_transform = Matrix.LocRotScale(loc, rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion(), Vector(entity_dict["scale"]))
                 
                 object_mesh.matrix_world =  global_transform
                 

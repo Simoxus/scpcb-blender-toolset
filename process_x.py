@@ -77,10 +77,6 @@ class ParseError(Exception):
     pass
 
 class TextAsset:
-    """Helper class for reading in JMS/JMA/ASS files"""
-
-    __comment_regex = re.compile("[^\"]*?;(?!.*\")")
-
     def __init__(self, file):
         self._elements = []
         self._index = 0
@@ -627,6 +623,7 @@ def read_x(file_path):
     else:
         if version == 0:
             x_dict = parse_x_a_txt(file_path)
+
         elif version == 1:
             x_dict = parse_x_b_txt(file_path)
 
