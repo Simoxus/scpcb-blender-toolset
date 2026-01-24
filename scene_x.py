@@ -27,7 +27,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         bpy.context.collection.objects.link(object_mesh)
         object_mesh.parent = arm_ob
     else:
-        mesh.transform(world_transform)
+        if world_transform is not None:
+            mesh.transform(world_transform)
 
     uv_render = mesh.uv_layers.new(name="UVMap_Render")
     for poly_idx, poly in enumerate(mesh.polygons):

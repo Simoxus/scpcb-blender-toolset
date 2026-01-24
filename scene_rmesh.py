@@ -578,6 +578,21 @@ def import_scene(context, filepath, file_type, report):
                     connect_inputs(mat.node_tree, texture_diffuse, "Color", bdsf_principled, "Base Color")
                     if diffuse_type == TextureType.transparent:
                         connect_inputs(mat.node_tree, texture_diffuse, "Alpha", bdsf_principled, "Alpha")
+
+                    texture_name = os.path.basename(texture_dict["texture_name"]).rsplit(".", 1)[0]
+                    texture_bump_data = get_file("%sbump" % texture_name, directory_path=local_asset_path)
+                    if texture_bump_data:
+                        normal_map = mat.node_tree.nodes.new("ShaderNodeNormalMap")
+                        texture_bump = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                        texture_bump.image = texture_bump_data
+                        texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
+                        texture_bump.interpolation = 'Cubic'
+                        texture_bump.image.colorspace_settings.name = 'Non-Color'
+                        normal_map.location = (-720.0, -640.0)
+                        texture_bump.location = (-720.0, -640.0)
+                        connect_inputs(mat.node_tree, texture_bump, "Color", normal_map, "Color")
+                        connect_inputs(mat.node_tree, normal_map, "Normal", bdsf_principled, "Normal")
+
                 elif len(texture_dict["texture_name"]) > 0:
                     error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
                     report({'WARNING'}, 'Failed to retrive "%s"' % texture_dict["texture_name"])

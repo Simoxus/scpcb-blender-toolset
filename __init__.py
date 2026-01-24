@@ -443,12 +443,12 @@ if (4, 1, 0) <= bpy.app.version:
 def menu_func_export(self, context):
     self.layout.operator(ExportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
     self.layout.operator(ExportX.bl_idname, text='SCP X (.x)')
-    self.layout.operator(ExportX.bl_idname, text='SCP B3D (.b3d)')
+    self.layout.operator(ExportB3D.bl_idname, text='SCP B3D (.b3d)')
 
 def menu_func_import(self, context):
     self.layout.operator(ImportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
     self.layout.operator(ImportX.bl_idname, text='SCP X (.x)')
-    self.layout.operator(ImportX.bl_idname, text='SCP B3D (.b3d)')
+    self.layout.operator(ImportB3D.bl_idname, text='SCP B3D (.b3d)')
 
 classesscp = [
     ImportRMESH,
