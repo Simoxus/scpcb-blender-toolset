@@ -87,8 +87,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         for mat_data_idx, material_face in enumerate(mesh_dict["material_indices"]):
             material_index = 0
             material_data = mesh_dict["materials"][mat_data_idx]
-            for mat_idx, material in enumerate(material_list):
-                if material.name == material_data["name"]:
+            for mat_idx, material in enumerate(x_dict["materials"]):
+                if material["name"] == material_data["name"]:
                     material_index = mat_idx
 
             mesh.polygons[material_face].material_index = material_index
