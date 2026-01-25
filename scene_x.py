@@ -21,7 +21,6 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
     vertices = [Vector(vertex) for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh.from_pydata(vertices, [], triangles)
-    mesh.transform(pivot_matrix)
     if not is_simple:
         object_mesh = bpy.data.objects.new(mesh_name, mesh)
         bpy.context.collection.objects.link(object_mesh)
@@ -29,6 +28,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
     else:
         if world_transform is not None:
             mesh.transform(world_transform)
+
+    mesh.transform(pivot_matrix)
 
     uv_render = mesh.uv_layers.new(name="UVMap_Render")
     for poly_idx, poly in enumerate(mesh.polygons):
