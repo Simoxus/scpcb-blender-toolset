@@ -103,23 +103,28 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
     elif button_type == ButtonType.scanner:
         ButtonPath = Path(os.path.join(game_path, r"GFX\map\ButtonScanner.x"))
 
+    x = 0
+    if not door_state == DoorState.closed:
+        x = 1.125
+
     if door_type == DoorType.big:
-        ob = CreateObject(BigDoorLeftPath, "BigLeftDoor")
         x = 0
         if not door_state == DoorState.closed:
-            x = 1.273
-        ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((0, 0, -0.03263)), Vector((55, 55, 55)) * RoomScale)
+            x = 1.1525
+
+        ob = CreateObject(BigDoorLeftPath, "BigLeftDoor")
+        ob_matrix = Matrix.LocRotScale(Vector((-x, 0, -0.03263)), Euler((0, 0, 0)), Vector((55, 55, 55)) * RoomScale)
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(BigDoorRightPath, "BigRightDoor")
-        ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, -0.03263)), Vector((55, 55, 55)) * RoomScale)
+        ob_matrix = Matrix.LocRotScale(Vector((x, 0, -0.03263)), Euler((0, 0, 0)), Vector((55, 55, 55)) * RoomScale)
         ob.matrix_world = pivot_matrix @ ob_matrix
     
     elif door_type == DoorType.heavy:
         ob = CreateObject(HeavyDoorLeftPath, "HeavyLeftDoor")
-        ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
+        ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(HeavyDoorRightPath, "HeavyRightDoor")
-        ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, radians(180))), Vector((1, 1, 1)))
+        ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, radians(180))), Vector((1, 1, 1)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(DoorFramePath, "DoorFrame")
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
@@ -127,10 +132,10 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
 
     elif door_type == DoorType.elevator:
         ob = CreateObject(ElevatorDoorsPath, "ElevatorLeftDoor")
-        ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((radians(-90), 0, 0)), Vector((1, 1, 1)))
+        ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((radians(-90), 0, 0)), Vector((1, 1, 1)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(ElevatorDoorsPath, "ElevatorRightDoor")
-        ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((radians(-90), 0, radians(180))), Vector((1, 1, 1)))
+        ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((radians(-90), 0, radians(180))), Vector((1, 1, 1)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(DoorFramePath, "DoorFrame")
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
@@ -139,12 +144,12 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
     else:
         ob = CreateObject(DoorPath, "DoorLeftDoor")
         sx = (204.0 * 0.00625) * RoomScale / ob.dimensions.x
-        sy = (312.0 * 0.00625) * RoomScale / ob.dimensions.y
-        sz = (16.0 * 0.00625) * RoomScale / ob.dimensions.z
-        ob_matrix = Matrix.LocRotScale(Vector((0, -0.0375, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
+        sy = (16.0 * 0.00625) * RoomScale / ob.dimensions.y
+        sz = (312.0 * 0.00625) * RoomScale / ob.dimensions.z
+        ob_matrix = Matrix.LocRotScale(Vector((-x, -0.05, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(DoorPath, "DoorRightDoor")
-        ob_matrix = Matrix.LocRotScale(Vector((0, 0.0375, 0)), Euler((0, 0, radians(180))), Vector((sx, sy, sz)))
+        ob_matrix = Matrix.LocRotScale(Vector((x, 0.05, 0)), Euler((0, 0, radians(180))), Vector((sx, sy, sz)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(DoorFramePath, "DoorFrame")
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
@@ -163,7 +168,7 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
         ob_matrix = Matrix.LocRotScale(Vector((-0.959999, 0.16, 1.12)), Euler((0, 0, 0)), Vector((7.7, 7.7, 7.7)))
         ob.matrix_world = pivot_matrix @ ob_matrix
         ob = CreateObject(ButtonPath, "Button")
-        ob_matrix = Matrix.LocRotScale( Vector((0.959999, -0.16, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
+        ob_matrix = Matrix.LocRotScale(Vector((0.959999, -0.16, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
         ob.matrix_world = pivot_matrix @ ob_matrix
 
 CreateDoor(bpy.context.scene.cursor.location, 0, DoorType.normal, ButtonType.normal, DoorState.closed)
