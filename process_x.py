@@ -590,44 +590,44 @@ def write_mesh(mesh_dict, x_stream, indent_level=0, final_mesh=False):
 
     x_stream.write("%s}\n" % get_indentation(indent_level + 2))
     x_stream.write("%s}\n" % get_indentation(indent_level + 1))
-    x_stream.write("\n")
+    if mesh_dict["bone_count"] > 0:
+        x_stream.write("\n")
+        x_stream.write("%sXSkinMeshHeader {\n" % get_indentation(indent_level + 1))
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_vertex"]))
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_face"]))
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["bone_count"]))
+        x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+        x_stream.write("\n")
 
-    x_stream.write("%sXSkinMeshHeader {\n" % get_indentation(indent_level + 1))
-    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_vertex"]))
-    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_face"]))
-    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["bone_count"]))
-    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
-    x_stream.write("\n")
+        x_stream.write("%sSkinWeights {\n" % get_indentation(indent_level + 1))
+        for skin_weight in mesh_dict["skin_weights"]:
+            x_stream.write('%s"%s";\n' % (get_indentation(indent_level + 2), skin_weight["bone"]))
+            point_count = len(skin_weight["indices"])
+            x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), point_count))
+            for point_idx, point_element in enumerate(skin_weight["indices"]):
+                final_seperator = ","
+                if point_idx == point_count - 1:
+                    final_seperator = ";"
 
-    x_stream.write("%sSkinWeights {\n" % get_indentation(indent_level + 1))
-    for skin_weight in mesh_dict["skin_weights"]:
-        x_stream.write('%s"%s";\n' % (get_indentation(indent_level + 2), skin_weight["bone"]))
-        point_count = len(skin_weight["indices"])
-        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), point_count))
-        for point_idx, point_element in enumerate(skin_weight["indices"]):
-            final_seperator = ","
-            if point_idx == point_count - 1:
-                final_seperator = ";"
+                x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), point_element, final_seperator))
+            for weight_idx, weight_element in enumerate(skin_weight["weights"]):
+                final_seperator = ","
+                if weight_idx == point_count - 1:
+                    final_seperator = ";"
 
-            x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), point_element, final_seperator))
-        for weight_idx, weight_element in enumerate(skin_weight["weights"]):
-            final_seperator = ","
-            if weight_idx == point_count - 1:
-                final_seperator = ";"
+                x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), format_float(weight_element, 6), final_seperator))
 
-            x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), format_float(weight_element, 6), final_seperator))
+            transform_count = len(skin_weight["transform"])
+            skin_transform_string = ""
+            for skin_transform_idx, skin_transform in enumerate(skin_weight["transform"]):
+                final_seperator = ","
+                if skin_transform_idx == transform_count - 1:
+                    final_seperator = ";"
 
-        transform_count = len(skin_weight["transform"])
-        skin_transform_string = ""
-        for skin_transform_idx, skin_transform in enumerate(skin_weight["transform"]):
-            final_seperator = ","
-            if skin_transform_idx == transform_count - 1:
-                final_seperator = ";"
+                skin_transform_string += "%s%s" % (format_float(skin_transform, 6), final_seperator)
 
-            skin_transform_string += "%s%s" % (format_float(skin_transform, 6), final_seperator)
-
-        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), skin_transform_string))
-        x_stream.write("%s}\n" % (get_indentation(indent_level + 1)))
+            x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), skin_transform_string))
+            x_stream.write("%s}\n" % (get_indentation(indent_level + 1)))
 
     x_stream.write("%s}" % (get_indentation(indent_level + 0)))
     if not final_mesh:

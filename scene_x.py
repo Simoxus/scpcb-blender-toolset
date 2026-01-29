@@ -185,6 +185,17 @@ def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm
     for child in frame.get("children", []):
         create_bone(filepath, rigid_obs, arm_ob, x_dict, child, bone, bm, ob_data, is_simple, material_list, local_asset_path, error_log, random_color_gen)
 
+def get_linked_node(node, input_name, search_type):
+    linked_node = None
+    node_input = node.inputs[input_name]
+    if node_input.is_linked:
+        for node_link in node_input.links:
+            if node_link.from_node.type == search_type:
+                linked_node = node_link.from_node
+                break
+
+    return linked_node
+
 def export_scene(context, output_path, file_version, report):
     BLENDER_TO_DX = Matrix((
         ( 1,  0,  0,  0),
@@ -300,20 +311,21 @@ def export_scene(context, output_path, file_version, report):
                     nodes = mat.node_tree.nodes
                     bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
 
-                    dr, dg, db, da = bsdf.inputs["Base Color"].default_value 
-                    da = bsdf.inputs["Alpha"].default_value
-                    sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
-                    er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
+                    if bsdf:
+                        dr, dg, db, da = bsdf.inputs["Base Color"].default_value 
+                        da = bsdf.inputs["Alpha"].default_value
+                        sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
+                        er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
+                        image_node = get_linked_node(bsdf, "Base Color", "TEX_IMAGE")
 
-                    material_dict["name"] = mat.name
-                    material_dict["diffuse"] = (dr, dg, db, da)
-                    material_dict["power"] = 1.0
-                    material_dict["specular"] = (sr, sg, sb)
-                    material_dict["emissive"] = (er, eg, eb)
-                    material_dict["texture"] = None
-
-                    #bsdf.inputs["Roughness"].default_value = roughness # This doesn't look like what I see ingame - Gen
-
+                        material_dict["name"] = mat.name
+                        material_dict["diffuse"] = (dr, dg, db, da)
+                        material_dict["power"] = (2 / (bsdf.inputs["Roughness"].default_value * bsdf.inputs["Roughness"].default_value)) - 2
+                        material_dict["specular"] = (sr, sg, sb)
+                        material_dict["emissive"] = (er, eg, eb)
+                        if image_node and image_node.image:
+                            material_dict["texture"] = os.path.basename(bpy.path.abspath(image_node.image.filepath))
+ 
                 mesh_dict["materials"].append(material_dict)
 
             x_dict["meshes"].append(mesh_dict)
