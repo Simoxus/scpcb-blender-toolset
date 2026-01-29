@@ -197,16 +197,6 @@ def get_linked_node(node, input_name, search_type):
     return linked_node
 
 def export_scene(context, output_path, file_version, report):
-    BLENDER_TO_DX = Matrix((
-        ( 1,  0,  0,  0),
-        ( 0,  0,  1,  0),
-        ( 0,  1,  0,  0),
-        ( 0,  0,  0,  1),
-    ))
-
-    HAND_FLIP = Matrix.Scale(-1.0, 4, (0, 0, 1))
-    DX_MATRIX = HAND_FLIP @ BLENDER_TO_DX
-
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -241,13 +231,20 @@ def export_scene(context, output_path, file_version, report):
             ob_eval = skinned_ob.evaluated_get(depsgraph)
             mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
             mesh.calc_loop_triangles()
+            mesh.transform(skinned_ob.matrix_world)
+
+            dx_matrix = Matrix((
+                (-1, 0, 0, 0),
+                ( 0, 0, 1, 0),
+                ( 0,-1, 0, 0),
+                ( 0, 0, 0, 1),
+            ))
+
+            mesh.transform(dx_matrix)
 
             uv_layer = None
             if mesh.uv_layers.active:
                 uv_layer = mesh.uv_layers.active
-
-            world_dx = DX_MATRIX @ ob_eval.matrix_world
-            normal_dx = world_dx.to_3x3().inverted().transposed()
 
             mesh_dict = {
                 "name": skinned_ob.name,
@@ -274,10 +271,10 @@ def export_scene(context, output_path, file_version, report):
                 for loop_index in tri.loops:
                     loop = mesh.loops[loop_index]
                     v = mesh.vertices[loop.vertex_index]
-                    i, j, k  = (normal_dx @ loop.normal).normalized()
+                    i, j, k  = dx_matrix.to_3x3() @ loop.normal
                     loop_normal = (i, j, k)
 
-                    pos = world_dx @ v.co
+                    pos = v.co
 
                     uv = (0.0, 0.0)
                     if uv_layer:
@@ -293,8 +290,8 @@ def export_scene(context, output_path, file_version, report):
 
                     tri_indices.append(vertex_map[key])
 
-                mesh_dict["faces"].append(tri_indices)
-                mesh_dict["normal_indices"].append(tri_indices)
+                mesh_dict["faces"].append(tri_indices[::-1])
+                mesh_dict["normal_indices"].append(tri_indices[::-1])
 
             for slot in skinned_ob.material_slots:
                 material_dict = {"name": None, 
