@@ -171,4 +171,4 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
         ob_matrix = Matrix.LocRotScale(Vector((0.959999, -0.16, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
         ob.matrix_world = pivot_matrix @ ob_matrix
 
-CreateDoor(bpy.context.scene.cursor.location, 0, DoorType.normal, ButtonType.normal, DoorState.closed)
+CreateDoor(bpy.context.scene.cursor.location, 90, DoorType.normal, ButtonType.normal, DoorState.open)

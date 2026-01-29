@@ -1,7 +1,10 @@
 import os
 import re
+import zlib
 import json
+import struct
 
+from pathlib import Path
 from enum import Enum, auto
 from io import TextIOWrapper
 
@@ -156,6 +159,16 @@ class TextAsset:
         except:
             raise ParseError()
 
+def get_indentation(level):
+    result = ""
+    for idx in range(level):
+        result += " "
+
+    return result
+
+def format_float(value, decimals):
+    return f"{value:.{decimals}f}"
+
 def parse_mesh(x_dict, tokens, frame_meshes):
     mesh_dict = {
         "name": None,
@@ -232,7 +245,7 @@ def parse_mesh(x_dict, tokens, frame_meshes):
 
                 tokens.next()
 
-                mesh_dict["normal_indices"].append(face_indicies)
+                mesh_dict["normal_indices"].append(normal_indicies)
 
             tokens.next()
 
@@ -383,7 +396,6 @@ def parse_material(x_dict, mesh_dict, next_token, tokens):
         next_token = tokens.next()
         if next_token != "{":
             material_dict["name"] = next_token
-            print(material_dict["name"])
             tokens.next()
 
         dr = float(tokens.next())
@@ -440,6 +452,217 @@ def parse_material(x_dict, mesh_dict, next_token, tokens):
             if material_dict["name"] == material_name:
                 mesh_dict["materials"].append(material_dict)
                 break
+
+def write_mesh(mesh_dict, x_stream, indent_level=0, final_mesh=False):
+    mesh_name = mesh_dict["name"]
+    if mesh_name is None:
+        mesh_name = ""
+
+    x_stream.write("%sMesh %s {\n" % (get_indentation(indent_level + 0), mesh_name))
+    vertex_count = len(mesh_dict["vertices"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 1), vertex_count))
+    for vertex_idx, vertex_list in enumerate(mesh_dict["vertices"]):
+        final_seperator = ","
+        if vertex_idx == vertex_count - 1:
+            final_seperator = ";"
+
+        x, y, z = vertex_list
+        x_stream.write("%s%s;%s;%s;%s\n" % (get_indentation(indent_level + 1), format_float(x, 6), format_float(y, 6), format_float(z, 6), final_seperator))
+
+    face_count = len(mesh_dict["faces"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 1), face_count))
+    for face_idx, face_list in enumerate(mesh_dict["faces"]):
+        face_final_seperator = ","
+        if face_idx == face_count - 1:
+            face_final_seperator = ";"
+
+        face_indicies_length = len(face_list)
+        face_string = "%s;" % face_indicies_length
+        for face_point_idx, face_index in enumerate(face_list):
+            point_final_seperator = ","
+            if face_point_idx == face_indicies_length - 1:
+                point_final_seperator = ";"
+
+            face_string += "%s%s" % (face_index, point_final_seperator)
+
+        face_string += "%s\n" % face_final_seperator
+
+        x_stream.write("%s%s" % (get_indentation(indent_level + 1), face_string))
+    x_stream.write("\n")
+    
+    x_stream.write("%sMeshNormals {\n" % get_indentation(indent_level + 1))
+    normal_count = len(mesh_dict["normals"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), normal_count))
+    for normal_idx, normal_list in enumerate(mesh_dict["normals"]):
+        final_seperator = ","
+        if normal_idx == normal_count - 1:
+            final_seperator = ";"
+
+        i, j, k = normal_list
+        x_stream.write("%s%s;%s;%s;%s\n" % (get_indentation(indent_level + 2), format_float(i, 6), format_float(j, 6), format_float(k, 6), final_seperator))
+
+    normal_indices_count = len(mesh_dict["normal_indices"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), normal_indices_count))
+    for normals_idx, normal_indices_list in enumerate(mesh_dict["normal_indices"]):
+        normal_final_seperator = ","
+        if normals_idx == normal_indices_count - 1:
+            normal_final_seperator = ";"
+
+        normal_indicies_length = len(normal_indices_list)
+        normal_indicies_string = "%s;" % normal_indicies_length
+        for normal_point_idx, normal_index in enumerate(normal_indices_list):
+            point_final_seperator = ","
+            if normal_point_idx == normal_indicies_length - 1:
+                point_final_seperator = ";"
+
+            normal_indicies_string += "%s%s" % (normal_index, point_final_seperator)
+
+        normal_indicies_string += "%s\n" % normal_final_seperator
+
+        x_stream.write("%s%s" % (get_indentation(indent_level + 2), normal_indicies_string))
+
+    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+    x_stream.write("\n")
+
+    x_stream.write("%sMeshTextureCoords {\n" % get_indentation(indent_level + 1))
+    texcoords_count = len(mesh_dict["texcoords"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), texcoords_count))
+    for texcoord_idx, texcoord_list in enumerate(mesh_dict["texcoords"]):
+        final_seperator = ","
+        if texcoord_idx == texcoords_count - 1:
+            final_seperator = ";"
+
+        u, v = texcoord_list
+        x_stream.write("%s%s;%s;%s\n" % (get_indentation(indent_level + 2), format_float(u, 6), format_float(v, 6), final_seperator))
+    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+    x_stream.write("\n")
+
+    x_stream.write("%sVertexDuplicationIndices {\n" % get_indentation(indent_level + 1))
+    dup_indices_count = len(mesh_dict["dup_indices"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), dup_indices_count))
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["dup_preexport_count"]))
+    for dup_idx, dup_index in enumerate(mesh_dict["dup_indices"]):
+        final_seperator = ","
+        if dup_idx == dup_indices_count - 1:
+            final_seperator = ";"
+
+        x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), dup_index, final_seperator))
+    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+    x_stream.write("\n")
+
+    x_stream.write("%sMeshMaterialList {\n" % get_indentation(indent_level + 1))
+    material_count = len(mesh_dict["materials"])
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), material_count))
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), face_count))
+    for material_face_idx, material_index in enumerate(mesh_dict["material_indices"]):
+        final_seperator = ","
+        if material_face_idx == face_count - 1:
+            final_seperator = ";"
+
+        x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), material_index, final_seperator))
+
+    x_stream.write("\n")
+    for material_idx, material_dict in enumerate(mesh_dict["materials"]):
+        final_seperator = ","
+        if material_idx == face_count - 1:
+            final_seperator = ";"
+
+        material_name = material_dict["name"]
+        if material_name is None:
+            material_name = ""
+
+        texture_name = material_dict["texture"]
+
+        dr, dg, db, da = material_dict["diffuse"]
+        sr, sg, sb = material_dict["specular"]
+        er, eg, eb = material_dict["emissive"]
+
+        x_stream.write("%sMaterial %s {\n" % (get_indentation(indent_level + 2), material_name))
+        x_stream.write("%s%s;%s;%s;%s;;\n" % (get_indentation(indent_level + 3), format_float(dr, 6), format_float(dg, 6), format_float(db, 6), format_float(da, 6)))
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 3), format_float(material_dict["power"], 6)))
+        x_stream.write("%s%s;%s;%s;;\n" % (get_indentation(indent_level + 3), format_float(sr, 6), format_float(sg, 6), format_float(sb, 6)))
+        x_stream.write("%s%s;%s;%s;;\n" % (get_indentation(indent_level + 3), format_float(er, 6), format_float(eg, 6), format_float(eb, 6)))
+        x_stream.write("\n")
+        if texture_name is not None:
+            x_stream.write("%sTextureFilename {\n" % get_indentation(indent_level + 3))
+            x_stream.write('%s"%s";\n' % (get_indentation(indent_level + 4), texture_name))
+            x_stream.write("%s}\n" % get_indentation(indent_level + 3))
+
+    x_stream.write("%s}\n" % get_indentation(indent_level + 2))
+    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+    x_stream.write("\n")
+
+    x_stream.write("%sXSkinMeshHeader {\n" % get_indentation(indent_level + 1))
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_vertex"]))
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_face"]))
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["bone_count"]))
+    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+    x_stream.write("\n")
+
+    x_stream.write("%sSkinWeights {\n" % get_indentation(indent_level + 1))
+    for skin_weight in mesh_dict["skin_weights"]:
+        x_stream.write('%s"%s";\n' % (get_indentation(indent_level + 2), skin_weight["bone"]))
+        point_count = len(skin_weight["indices"])
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), point_count))
+        for point_idx, point_element in enumerate(skin_weight["indices"]):
+            final_seperator = ","
+            if point_idx == point_count - 1:
+                final_seperator = ";"
+
+            x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), point_element, final_seperator))
+        for weight_idx, weight_element in enumerate(skin_weight["weights"]):
+            final_seperator = ","
+            if weight_idx == point_count - 1:
+                final_seperator = ";"
+
+            x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), format_float(weight_element, 6), final_seperator))
+
+        transform_count = len(skin_weight["transform"])
+        skin_transform_string = ""
+        for skin_transform_idx, skin_transform in enumerate(skin_weight["transform"]):
+            final_seperator = ","
+            if skin_transform_idx == transform_count - 1:
+                final_seperator = ";"
+
+            skin_transform_string += "%s%s" % (format_float(skin_transform, 6), final_seperator)
+
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), skin_transform_string))
+        x_stream.write("%s}\n" % (get_indentation(indent_level + 1)))
+
+    x_stream.write("%s}" % (get_indentation(indent_level + 0)))
+    if not final_mesh:
+        x_stream.write("\n")
+
+def write_frame(frame_dict, x_stream, indent_level=0):
+    frame_name = frame_dict["name"]
+    if frame_name is None:
+        frame_name = ""
+
+    x_stream.write("%sFrame %s {\n" % (get_indentation(indent_level + 0), frame_name))
+    x_stream.write("%s\n" % get_indentation(indent_level + 1))
+    x_stream.write("\n")
+    x_stream.write("%sFrameTransformMatrix {\n" % get_indentation(indent_level + 1))
+    transform_count = len(frame_dict["transform"])
+    transform_string = ""
+    for frame_transform_idx, frame_transform in enumerate(frame_dict["transform"]):
+        final_seperator = ","
+        if frame_transform_idx == transform_count - 1:
+            final_seperator = ";"
+
+        transform_string += "%s%s" % (format_float(frame_transform, 6), final_seperator)
+
+    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), transform_string))
+
+    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+    if len(frame_dict["children"]) > 0: 
+        x_stream.write("%s\n" % get_indentation(indent_level))
+    for mesh_dict in frame_dict["meshes"]:
+        write_mesh(mesh_dict, x_stream, indent_level)
+
+    for child_dict in frame_dict["children"]:
+        write_frame(child_dict, x_stream, indent_level + 1)
+
+    x_stream.write("%s}\n" % get_indentation(indent_level + 0))
 
 def parse_x_a_txt(text):
     tokens = TextAsset(text)
@@ -617,17 +840,100 @@ def read_x(file_path):
 
     if is_binary:
         if is_compressed:
-            print()
+            with file_path.open("rb") as x_stream:
+                file_header = x_stream.read(16).decode('utf-8')
+                data = x_stream.read()
+
+                MSZIP_BLOCK = 0x8000
+                MSZIP_MAGIC = b"CK"
+                offset = 0
+
+                unzipped_size, = struct.unpack_from("<I", data, offset)
+                offset += 4
+
+                output = bytearray()
+
+                while offset < len(data):
+                    # Read block header
+                    uncompressed_size, block_size = struct.unpack_from("<HH", data, offset)
+                    offset += 4
+
+                    magic = data[offset:offset + 2]
+                    offset += 2
+
+                    if block_size > MSZIP_BLOCK:
+                        raise ValueError("Unexpected compressed block size")
+
+                    if magic != MSZIP_MAGIC:
+                        raise ValueError("Unexpected compressed block magic")
+
+                    # block_size includes the 2-byte magic
+                    compressed_data = data[offset:offset + (block_size - 2)]
+                    offset += (block_size - 2)
+
+                    # Raw DEFLATE stream, 32k window
+                    decompressed = zlib.decompress(compressed_data,wbits=-zlib.MAX_WBITS,bufsize=MSZIP_BLOCK)
+
+                    output.extend(decompressed)
+
+                output_path = os.path.expanduser("~/Desktop/output.bin")
+                with open(output_path, "wb") as f:
+                    f.write(output)
         else:
             print()
     else:
         if version == 0:
             x_dict = parse_x_a_txt(file_path)
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            file_path = os.path.join(desktop_path, "data.json")
+
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(x_dict, f, indent=4)
 
         elif version == 1:
             x_dict = parse_x_b_txt(file_path)
 
     return x_dict
 
-def write_x(rmesh_dict, output_path, file_type):
-    print()
+def write_x(rmesh_dict, output_path):
+    with output_path.open("w") as x_stream:
+        xof_header = rmesh_dict["xof_header"]
+        x_stream.write("%s\n" % xof_header)
+        for template_dict in rmesh_dict["templates"]:
+            template_name = template_dict["name"]
+            if template_name is None:
+                template_name = ""
+
+            x_stream.write("template %s {\n" % template_name)
+            x_stream.write("%s%s\n" % (get_indentation(1), template_dict["guid"]))
+            for field_dict in template_dict["fields"]:
+                field_items = field_dict.values()
+                field_string = ""
+                field_count = len(field_items)
+                for field_idx, field_item in enumerate(field_items):
+                    final_seperator = " "
+                    if field_idx == field_count - 1:
+                        final_seperator = ";"
+
+                    field_string += "%s%s" % (field_item, final_seperator)
+                
+                x_stream.write("%s%s\n" % (get_indentation(1), field_string))
+                
+            x_stream.write("}\n")
+            x_stream.write("\n")
+
+        x_stream.write("\n")
+        anim_ticks = rmesh_dict["anim_ticks_per_second"]
+        if anim_ticks is not None:
+            x_stream.write("AnimTicksPerSecond {\n")
+            x_stream.write("%s%s;\n" % (get_indentation(1), anim_ticks))
+            x_stream.write("}\n")
+            x_stream.write("\n")
+
+        for frame_dict in rmesh_dict["frames"]:
+            write_frame(frame_dict, x_stream)
+
+        x_stream.write("\n")
+        mesh_count = len(rmesh_dict["meshes"])
+        for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
+            write_mesh(mesh_dict, x_stream, 0, (mesh_idx == mesh_count - 1))

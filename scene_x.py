@@ -185,14 +185,144 @@ def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm
     for child in frame.get("children", []):
         create_bone(filepath, rigid_obs, arm_ob, x_dict, child, bone, bm, ob_data, is_simple, material_list, local_asset_path, error_log, random_color_gen)
 
-def export_scene(context, output_path, report):
-    is_binary = False
-    is_compressed = False
-    with output_path.open("wb") as x_stream:
-        if is_binary:
-            print("NOT SUPPORTED")
-        else:
-            x_stream.write("xof 0303txt 0032\n")
+def export_scene(context, output_path, file_version, report):
+    BLENDER_TO_DX = Matrix((
+        ( 1,  0,  0,  0),
+        ( 0,  0,  1,  0),
+        ( 0,  1,  0,  0),
+        ( 0,  0,  0,  1),
+    ))
+
+    HAND_FLIP = Matrix.Scale(-1.0, 4, (0, 0, 1))
+    DX_MATRIX = HAND_FLIP @ BLENDER_TO_DX
+
+    if context.view_layer.objects.active is not None:
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    active_ob = context.object
+    if active_ob and active_ob.type == 'ARMATURE':
+        x_dict = {
+            "xof_header": None,
+            "templates": [],
+            "anim_ticks_per_second": None,
+            "materials": [],
+            "frames": [],
+            "meshes": [],
+            "animation_set": []
+        }
+
+        x_dict["xof_header"] = "xof 0303txt 0032"
+
+        skinned_ob_list = []
+        rigid_ob_dict = {}
+        for ob in bpy.data.objects:
+            if ob.type == "MESH":
+                if ob.parent_type == 'OBJECT' and ob.parent == active_ob:
+                    skinned_ob_list.append(ob)
+                elif ob.parent_type == 'BONE' and ob.parent == active_ob and len(ob.parent_bone) > 0:
+                    rigid_ob_list = rigid_ob_dict.get(ob.parent_bone) 
+                    if rigid_ob_list is None:
+                        rigid_ob_list = rigid_ob_dict[ob.parent_bone] = []
+                    rigid_ob_list.append(ob)
+
+        depsgraph = context.evaluated_depsgraph_get()
+        for skinned_ob in skinned_ob_list:
+            ob_eval = skinned_ob.evaluated_get(depsgraph)
+            mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+            mesh.calc_loop_triangles()
+
+            uv_layer = None
+            if mesh.uv_layers.active:
+                uv_layer = mesh.uv_layers.active
+
+            world_dx = DX_MATRIX @ ob_eval.matrix_world
+            normal_dx = world_dx.to_3x3().inverted().transposed()
+
+            mesh_dict = {
+                "name": skinned_ob.name,
+                "vertices": [],
+                "faces": [],
+                "normals": [],
+                "normal_indices": [],
+                "texcoords": [],
+                "dup_preexport_count": 0, 
+                "dup_indices": [],
+                "material_indices": [], 
+                "materials": [],
+                "max_weights_per_vertex": 1.0,
+                "max_weights_per_face": 1.0,
+                "bone_count": 0,
+                "skin_weights": []
+            }
+
+            vertex_map = {}
+            for tri in mesh.loop_triangles:
+                tri_indices = []
+                mat_idx = tri.material_index
+                mesh_dict["material_indices"].append(mat_idx)
+                for loop_index in tri.loops:
+                    loop = mesh.loops[loop_index]
+                    v = mesh.vertices[loop.vertex_index]
+                    i, j, k  = (normal_dx @ loop.normal).normalized()
+                    loop_normal = (i, j, k)
+
+                    pos = world_dx @ v.co
+
+                    uv = (0.0, 0.0)
+                    if uv_layer:
+                        u0, v0 = uv_layer.data[loop_index].uv
+                        uv = (u0, 1 - v0)
+
+                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv, loop_normal)
+                    if key not in vertex_map:
+                        vertex_map[key] = len(mesh_dict["vertices"])
+                        mesh_dict["vertices"].append(pos)
+                        mesh_dict["texcoords"].append(uv)
+                        mesh_dict["normals"].append(loop_normal)
+
+                    tri_indices.append(vertex_map[key])
+
+                mesh_dict["faces"].append(tri_indices)
+                mesh_dict["normal_indices"].append(tri_indices)
+
+            for slot in skinned_ob.material_slots:
+                material_dict = {"name": None, 
+                                "diffuse": (0.0, 0.0, 0.0, 0.0), 
+                                "power": 0.0, 
+                                "specular": (0.0, 0.0, 0.0), 
+                                "emissive": (0.0, 0.0, 0.0), 
+                                "texture": None
+                                }
+
+                mat = slot.material
+                if mat is not None:
+                    mat.use_nodes = True
+                    nodes = mat.node_tree.nodes
+                    bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+
+                    dr, dg, db, da = bsdf.inputs["Base Color"].default_value 
+                    da = bsdf.inputs["Alpha"].default_value
+                    sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
+                    er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
+
+                    material_dict["name"] = mat.name
+                    material_dict["diffuse"] = (dr, dg, db, da)
+                    material_dict["power"] = 1.0
+                    material_dict["specular"] = (sr, sg, sb)
+                    material_dict["emissive"] = (er, eg, eb)
+                    material_dict["texture"] = None
+
+                    #bsdf.inputs["Roughness"].default_value = roughness # This doesn't look like what I see ingame - Gen
+
+                mesh_dict["materials"].append(material_dict)
+
+            x_dict["meshes"].append(mesh_dict)
+
+        write_x(x_dict, output_path)
+
+    else:
+        report({'ERROR'}, "No armature selected. Export will now be aborted")
+        return {'CANCELLED'}
 
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
