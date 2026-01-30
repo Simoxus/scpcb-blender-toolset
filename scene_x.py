@@ -7,6 +7,13 @@ from mathutils import Matrix, Vector
 from .process_x import write_x, read_x
 from .common_functions import RandomColorGenerator, get_file, is_string_empty
 
+DX_MATRIX = Matrix((
+    (-1, 0, 0, 0),
+    ( 0, 0, 1, 0),
+    ( 0,-1, 0, 0),
+    ( 0, 0, 0, 1),
+))
+
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
     mesh_name = mesh_dict["name"]
     if mesh_name == None:
@@ -153,6 +160,9 @@ def x_matrix_to_blender(mat):
 
     return Matrix(matrix)
 
+def blender_matrix_to_x(mat):
+    return [mat[0][0], mat[0][1], mat[0][2], mat[3][0],mat[1][0], mat[1][1], mat[1][2], mat[3][1],mat[2][0], mat[2][1], mat[2][2], mat[3][2],mat[0][3], mat[1][3], mat[2][3], mat[3][3],]
+
 def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm=None, ob_data=None, is_simple=False, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
     name = frame["name"]
     world_transform = x_matrix_to_blender(frame["transform"])
@@ -196,6 +206,118 @@ def get_linked_node(node, input_name, search_type):
 
     return linked_node
 
+def get_skeleton_tree(active_ob, frame_dict, rigid_ob_dict, depsgraph, parent_bone=None):
+    for bone in active_ob.pose.bones:
+        if bone.parent == parent_bone:
+            bone_dict = {
+                "name": bone.name,
+                "transform": [],
+                "meshes": [],
+                "children": []
+            }
+
+            rigid_obs = rigid_ob_dict.get(bone.name)
+            if rigid_obs is not None:
+                for rigid_ob in rigid_obs:
+                    process_mesh(bone_dict["meshes"], rigid_ob, depsgraph)
+                
+            bone_dict["transform"] = blender_matrix_to_x(active_ob.matrix_world @ bone.matrix)
+            get_skeleton_tree(active_ob, bone_dict["children"], rigid_ob_dict, depsgraph, bone)
+
+            frame_dict.append(bone_dict)
+
+def process_mesh(ob_dict, ob, depsgraph):
+    ob_eval = ob.evaluated_get(depsgraph)
+    mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+    mesh.calc_loop_triangles()
+    mesh.transform(ob.matrix_world)
+    mesh.transform(DX_MATRIX)
+
+    uv_layer = None
+    if mesh.uv_layers.active:
+        uv_layer = mesh.uv_layers.active
+
+    mesh_dict = {
+        "name": ob.name,
+        "vertices": [],
+        "faces": [],
+        "normals": [],
+        "normal_indices": [],
+        "texcoords": [],
+        "dup_preexport_count": 0, 
+        "dup_indices": [],
+        "material_indices": [], 
+        "materials": [],
+        "max_weights_per_vertex": 1.0,
+        "max_weights_per_face": 1.0,
+        "bone_count": 0,
+        "skin_weights": []
+    }
+
+    vertex_map = {}
+    for tri in mesh.loop_triangles:
+        tri_indices = []
+        mat_idx = tri.material_index
+        mesh_dict["material_indices"].append(mat_idx)
+        for loop_index in tri.loops:
+            loop = mesh.loops[loop_index]
+            v = mesh.vertices[loop.vertex_index]
+            i, j, k  = DX_MATRIX.to_3x3() @ loop.normal
+            loop_normal = (i, j, k)
+
+            pos = v.co
+
+            uv = (0.0, 0.0)
+            if uv_layer:
+                u0, v0 = uv_layer.data[loop_index].uv
+                uv = (u0, 1 - v0)
+
+            key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv, loop_normal)
+            if key not in vertex_map:
+                vertex_map[key] = len(mesh_dict["vertices"])
+                mesh_dict["vertices"].append(pos)
+                mesh_dict["texcoords"].append(uv)
+                mesh_dict["normals"].append(loop_normal)
+
+            tri_indices.append(vertex_map[key])
+
+        mesh_dict["faces"].append(tri_indices[::-1])
+        mesh_dict["normal_indices"].append(tri_indices[::-1])
+
+    for slot in ob.material_slots:
+        material_dict = {"name": None, 
+                        "diffuse": (0.0, 0.0, 0.0, 0.0), 
+                        "power": 0.0, 
+                        "specular": (0.0, 0.0, 0.0), 
+                        "emissive": (0.0, 0.0, 0.0), 
+                        "texture": None
+                        }
+
+        mat = slot.material
+        if mat is not None:
+            mat.use_nodes = True
+            nodes = mat.node_tree.nodes
+            bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+
+            if bsdf:
+                dr, dg, db, da = bsdf.inputs["Base Color"].default_value 
+                da = bsdf.inputs["Alpha"].default_value
+                sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
+                er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
+                image_node = get_linked_node(bsdf, "Base Color", "TEX_IMAGE")
+
+                material_dict["name"] = mat.name
+                material_dict["diffuse"] = (dr, dg, db, da)
+                material_dict["power"] = (2 / (bsdf.inputs["Roughness"].default_value * bsdf.inputs["Roughness"].default_value)) - 2
+                material_dict["specular"] = (sr, sg, sb)
+                material_dict["emissive"] = (er, eg, eb)
+                if image_node and image_node.image:
+                    material_dict["texture"] = os.path.basename(bpy.path.abspath(image_node.image.filepath))
+
+        mesh_dict["materials"].append(material_dict)
+
+    ob_dict.append(mesh_dict)
+
 def export_scene(context, output_path, file_version, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -216,6 +338,7 @@ def export_scene(context, output_path, file_version, report):
 
         skinned_ob_list = []
         rigid_ob_dict = {}
+        depsgraph = context.evaluated_depsgraph_get()
         for ob in bpy.data.objects:
             if ob.type == "MESH":
                 if ob.parent_type == 'OBJECT' and ob.parent == active_ob:
@@ -226,106 +349,11 @@ def export_scene(context, output_path, file_version, report):
                         rigid_ob_list = rigid_ob_dict[ob.parent_bone] = []
                     rigid_ob_list.append(ob)
 
-        depsgraph = context.evaluated_depsgraph_get()
+        bpy.ops.object.mode_set(mode = 'POSE')
+        get_skeleton_tree(active_ob, x_dict["frames"], rigid_ob_dict, depsgraph, None)
+        bpy.ops.object.mode_set(mode = 'OBJECT')
         for skinned_ob in skinned_ob_list:
-            ob_eval = skinned_ob.evaluated_get(depsgraph)
-            mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-            mesh.calc_loop_triangles()
-            mesh.transform(skinned_ob.matrix_world)
-
-            dx_matrix = Matrix((
-                (-1, 0, 0, 0),
-                ( 0, 0, 1, 0),
-                ( 0,-1, 0, 0),
-                ( 0, 0, 0, 1),
-            ))
-
-            mesh.transform(dx_matrix)
-
-            uv_layer = None
-            if mesh.uv_layers.active:
-                uv_layer = mesh.uv_layers.active
-
-            mesh_dict = {
-                "name": skinned_ob.name,
-                "vertices": [],
-                "faces": [],
-                "normals": [],
-                "normal_indices": [],
-                "texcoords": [],
-                "dup_preexport_count": 0, 
-                "dup_indices": [],
-                "material_indices": [], 
-                "materials": [],
-                "max_weights_per_vertex": 1.0,
-                "max_weights_per_face": 1.0,
-                "bone_count": 0,
-                "skin_weights": []
-            }
-
-            vertex_map = {}
-            for tri in mesh.loop_triangles:
-                tri_indices = []
-                mat_idx = tri.material_index
-                mesh_dict["material_indices"].append(mat_idx)
-                for loop_index in tri.loops:
-                    loop = mesh.loops[loop_index]
-                    v = mesh.vertices[loop.vertex_index]
-                    i, j, k  = dx_matrix.to_3x3() @ loop.normal
-                    loop_normal = (i, j, k)
-
-                    pos = v.co
-
-                    uv = (0.0, 0.0)
-                    if uv_layer:
-                        u0, v0 = uv_layer.data[loop_index].uv
-                        uv = (u0, 1 - v0)
-
-                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv, loop_normal)
-                    if key not in vertex_map:
-                        vertex_map[key] = len(mesh_dict["vertices"])
-                        mesh_dict["vertices"].append(pos)
-                        mesh_dict["texcoords"].append(uv)
-                        mesh_dict["normals"].append(loop_normal)
-
-                    tri_indices.append(vertex_map[key])
-
-                mesh_dict["faces"].append(tri_indices[::-1])
-                mesh_dict["normal_indices"].append(tri_indices[::-1])
-
-            for slot in skinned_ob.material_slots:
-                material_dict = {"name": None, 
-                                "diffuse": (0.0, 0.0, 0.0, 0.0), 
-                                "power": 0.0, 
-                                "specular": (0.0, 0.0, 0.0), 
-                                "emissive": (0.0, 0.0, 0.0), 
-                                "texture": None
-                                }
-
-                mat = slot.material
-                if mat is not None:
-                    mat.use_nodes = True
-                    nodes = mat.node_tree.nodes
-                    bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
-
-                    if bsdf:
-                        dr, dg, db, da = bsdf.inputs["Base Color"].default_value 
-                        da = bsdf.inputs["Alpha"].default_value
-                        sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
-                        er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
-                        image_node = get_linked_node(bsdf, "Base Color", "TEX_IMAGE")
-
-                        material_dict["name"] = mat.name
-                        material_dict["diffuse"] = (dr, dg, db, da)
-                        material_dict["power"] = (2 / (bsdf.inputs["Roughness"].default_value * bsdf.inputs["Roughness"].default_value)) - 2
-                        material_dict["specular"] = (sr, sg, sb)
-                        material_dict["emissive"] = (er, eg, eb)
-                        if image_node and image_node.image:
-                            material_dict["texture"] = os.path.basename(bpy.path.abspath(image_node.image.filepath))
- 
-                mesh_dict["materials"].append(material_dict)
-
-            x_dict["meshes"].append(mesh_dict)
+            process_mesh(x_dict["meshes"], skinned_ob, depsgraph)
 
         write_x(x_dict, output_path)
 

@@ -4,7 +4,6 @@ import zlib
 import json
 import struct
 
-from pathlib import Path
 from enum import Enum, auto
 from io import TextIOWrapper
 
@@ -656,8 +655,12 @@ def write_frame(frame_dict, x_stream, indent_level=0):
     x_stream.write("%s}\n" % get_indentation(indent_level + 1))
     if len(frame_dict["children"]) > 0: 
         x_stream.write("%s\n" % get_indentation(indent_level))
+
+    if len(frame_dict["meshes"]) > 0:
+        x_stream.write("\n")
+    mesh_indent = indent_level + 1 
     for mesh_dict in frame_dict["meshes"]:
-        write_mesh(mesh_dict, x_stream, indent_level)
+        write_mesh(mesh_dict, x_stream, mesh_indent)
 
     for child_dict in frame_dict["children"]:
         write_frame(child_dict, x_stream, indent_level + 1)
