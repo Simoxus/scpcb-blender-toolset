@@ -27,7 +27,7 @@ def import_mesh(context, data, node, material_list):
     for face in node["faces"]:
         faces.extend(face["indices"])
 
-    vertices = [Vector(vertex) for vertex in node["vertices"]]
+    vertices = [pivot_matrix @ Vector(vertex) for vertex in node["vertices"]]
 
     mesh.from_pydata(vertices, [], flip_all(faces))
     for poly in mesh.polygons:
