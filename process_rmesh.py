@@ -236,7 +236,7 @@ def read_rmesh(file_path, file_type):
                     for ff in range(31):
                         ff_element = read_unsigned_int(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
- 
+
             elif entity_dict["entity_type"] == "light_fix":
                 if file_type == ImportFileType.rmesh_uer2:
                     entity_dict["position"] = read_vector(rmesh_stream)

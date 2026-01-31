@@ -73,7 +73,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
 
             er, eg, eb = material_dict["emissive"]
             #bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0) # This doesn't look like what I see ingame - Gen
-            
+
             texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
             if texture_node:
                 texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
@@ -220,7 +220,7 @@ def get_skeleton_tree(active_ob, frame_dict, bone_transforms, rigid_ob_dict, dep
             if rigid_obs is not None:
                 for rigid_ob in rigid_obs:
                     process_mesh(bone_dict["meshes"], bone_transforms, active_ob, rigid_ob, depsgraph)
-                
+
             bone_dict["transform"] = blender_matrix_to_x(bone_transforms.get(bone.name))
             get_skeleton_tree(active_ob, bone_dict["children"], bone_transforms, rigid_ob_dict, depsgraph, bone)
 
@@ -244,9 +244,9 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         "normals": [],
         "normal_indices": [],
         "texcoords": [],
-        "dup_preexport_count": 0, 
+        "dup_preexport_count": 0,
         "dup_indices": [],
-        "material_indices": [], 
+        "material_indices": [],
         "materials": [],
         "max_weights_per_vertex": 1.0,
         "max_weights_per_face": 1.0,
@@ -288,9 +288,9 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
 
     if ob.parent_type == 'BONE':
         bone_dict = {
-            "bone": None, 
-            "indices": [], 
-            "weights": [], 
+            "bone": None,
+            "indices": [],
+            "weights": [],
             "transform": []
             }
 
@@ -299,7 +299,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for bone in armature.data.bones:
             if bone.name == ob.parent_bone:
                 bone_exists = True
-        
+
         if valid_length and bone_exists:
             bone_name = ob.parent_bone
         else:
@@ -315,11 +315,11 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     mesh_dict["group_count"] = len(mesh_dict["skin_weights"])
 
     for slot in ob.material_slots:
-        material_dict = {"name": None, 
-                        "diffuse": (0.0, 0.0, 0.0, 0.0), 
-                        "power": 0.0, 
-                        "specular": (0.0, 0.0, 0.0), 
-                        "emissive": (0.0, 0.0, 0.0), 
+        material_dict = {"name": None,
+                        "diffuse": (0.0, 0.0, 0.0, 0.0),
+                        "power": 0.0,
+                        "specular": (0.0, 0.0, 0.0),
+                        "emissive": (0.0, 0.0, 0.0),
                         "texture": None
                         }
 
@@ -330,7 +330,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
             bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
 
             if bsdf:
-                dr, dg, db, da = bsdf.inputs["Base Color"].default_value 
+                dr, dg, db, da = bsdf.inputs["Base Color"].default_value
                 da = bsdf.inputs["Alpha"].default_value
                 sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
                 er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
@@ -374,14 +374,14 @@ def export_scene(context, output_path, file_version, report):
                 if ob.parent_type == 'OBJECT' and ob.parent == active_ob:
                     skinned_ob_list.append(ob)
                 elif ob.parent_type == 'BONE' and ob.parent == active_ob and len(ob.parent_bone) > 0:
-                    rigid_ob_list = rigid_ob_dict.get(ob.parent_bone) 
+                    rigid_ob_list = rigid_ob_dict.get(ob.parent_bone)
                     if rigid_ob_list is None:
                         rigid_ob_list = rigid_ob_dict[ob.parent_bone] = []
                     rigid_ob_list.append(ob)
         bone_transforms = {}
         for bone in active_ob.data.bones:
             bone_transforms[bone.name] = active_ob.matrix_world @ bone.matrix_local
-            
+
         bpy.ops.object.mode_set(mode = 'POSE')
         get_skeleton_tree(active_ob, x_dict["frames"], bone_transforms, rigid_ob_dict, depsgraph, None)
         bpy.ops.object.mode_set(mode = 'OBJECT')
@@ -448,7 +448,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
 
                 er, eg, eb = material_dict["emissive"]
                 #bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0) # This doesn't look like what I see ingame - Gen
-                
+
                 texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
                 if texture_node:
                     texture = mat.node_tree.nodes.new("ShaderNodeTexImage")

@@ -118,7 +118,7 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
         ob = CreateObject(BigDoorRightPath, "BigRightDoor")
         ob_matrix = Matrix.LocRotScale(Vector((x, 0.0002, -0.03263)), Euler((0, 0, 0)), Vector((55, 55, 55)) * RoomScale)
         ob.matrix_world = pivot_matrix @ ob_matrix
-    
+
     elif door_type == DoorType.heavy:
         ob = CreateObject(HeavyDoorLeftPath, "HeavyLeftDoor")
         ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))

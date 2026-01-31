@@ -2,6 +2,30 @@ import os
 import bpy
 import colorsys
 
+from math import pi
+from mathutils import Quaternion
+
+DTOR = pi / 180.0
+RTOD = 180.0 / pi
+
+def pitch_quat(p):
+    return Quaternion((1.0, 0.0, 0.0), p)
+
+def yaw_quat(y):
+    return Quaternion((0.0, 1.0, 0.0), y)
+
+def roll_quat(r):
+    return Quaternion((0.0, 0.0, 1.0), r)
+
+def rotation_quat(p, y, r):
+    return yaw_quat(y) @ pitch_quat(p) @ roll_quat(r)
+
+def get_blender_rot(euler_rotation):
+    p, y, r = euler_rotation
+    y = -y
+    quat = rotation_quat(p * DTOR, y * DTOR, r * DTOR)
+    return quat.normalized()
+
 def lim32(n):
     """Simulate a 32 bit unsigned interger overflow"""
     return n & 0xFFFFFFFF
@@ -49,7 +73,7 @@ class RandomColorGenerator(PreshingSequenceGenerator32):
         rgb = colorsys.hsv_to_rgb(h, s, v)
         colors = (rgb[0], rgb[1] , rgb[2], 1)
         return colors
-    
+
 def is_string_empty(string):
     is_empty = False
     if not string == None and (len(string) == 0 or string.isspace()):
@@ -96,5 +120,5 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
             file_asset = bpy.data.images.load(file_path, check_existing=True)
     else:
         file_asset = file_path
-        
+
     return file_asset

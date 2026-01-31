@@ -7,7 +7,7 @@ from .process_b3d import B3DTree
 from bpy_extras.io_utils import unpack_list
 from mathutils import Matrix, Vector, Quaternion
 from math import radians, pi, degrees, asin, atan2
-from .common_functions import RandomColorGenerator, get_file, is_string_empty
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot
 
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
@@ -24,29 +24,28 @@ def import_mesh(context, data, node, material_list):
     mesh = bpy.data.meshes.new("%s_brush" % data["brush_count"])
 
     faces = []
-    for face in node.faces:
-        faces.extend(face.indices)
+    for face in node["faces"]:
+        faces.extend(face["indices"])
 
-    vertices = [pivot_matrix @ Vector(vertex) for vertex in node.vertices]
+    vertices = [Vector(vertex) for vertex in node["vertices"]]
 
     mesh.from_pydata(vertices, [], flip_all(faces))
     for poly in mesh.polygons:
         poly.use_smooth = True
 
-    mesh.vertices.foreach_set('normal', unpack_list(node.normals))
+    mesh.vertices.foreach_set('normal', unpack_list(node["normals"]))
 
-    uvs = [(0,0) if len(uv)==0 else (uv[0], 1-uv[1]) for uv in node.uvs]
+    uvs = [(0,0) if len(uv)==0 else (uv[0], 1-uv[1]) for uv in node["uvs"]]
     uvlist = [i for poly in mesh.polygons for vidx in poly.vertices for i in uvs[vidx]]
     mesh.uv_layers.new().data.foreach_set('uv', uvlist)
 
     poly = 0
-    for face in node.faces:
-        for face_idx in face.indices:
-            brush_mat = material_list[face.brush_id]
+    for face in node["faces"]:
+        for face_idx in face["indices"]:
+            brush_mat = material_list[face["brush_id"]]
             if brush_mat.name not in mesh.materials.keys():
                 mesh.materials.append(brush_mat)
 
-            print(mesh.materials.keys())
             mat_id = mesh.materials.keys().index(brush_mat.name)
             mesh.polygons[poly].material_index = mat_id
             poly += 1
@@ -126,6 +125,11 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None):
             object_mesh = bpy.data.objects.new("%s_light" % data["light_count"], object_data)
             context.collection.objects.link(object_mesh)
 
+            object_data.energy = result["intensity"] * 50
+            object_data.shadow_soft_size = result["range"] / 1000
+            r, g, b = result["color"]
+            object_data.color = (r / 255, g / 255, b / 255)
+
             data["light_count"] += 1
 
         elif result["classname"] == "spotlight":
@@ -135,6 +139,18 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None):
             object_data = bpy.data.lights.new("%s spotlight" % data["spotlight_count"], "SPOT")
             object_mesh = bpy.data.objects.new("%s_spotlight" % data["spotlight_count"], object_data)
             context.collection.objects.link(object_mesh)
+
+            object_data.energy = result["intensity"] * 50
+            object_data.shadow_soft_size = result["range"] / 1000
+            r, g, b = result["color"]
+            object_data.color = (r / 255, g / 255, b / 255)
+
+            outer_deg: float = max(1.0, min(180.0, result["outerconeangle"]))
+            inner_deg: float = max(1.0, min(180.0, result["innerconeangle"]))
+            ratio = inner_deg / outer_deg if outer_deg > 0.0 else 1.0
+
+            object_data.spot_size = radians(outer_deg)
+            object_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
 
             data["spotlight_count"] += 1
 
@@ -167,15 +183,15 @@ def import_scene(context, filepath, report):
     material_list = []
     texture_count = len(data["textures"])
     for material_dict in data["materials"]:
-        material = bpy.data.materials.new(material_dict["name"])
-        r, g, b, a = material_dict["rgba"]
-        material.diffuse_color = [r, g, b, a]
-        material.blend_method = 'BLEND' if a < 1.0 else 'OPAQUE'
-
         tid = None
         for tid_element in material_dict["tids"]:
             if tid_element != -1:
                 tid = tid_element
+
+        material = bpy.data.materials.new(material_dict["name"])
+        r, g, b, a = material_dict["rgba"]
+        material.diffuse_color = [r, g, b, a]
+        material.blend_method = 'BLEND' if a < 1.0 else 'OPAQUE'
 
         if tid is not None and texture_count > tid:
             texture = data["textures"][tid]

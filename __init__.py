@@ -90,7 +90,7 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
                     ('13', "Entity Mesh", "Object is valid for CB/UER/UER2")
                 )
         )
-    
+
     model_path: StringProperty(
             name = "Model",
             description="Model to use for this entity",
@@ -128,18 +128,18 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
         name = "FX",
         description = "???"
         )
-    
+
     has_sprite: BoolProperty(
         name ="Has Sprite",
         description = "Has Sprite",
         default = False,
         )
-    
+
     sprite_scale: FloatProperty(
         name = "Sprite Scale",
         description = "???"
         )
-    
+
     scattering: FloatProperty(
         name = "Scattering",
         description = "???"
@@ -305,7 +305,7 @@ class ImportRMESH(Operator, ImportHelper):
         )
 
     filepath: StringProperty(
-        subtype='FILE_PATH', 
+        subtype='FILE_PATH',
         options={'SKIP_SAVE'}
         )
 
@@ -359,7 +359,7 @@ class ImportX(Operator, ImportHelper):
         )
 
     filepath: StringProperty(
-        subtype='FILE_PATH', 
+        subtype='FILE_PATH',
         options={'SKIP_SAVE'}
         )
 
@@ -403,7 +403,7 @@ class ImportB3D(Operator, ImportHelper):
         )
 
     filepath: StringProperty(
-        subtype='FILE_PATH', 
+        subtype='FILE_PATH',
         options={'SKIP_SAVE'}
         )
 

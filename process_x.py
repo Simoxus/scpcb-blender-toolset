@@ -176,9 +176,9 @@ def parse_mesh(x_dict, tokens, frame_meshes):
         "normals": [],
         "normal_indices": [],
         "texcoords": [],
-        "dup_preexport_count": 0, 
+        "dup_preexport_count": 0,
         "dup_indices": [],
-        "material_indices": [], 
+        "material_indices": [],
         "materials": [],
         "max_weights_per_vertex": 1.0,
         "max_weights_per_face": 1.0,
@@ -216,7 +216,7 @@ def parse_mesh(x_dict, tokens, frame_meshes):
         tokens.next()
 
         mesh_dict["faces"].append(face_indicies)
-    
+
     next_token = tokens.next()
     while next_token != "}" and tokens.left() > 0:
         if next_token == "MeshNormals":
@@ -251,18 +251,18 @@ def parse_mesh(x_dict, tokens, frame_meshes):
         elif next_token == "MeshTextureCoords":
             tokens.next()
             uv_count = int(tokens.next())
-            tokens.next()  
+            tokens.next()
             for uv_idx in range(uv_count):
                 uv_indicies = []
                 for uv_element in range(2):
                     uv_indicies.append(float(tokens.next()))
-                    tokens.next()  
+                    tokens.next()
 
-                tokens.next() 
+                tokens.next()
 
                 mesh_dict["texcoords"].append(uv_indicies)
 
-            tokens.next() 
+            tokens.next()
 
         elif next_token == "VertexDuplicationIndices":
             tokens.next()
@@ -340,7 +340,7 @@ def parse_mesh(x_dict, tokens, frame_meshes):
 
             mesh_dict["skin_weights"].append(bone_dict)
 
-            next_token = tokens.next()   
+            next_token = tokens.next()
 
         if tokens.left() != 0:
             next_token = tokens.next()
@@ -370,7 +370,7 @@ def parse_frame(x_dict, tokens, children_dict):
                 tokens.next()
                 next_token = tokens.next()
             tokens.next()
-            
+
         elif next_token == "Mesh":
             parse_mesh(x_dict, tokens, frame_dict["meshes"])
 
@@ -384,11 +384,11 @@ def parse_frame(x_dict, tokens, children_dict):
 
 def parse_material(x_dict, mesh_dict, next_token, tokens):
     if next_token == "Material":
-        material_dict = {"name": None, 
-                        "diffuse": (0.0, 0.0, 0.0, 0.0), 
-                        "power": 0.0, 
-                        "specular": (0.0, 0.0, 0.0), 
-                        "emissive": (0.0, 0.0, 0.0), 
+        material_dict = {"name": None,
+                        "diffuse": (0.0, 0.0, 0.0, 0.0),
+                        "power": 0.0,
+                        "specular": (0.0, 0.0, 0.0),
+                        "emissive": (0.0, 0.0, 0.0),
                         "texture": None
                         }
 
@@ -488,7 +488,7 @@ def write_mesh(mesh_dict, x_stream, indent_level=0, final_mesh=False):
 
         x_stream.write("%s%s" % (get_indentation(indent_level + 1), face_string))
     x_stream.write("\n")
-    
+
     x_stream.write("%sMeshNormals {\n" % get_indentation(indent_level + 1))
     normal_count = len(mesh_dict["normals"])
     x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), normal_count))
@@ -653,12 +653,12 @@ def write_frame(frame_dict, x_stream, indent_level=0):
     x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), transform_string))
 
     x_stream.write("%s}\n" % get_indentation(indent_level + 1))
-    if len(frame_dict["children"]) > 0: 
+    if len(frame_dict["children"]) > 0:
         x_stream.write("%s\n" % get_indentation(indent_level))
 
     if len(frame_dict["meshes"]) > 0:
         x_stream.write("\n")
-    mesh_indent = indent_level + 1 
+    mesh_indent = indent_level + 1
     for mesh_dict in frame_dict["meshes"]:
         write_mesh(mesh_dict, x_stream, mesh_indent)
 
@@ -678,7 +678,7 @@ def parse_x_a_txt(text):
         "materials": [],
         "frames": []
     }
-    
+
     while tokens.left() != 0:
         next_token = tokens.next()
         if next_token == "xof":
@@ -686,7 +686,7 @@ def parse_x_a_txt(text):
             while len(x_dict["xof_header"]) < 16 and tokens.left() > 0:
                 next_token = tokens.next()
                 x_dict["xof_header"] = "%s %s" % (x_dict["xof_header"], next_token)
-            
+
             tokens.next()
             tokens.next()
             tokens.next()
@@ -717,7 +717,7 @@ def parse_x_b_txt(text):
         "meshes": [],
         "animation_set": []
     }
-    
+
     while tokens.left() != 0:
         next_token = tokens.next()
         if next_token == "xof":
@@ -919,9 +919,9 @@ def write_x(rmesh_dict, output_path):
                         final_seperator = ";"
 
                     field_string += "%s%s" % (field_item, final_seperator)
-                
+
                 x_stream.write("%s%s\n" % (get_indentation(1), field_string))
-                
+
             x_stream.write("}\n")
             x_stream.write("\n")
 

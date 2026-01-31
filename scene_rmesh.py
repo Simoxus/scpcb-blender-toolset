@@ -10,12 +10,9 @@ from .scene_x import import_scene as import_x
 from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file, is_string_empty
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
-
-DTOR = pi / 180.0
-RTOD = 180.0 / pi
 
 def natural_key(s):
     return [int(t) if t.isdigit() else t.lower()
@@ -75,24 +72,6 @@ def get_material_name(ob, tri):
                 mat_name = ob.data.materials[ob_mat_idx].name
 
     return mat_name
-
-def pitch_quat(p):
-    return Quaternion((1.0, 0.0, 0.0), p)
-
-def yaw_quat(y):
-    return Quaternion((0.0, 1.0, 0.0), y)
-
-def roll_quat(r):
-    return Quaternion((0.0, 0.0, 1.0), r)
-
-def rotation_quat(p, y, r):
-    return yaw_quat(y) @ pitch_quat(p) @ roll_quat(r)
-
-def get_blender_rot(euler_rotation):
-    p, y, r = euler_rotation
-    y = -y
-    quat = rotation_quat(p * DTOR, y * DTOR, r * DTOR)
-    return quat.normalized()
 
 def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
@@ -233,7 +212,7 @@ def export_scene(context, filepath, file_type, report):
 
                         if image_node_a == image_node_b:
                             diffuse_texture_dict["texture_type"] = TextureType.transparent.value
- 
+
                 section_data[mat_name]["textures"].append(lightmap_texture_dict)
                 section_data[mat_name]["textures"].append(diffuse_texture_dict)
 
@@ -321,7 +300,7 @@ def export_scene(context, filepath, file_type, report):
                 if trigger_entry is None:
                     trigger_entry = {"meshes": [], "name": trigger_group}
                     rmesh_dict["trigger_boxes"].append(trigger_entry)
-                    
+
                 ob_eval = ob.evaluated_get(depsgraph)
                 mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
                 mesh.calc_loop_triangles()
@@ -671,7 +650,7 @@ def import_scene(context, filepath, file_type, report):
 
             loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
             global_transform = Matrix.LocRotScale(loc, rot, Vector(entity_dict["scale"]))
-            
+
             object_mesh.matrix_world =  global_transform
 
             model_path = get_file(entity_dict["model_name"], False)
@@ -750,10 +729,10 @@ def import_scene(context, filepath, file_type, report):
 
                 p, y, r = entity_dict["euler_rotation"].split(" ")
                 rotation = get_blender_rot([float(p), float(y), float(r)])
-    
+
             loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), rotation, Vector((1,1,1)))).decompose()
             global_transform = Matrix.LocRotScale(loc, rot, Vector((1, 1, 1)))
-            
+
             object_mesh.matrix_world =  global_transform
 
         elif entity_dict["entity_type"] == "soundemitter":
@@ -772,10 +751,10 @@ def import_scene(context, filepath, file_type, report):
 
             p, y, r = entity_dict["euler_rotation"].split(" ")
             rotation = get_blender_rot([float(p), float(y), float(r)])
-    
+
             loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), rotation, Vector((1,1,1)))).decompose()
             global_transform = Matrix.LocRotScale(loc, rot, Vector((1, 1, 1)))
-            
+
             object_mesh.matrix_world =  global_transform
 
         elif entity_dict["entity_type"] == "model":
@@ -796,14 +775,14 @@ def import_scene(context, filepath, file_type, report):
             if not file_type == ImportFileType.rmesh_uer:
                 loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
                 global_transform = Matrix.LocRotScale(loc, rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion(), Vector(entity_dict["scale"]))
-                
+
                 object_mesh.matrix_world =  global_transform
-                
+
         elif entity_dict["entity_type"] == "mesh":
             model_path = get_file(entity_dict["model_name"], False)
             texture_path = get_file(entity_dict["texture_name"], True, False)
             ob_data = entity_meshes.get(model_path)
-            
+
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
                 data = B3DTree().parse(Path(model_path))
@@ -849,7 +828,7 @@ def import_scene(context, filepath, file_type, report):
 
             loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
             global_transform = Matrix.LocRotScale(loc, rot, Vector(entity_dict["scale"]))
-            
+
             object_mesh.matrix_world =  global_transform
 
             object_mesh.rmesh.has_collision = bool(entity_dict["has_collision"])
