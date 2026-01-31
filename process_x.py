@@ -182,7 +182,7 @@ def parse_mesh(x_dict, tokens, frame_meshes):
         "materials": [],
         "max_weights_per_vertex": 1.0,
         "max_weights_per_face": 1.0,
-        "bone_count": 0,
+        "group_count": 0,
         "skin_weights": []
     }
 
@@ -309,7 +309,7 @@ def parse_mesh(x_dict, tokens, frame_meshes):
             tokens.next()
             mesh_dict["max_weights_per_face"] = int(tokens.next())
             tokens.next()
-            mesh_dict["bone_count"] = int(tokens.next())
+            mesh_dict["group_count"] = int(tokens.next())
             tokens.next()
             tokens.next()
 
@@ -589,12 +589,12 @@ def write_mesh(mesh_dict, x_stream, indent_level=0, final_mesh=False):
 
     x_stream.write("%s}\n" % get_indentation(indent_level + 2))
     x_stream.write("%s}\n" % get_indentation(indent_level + 1))
-    if mesh_dict["bone_count"] > 0:
+    if mesh_dict["group_count"] > 0:
         x_stream.write("\n")
         x_stream.write("%sXSkinMeshHeader {\n" % get_indentation(indent_level + 1))
         x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_vertex"]))
         x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["max_weights_per_face"]))
-        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["bone_count"]))
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["group_count"]))
         x_stream.write("%s}\n" % get_indentation(indent_level + 1))
         x_stream.write("\n")
 

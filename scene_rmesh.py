@@ -10,19 +10,12 @@ from .scene_x import import_scene as import_x
 from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file
+from .common_functions import RandomColorGenerator, get_file, is_string_empty
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
-
-def is_string_empty(string):
-    is_empty = False
-    if not string == None and (len(string) == 0 or string.isspace()):
-        is_empty = True
-
-    return is_empty
 
 def natural_key(s):
     return [int(t) if t.isdigit() else t.lower()

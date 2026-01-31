@@ -206,7 +206,7 @@ def get_linked_node(node, input_name, search_type):
 
     return linked_node
 
-def get_skeleton_tree(active_ob, frame_dict, rigid_ob_dict, depsgraph, parent_bone=None):
+def get_skeleton_tree(active_ob, frame_dict, bone_transforms, rigid_ob_dict, depsgraph, parent_bone=None):
     for bone in active_ob.pose.bones:
         if bone.parent == parent_bone:
             bone_dict = {
@@ -219,14 +219,14 @@ def get_skeleton_tree(active_ob, frame_dict, rigid_ob_dict, depsgraph, parent_bo
             rigid_obs = rigid_ob_dict.get(bone.name)
             if rigid_obs is not None:
                 for rigid_ob in rigid_obs:
-                    process_mesh(bone_dict["meshes"], rigid_ob, depsgraph)
+                    process_mesh(bone_dict["meshes"], bone_transforms, active_ob, rigid_ob, depsgraph)
                 
-            bone_dict["transform"] = blender_matrix_to_x(active_ob.matrix_world @ bone.matrix)
-            get_skeleton_tree(active_ob, bone_dict["children"], rigid_ob_dict, depsgraph, bone)
+            bone_dict["transform"] = blender_matrix_to_x(bone_transforms.get(bone.name))
+            get_skeleton_tree(active_ob, bone_dict["children"], bone_transforms, rigid_ob_dict, depsgraph, bone)
 
             frame_dict.append(bone_dict)
 
-def process_mesh(ob_dict, ob, depsgraph):
+def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
@@ -250,10 +250,11 @@ def process_mesh(ob_dict, ob, depsgraph):
         "materials": [],
         "max_weights_per_vertex": 1.0,
         "max_weights_per_face": 1.0,
-        "bone_count": 0,
+        "group_count": 0,
         "skin_weights": []
     }
 
+    mesh_dict["dup_preexport_count"] = len(mesh.vertices)
     vertex_map = {}
     for tri in mesh.loop_triangles:
         tri_indices = []
@@ -278,11 +279,40 @@ def process_mesh(ob_dict, ob, depsgraph):
                 mesh_dict["vertices"].append(pos)
                 mesh_dict["texcoords"].append(uv)
                 mesh_dict["normals"].append(loop_normal)
+                mesh_dict["dup_indices"].append(loop.vertex_index)
 
             tri_indices.append(vertex_map[key])
 
         mesh_dict["faces"].append(tri_indices[::-1])
         mesh_dict["normal_indices"].append(tri_indices[::-1])
+
+    if ob.parent_type == 'BONE':
+        bone_dict = {
+            "bone": None, 
+            "indices": [], 
+            "weights": [], 
+            "transform": []
+            }
+
+        valid_length = len(ob.parent_bone) > 0
+        bone_exists = False
+        for bone in armature.data.bones:
+            if bone.name == ob.parent_bone:
+                bone_exists = True
+        
+        if valid_length and bone_exists:
+            bone_name = ob.parent_bone
+        else:
+            bone_name = armature.data.bones[0]
+
+        vert_count = len(mesh_dict["vertices"])
+        bone_dict["bone"] = bone_name
+        bone_dict["indices"] = [idx for idx in range(vert_count)]
+        bone_dict["weights"] = [1.0 for idx in range(vert_count)]
+        bone_dict["transform"] = blender_matrix_to_x(bone_transforms.get(bone_name))
+        mesh_dict["skin_weights"].append(bone_dict)
+
+    mesh_dict["group_count"] = len(mesh_dict["skin_weights"])
 
     for slot in ob.material_slots:
         material_dict = {"name": None, 
@@ -323,7 +353,7 @@ def export_scene(context, output_path, file_version, report):
         bpy.ops.object.mode_set(mode='OBJECT')
 
     active_ob = context.object
-    if active_ob and active_ob.type == 'ARMATURE':
+    if active_ob and active_ob.type == 'ARMATURE' and len(active_ob.data.bones) > 0:
         x_dict = {
             "xof_header": None,
             "templates": [],
@@ -348,12 +378,15 @@ def export_scene(context, output_path, file_version, report):
                     if rigid_ob_list is None:
                         rigid_ob_list = rigid_ob_dict[ob.parent_bone] = []
                     rigid_ob_list.append(ob)
-
+        bone_transforms = {}
+        for bone in active_ob.data.bones:
+            bone_transforms[bone.name] = active_ob.matrix_world @ bone.matrix_local
+            
         bpy.ops.object.mode_set(mode = 'POSE')
-        get_skeleton_tree(active_ob, x_dict["frames"], rigid_ob_dict, depsgraph, None)
+        get_skeleton_tree(active_ob, x_dict["frames"], bone_transforms, rigid_ob_dict, depsgraph, None)
         bpy.ops.object.mode_set(mode = 'OBJECT')
         for skinned_ob in skinned_ob_list:
-            process_mesh(x_dict["meshes"], skinned_ob, depsgraph)
+            process_mesh(x_dict["meshes"], bone_transforms, active_ob, skinned_ob, depsgraph)
 
         write_x(x_dict, output_path)
 
