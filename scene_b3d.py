@@ -7,13 +7,8 @@ from .process_b3d import B3DTree
 from bpy_extras.io_utils import unpack_list
 from mathutils import Matrix, Vector, Quaternion
 from math import radians, pi, degrees, asin, atan2
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot, DX_MATRIX_IMPORT
 
-def flip(v):
-    return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
-
-def flip_all(v):
-    return [y for y in [flip(x) for x in v]]
 
 pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
@@ -21,23 +16,23 @@ def import_mesh(context, data, node, material_list):
     if data.get("brush_count") is None:
         data["brush_count"] = 0
 
+
+
     mesh = bpy.data.meshes.new("%s_brush" % data["brush_count"])
 
-    faces = []
-    for face in node["faces"]:
-        faces.extend(face["indices"])
+    vertices = [Vector(vertex) for vertex in node["vertices"]]
+    faces = [face[::-1] for brush in node["faces"] for face in brush["indices"]]
 
-    vertices = [pivot_matrix @ Vector(vertex) for vertex in node["vertices"]]
+    mesh.from_pydata(vertices, [], faces)
 
-    mesh.from_pydata(vertices, [], flip_all(faces))
-    for poly in mesh.polygons:
-        poly.use_smooth = True
 
-    mesh.vertices.foreach_set('normal', unpack_list(node["normals"]))
 
-    uvs = [(0,0) if len(uv)==0 else (uv[0], 1-uv[1]) for uv in node["uvs"]]
-    uvlist = [i for poly in mesh.polygons for vidx in poly.vertices for i in uvs[vidx]]
-    mesh.uv_layers.new().data.foreach_set('uv', uvlist)
+        
+    #mesh.vertices.foreach_set('normal', unpack_list(node["normals"]))
+
+    #uvs = [(0,0) if len(uv)==0 else (uv[0], 1-uv[1]) for uv in node["uvs"]]
+    #uvlist = [i for poly in mesh.polygons for vidx in poly.vertices for i in uvs[vidx]]
+    #mesh.uv_layers.new().data.foreach_set('uv', uvlist)
 
     poly = 0
     for face in node["faces"]:
@@ -50,6 +45,34 @@ def import_mesh(context, data, node, material_list):
             mesh.polygons[poly].material_index = mat_id
             poly += 1
 
+    loop_normals = [Vector((0.0, 0.0, 1.0))] * len(mesh.loops)
+    uv_count = len(node["uvs"][0]) / 2
+    layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+    layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
+    if uv_count > 1:
+        layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
+
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+        for loop_index in poly.loop_indices:
+            vert_index = mesh.loops[loop_index].vertex_index
+            loop_normals[loop_index] = -Vector(node["normals"][vert_index])
+            if uv_count == 1:
+                U0, V0 = node["uvs"][vert_index]
+            else:
+                U0, V0, U1, V1 = node["uvs"][vert_index]
+
+            layer_uv_0.data[loop_index].uv = (U0, 1 - V0)
+            if uv_count > 1:
+                layer_uv_1.data[loop_index].uv = (U1, 1 - V1)
+            
+            if len(node["rgba"]) > 0:
+                layer_color.data[loop_index].color = node["rgba"][vert_index]
+
+    #mesh.normals_split_custom_set(loop_normals)
+
+    mesh.transform(DX_MATRIX_IMPORT)
+    mesh.transform(Matrix.Scale(0.00625, 4))
     object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh)
     context.collection.objects.link(object_mesh)
 
@@ -104,8 +127,8 @@ def parse_kv_string(s):
 def import_node_recursive(context, data, nodes, material_list, parent_ob=None):
     for node in nodes:
         result = parse_kv_string(node["name"])
-        if result["classname"] == "brush":
-            object_mesh = import_mesh(context, data, node, material_list)
+        if result["classname"] == "brush" and node.get("mesh"):
+            object_mesh = import_mesh(context, data, node["mesh"], material_list)
 
         elif result["classname"] == "soundemitter":
             if data.get("soundemitter_count") is None:
@@ -155,16 +178,16 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None):
             data["spotlight_count"] += 1
 
         else:
-            if 'vertices' in node and 'faces' in node:
-                object_mesh = import_mesh(context, data, node, material_list)
+            if node.get("mesh"):
+                object_mesh = import_mesh(context, data, node["mesh"], material_list)
             else:
                 object_mesh = bpy.data.objects.new(result["classname"], None)
                 context.collection.objects.link(object_mesh)
 
+        sx, sy, sz = node["scale"]
+        object_mesh.matrix_world = Matrix.LocRotScale(DX_MATRIX_IMPORT @ Vector(node["position"]), Quaternion(node["rotation"]), Vector((sx, sz, sy)))
         if parent_ob is not None:
             object_mesh.parent = parent_ob
-
-        object_mesh.matrix_world = Matrix.LocRotScale(pivot_matrix @ Vector(node["position"]), Quaternion(node["rotation"]), Vector(node["scale"]))
 
         import_node_recursive(context, data, node["nodes"], material_list, object_mesh)
 
@@ -180,28 +203,35 @@ def import_scene(context, filepath, report):
 
     data = B3DTree().parse(Path(filepath))
 
+    random_color_gen = RandomColorGenerator() # generates a random sequence of colors
+
     material_list = []
     texture_count = len(data["textures"])
     for material_dict in data["materials"]:
-        tid = None
-        for tid_element in material_dict["tids"]:
-            if tid_element != -1:
-                tid = tid_element
-
         material = bpy.data.materials.new(material_dict["name"])
+        material.diffuse_color = random_color_gen.next()
+
+        material.use_nodes = True
+        nodes = material.node_tree.nodes
+        bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+
         r, g, b, a = material_dict["rgba"]
-        material.diffuse_color = [r, g, b, a]
+        bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
+        bsdf.inputs["Alpha"].default_value = a
+
         material.blend_method = 'BLEND' if a < 1.0 else 'OPAQUE'
 
-        if tid is not None and texture_count > tid:
-            texture = data["textures"][tid]
-            texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
+        for tid_element in material_dict["tids"]:
+            if tid_element != -1 and texture_count > tid_element:
+                texture = data["textures"][tid_element]
+                texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
 
-            material.use_nodes = True
-            bsdf = material.node_tree.nodes["Principled BSDF"]
-            texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
-            texImage.image = texture_asset
-            material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
+                material.use_nodes = True
+                bsdf = material.node_tree.nodes["Principled BSDF"]
+                texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
+                texImage.image = texture_asset
+                if not "_lm" in texture['name']:
+                    material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
 
         material_list.append(material)
 

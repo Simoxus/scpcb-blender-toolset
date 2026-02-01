@@ -3,9 +3,7 @@
 
 import io
 import os
-import json
 import struct
-from pathlib import Path
 
 class B3DParser:
     def __init__(self):
@@ -57,12 +55,12 @@ class B3DParser:
                 self.cb_data(chunk, {'anim': {'flags': flags, 'frames': frames, 'fps': fps}})
 
             elif chunk == 'SEQS':
-                sequences = []
+                seqs = []
                 while self.fp.tell() < next_pos:
                     name = self.gets()
-                    start_frame, end_frame, flags = self.i(3)
-                    sequences.append({'name': name, 'start': start_frame, 'end': end_frame, 'flags': flags})
-                self.cb_data(chunk, {'sequences': sequences})
+                    start, end, flags = self.i(3)
+                    seqs.append({'name': name, 'start': start, 'end': end, 'flags': flags})
+                self.cb_data(chunk, {'sequences': seqs})
 
             elif chunk == 'TEXS':
                 tex = []
@@ -112,7 +110,7 @@ class B3DParser:
                 continue
 
             elif chunk == 'MESH':
-                self.cb_data(chunk, {'brush_id': self.i(1)[0]})
+                self.cb_data(chunk, {'mesh': {'brush_id': self.i(1)[0]}})
                 continue
 
             elif chunk == 'VRTS':
@@ -170,21 +168,30 @@ class B3DList(B3DParser):
         if self.index != -1:
             node = self.data['nodes'][self.index]
 
-        if chunk in ('NODE', 'MESH', 'VRTS', 'BONE'):
+        if chunk == 'NODE':
             node.update(data)
+
+        elif chunk == 'MESH':
+            node['mesh'] = data['mesh']
+
+        elif chunk == 'VRTS':
+            node['mesh'].update(data)
+
         elif chunk == 'TRIS':
-            node.setdefault('faces', []).append(data)
+            node['mesh'].setdefault('faces', []).append(data)
+
+        elif chunk == 'BONE':
+            node['bones'] = data['bones']
+
         elif chunk == 'KEYS':
-            node.setdefault('key', [])
+            node.setdefault('key', []).append(data['keys'])
 
-            flags = data['flags']
-            keys_chunk = data['keys']
-
-            node['key'].append(keys_chunk)
         elif chunk == 'ANIM':
             node['anim'] = data['anim']
+
         elif chunk == 'SEQS':
             node.setdefault('sequences', []).extend(data['sequences'])
+
         elif chunk in ('TEXS', 'BRUS'):
             self.data.update(data)
 
@@ -227,78 +234,47 @@ class ChunkWriter:
     def bytes(self):
         return self.buf.getvalue()
 
-def make_chunk(tag, payload_bytes):
-    return tag.encode("ascii") + struct.pack("i", len(payload_bytes)) + payload_bytes
+def make_chunk(tag, payload):
+    return tag.encode("ascii") + struct.pack("i", len(payload)) + payload
 
-def make_ANIM(anim):
-    w = ChunkWriter()
-    w.i(anim['flags'], anim['frames'])
-    w.f(anim['fps'])
-    return make_chunk("ANIM", w.bytes())
-
-def make_SEQS(seq):
-    w = ChunkWriter()
-    w.writes(seq['name'])
-    w.i(seq['start'], seq['end'], seq['flags'])
-    return make_chunk("SEQS", w.bytes())
-
-def make_TEXS(textures):
-    w = ChunkWriter()
-    for t in textures:
-        w.writes(t['name'])
-        w.i(t['flags'], t['blend'])
-        w.f(*t['position'])
-        w.f(*t['scale'])
-        w.f(t['rotation'])
-    return make_chunk("TEXS", w.bytes())
-
-def make_BRUS(materials):
-    w = ChunkWriter()
-    w.i(len(materials[0]['tids']) if materials else 0)
-    for m in materials:
-        w.writes(m['name'])
-        w.f(*m['rgba'])
-        w.f(m['shine'])
-        w.i(m['blend'], m['fx'])
-        w.i(*m['tids'])
-    return make_chunk("BRUS", w.bytes())
-
-def make_KEYS(keys_chunk):
-    w = ChunkWriter()
-    if not keys_chunk:
+def make_KEYS(keys):
+    if not keys:
         return b''
-
-    first = keys_chunk[0]
+    w = ChunkWriter()
+    first = keys[0]
     flags = 0
     if 'position' in first: flags |= 1
     if 'scale' in first: flags |= 2
     if 'rotation' in first: flags |= 4
-
     w.i(flags)
-
-    for k in keys_chunk:
+    for k in keys:
         w.i(k['frame'])
         if flags & 1: w.f(*k['position'])
         if flags & 2: w.f(*k['scale'])
         if flags & 4: w.f(*k['rotation'])
-
     return make_chunk("KEYS", w.bytes())
 
-def make_VRTS(node):
+def make_BONE(bones):
     w = ChunkWriter()
-    flags = (1 if node.get('normals') else 0) | (2 if node.get('rgba') else 0)
-    tcss = 2 if node.get('uvs') else 0
-    tcs = (len(node['uvs'][0]) // tcss) if node.get('uvs') else 0
+    for vid, weight in bones:
+        w.i(vid)
+        w.f(weight)
+    return make_chunk("BONE", w.bytes())
+
+def make_VRTS(mesh):
+    w = ChunkWriter()
+    flags = (1 if mesh.get('normals') else 0) | (2 if mesh.get('rgba') else 0)
+    tcss = 2 if mesh.get('uvs') else 0
+    tcs = (len(mesh['uvs'][0]) // tcss) if mesh.get('uvs') else 0
     w.i(flags, tcs, tcss)
-    for i, v in enumerate(node['vertices']):
+    for i, v in enumerate(mesh['vertices']):
         w.f(*v)
-        if flags & 1: w.f(*node['normals'][i])
-        if flags & 2: w.f(*node['rgba'][i])
+        if flags & 1: w.f(*mesh['normals'][i])
+        if flags & 2: w.f(*mesh['rgba'][i])
         if tcs * tcss:
-            uv_flat = node['uvs'][i]
+            uv = mesh['uvs'][i]
             for j in range(tcs):
-                start = j * tcss
-                w.f(*uv_flat[start:start+tcss])
+                w.f(*uv[j*2:j*2+2])
     return make_chunk("VRTS", w.bytes())
 
 def make_TRIS(tris):
@@ -308,22 +284,12 @@ def make_TRIS(tris):
         w.i(*face)
     return make_chunk("TRIS", w.bytes())
 
-def make_BONE(bones):
+def make_MESH(mesh):
     w = ChunkWriter()
-    for vid, weight in bones:
-        w.i(vid)
-        w.f(weight)
-    return make_chunk("BONE", w.bytes())
-
-def make_MESH(node):
-    w = ChunkWriter()
-    w.i(node['brush_id'])
-    if 'vertices' in node:
-        w.raw(make_VRTS(node))
-    for tris in node.get('faces', []):
+    w.i(mesh['brush_id'])
+    w.raw(make_VRTS(mesh))
+    for tris in mesh.get('faces', []):
         w.raw(make_TRIS(tris))
-    if 'bones' in node:
-        w.raw(make_BONE(node['bones']))
     return make_chunk("MESH", w.bytes())
 
 def make_NODE(node):
@@ -333,42 +299,70 @@ def make_NODE(node):
     w.f(*node['scale'])
     w.f(*node['rotation'])
 
-    if 'brush_id' in node:
-        w.raw(make_MESH(node))
+    if 'mesh' in node:
+        w.raw(make_MESH(node['mesh']))
 
     if 'bones' in node:
         w.raw(make_BONE(node['bones']))
 
-    for keys_chunk in node.get('key', []):
-        w.raw(make_KEYS(keys_chunk))
+    for keys in node.get('key', []):
+        w.raw(make_KEYS(keys))
 
     if 'anim' in node:
-        w.raw(make_ANIM(node['anim']))
+        w.raw(make_chunk("ANIM", struct.pack("2if",
+            node['anim']['flags'],
+            node['anim']['frames'],
+            node['anim']['fps']
+        )))
 
     for seq in node.get('sequences', []):
-        w.raw(make_SEQS(seq))
+        w.raw(make_chunk("SEQS",
+            seq['name'].encode() + b"\x00" +
+            struct.pack("3i", seq['start'], seq['end'], seq['flags'])
+        ))
 
     for child in node.get('nodes', []):
         w.raw(make_NODE(child))
 
     return make_chunk("NODE", w.bytes())
 
-def write_b3d(path, data, version=1, debug=False):
+def write_b3d(path, data, version=1):
     payload = b""
     if 'textures' in data:
-        payload += make_TEXS(data['textures'])
+        w = ChunkWriter()
+
+        for t in data['textures']:
+            w.writes(t['name'])
+            w.i(t['flags'], t['blend'])
+            w.f(*t['position'])
+            w.f(*t['scale'])
+            w.f(t['rotation'])
+
+        payload += make_chunk("TEXS", w.bytes())
+
     if 'materials' in data:
-        payload += make_BRUS(data['materials'])
+        mats = data['materials']
+
+        n_texs = len(mats[0]['tids']) if mats else 0
+
+        w = ChunkWriter()
+        w.i(n_texs)
+
+        for m in mats:
+            w.writes(m['name'])
+            w.f(*m['rgba'])
+            w.f(m['shine'])
+            w.i(m['blend'], m['fx'])
+
+            w.i(*m['tids'])
+
+        payload += make_chunk("BRUS", w.bytes())
+
     for node in data['nodes']:
         payload += make_NODE(node)
 
-    bb3d_size = 4 + len(payload)
-
-    with open(path, 'wb') as f:
-        f.write(b'BB3D')
-        f.write(struct.pack('i', bb3d_size))
-        f.write(struct.pack('i', version))
+    with open(path, "wb") as f:
+        f.write(b"BB3D")
+        f.write(struct.pack("i", 4 + len(payload)))
+        f.write(struct.pack("i", version))
         f.write(payload)
-
-    if debug:
-        print(f"BB3D size field: {bb3d_size}, payload length: {len(payload)}")

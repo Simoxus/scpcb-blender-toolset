@@ -3,10 +3,24 @@ import bpy
 import colorsys
 
 from math import pi
-from mathutils import Quaternion
+from mathutils import Matrix, Quaternion
 
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
+
+DX_MATRIX_EXPORT = Matrix((
+    (-1, 0, 0, 0),
+    ( 0, 0, 1, 0),
+    ( 0,-1, 0, 0),
+    ( 0, 0, 0, 1),
+))
+
+DX_MATRIX_IMPORT = Matrix((
+    (-1,  0,  0, 0),
+    ( 0,  0, -1, 0),
+    ( 0,  1,  0, 0),
+    ( 0,  0,  0, 1),
+))
 
 def pitch_quat(p):
     return Quaternion((1.0, 0.0, 0.0), p)

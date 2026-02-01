@@ -5,14 +5,8 @@ from math import sqrt, radians
 from pathlib import Path
 from mathutils import Matrix, Vector
 from .process_x import write_x, read_x
-from .common_functions import RandomColorGenerator, get_file, is_string_empty
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, DX_MATRIX
 
-DX_MATRIX = Matrix((
-    (-1, 0, 0, 0),
-    ( 0, 0, 1, 0),
-    ( 0,-1, 0, 0),
-    ( 0, 0, 0, 1),
-))
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
     mesh_name = mesh_dict["name"]
