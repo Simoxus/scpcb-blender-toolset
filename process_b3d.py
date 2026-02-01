@@ -144,7 +144,12 @@ class B3DParser:
             elif chunk == 'BONE':
                 bones = []
                 while self.fp.tell() < next_pos:
-                    bones.append((self.i(1)[0], self.f(1)[0]))
+                    bone_id = self.i(1)[0]
+                    weight  = self.f(1)[0]
+                    bones.append({
+                        'bone_id': bone_id,
+                        'weight': weight
+                    })
                 self.cb_data(chunk, {'bones': bones})
 
             self.fp.seek(next_pos)
@@ -256,9 +261,11 @@ def make_KEYS(keys):
 
 def make_BONE(bones):
     w = ChunkWriter()
-    for vid, weight in bones:
-        w.i(vid)
-        w.f(weight)
+
+    for b in bones:
+        w.i(b['bone_id'])
+        w.f(b['weight'])
+
     return make_chunk("BONE", w.bytes())
 
 def make_VRTS(mesh):

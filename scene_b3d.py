@@ -17,7 +17,7 @@ def import_mesh(context, data, node, material_list):
         data["brush_count"] = 0
 
     vertices = [Vector(flip(vertex)) for vertex in node["vertices"]]
-    faces = [face for brush in node["faces"] for face in brush["indices"]]
+    faces = [face[::-1] for brush in node["faces"] for face in brush["indices"]]
 
     mesh = bpy.data.meshes.new("%s_brush" % data["brush_count"])
 
@@ -43,10 +43,13 @@ def import_mesh(context, data, node, material_list):
     if uv_count > 1:
         layer_uv_1 = object_mesh.data.uv_layers.new(name="uvmap_lightmap")
 
+    loop_normals = [Vector((0.0, 0.0, 1.0))] * len(mesh.loops)
     for poly in object_mesh.data.polygons:
         poly.use_smooth = True
         for loop_index in poly.loop_indices:
             vert_index = object_mesh.data.loops[loop_index].vertex_index
+            i, j, k = Vector(node["normals"][vert_index])
+            loop_normals[loop_index] = (i, k, j)
             if uv_count == 1:
                 U0, V0 = node["uvs"][vert_index]
             else:
@@ -60,6 +63,7 @@ def import_mesh(context, data, node, material_list):
             if rgba_count > 0:
                 layer_color.data[loop_index].color = node["rgba"][vert_index]
 
+    mesh.normals_split_custom_set(loop_normals)
     mesh.transform(Matrix.Scale(0.00625, 4))
 
     data["brush_count"] += 1
@@ -168,6 +172,8 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None):
                 object_mesh = import_mesh(context, data, node["mesh"], material_list)
             else:
                 object_mesh = bpy.data.objects.new(result["classname"], None)
+                object_mesh.empty_display_size = 0.00625
+
                 context.collection.objects.link(object_mesh)
 
         if parent_ob is not None:
