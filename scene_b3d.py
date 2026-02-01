@@ -4,59 +4,49 @@ import json
 
 from pathlib import Path
 from .process_b3d import B3DTree
-from bpy_extras.io_utils import unpack_list
 from mathutils import Matrix, Vector, Quaternion
-from math import radians, pi, degrees, asin, atan2
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot, DX_MATRIX_IMPORT
+from math import radians
+from bpy_extras.io_utils import unpack_list
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, DX_MATRIX_IMPORT
 
-
-pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
+def flip(v):
+    return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
 
 def import_mesh(context, data, node, material_list):
     if data.get("brush_count") is None:
         data["brush_count"] = 0
 
-
+    vertices = [Vector(flip(vertex)) for vertex in node["vertices"]]
+    faces = [face for brush in node["faces"] for face in brush["indices"]]
 
     mesh = bpy.data.meshes.new("%s_brush" % data["brush_count"])
 
-    vertices = [Vector(vertex) for vertex in node["vertices"]]
-    faces = [face[::-1] for brush in node["faces"] for face in brush["indices"]]
-
     mesh.from_pydata(vertices, [], faces)
 
-
-
-        
-    #mesh.vertices.foreach_set('normal', unpack_list(node["normals"]))
-
-    #uvs = [(0,0) if len(uv)==0 else (uv[0], 1-uv[1]) for uv in node["uvs"]]
-    #uvlist = [i for poly in mesh.polygons for vidx in poly.vertices for i in uvs[vidx]]
-    #mesh.uv_layers.new().data.foreach_set('uv', uvlist)
+    object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh)
+    context.collection.objects.link(object_mesh)
 
     poly = 0
     for face in node["faces"]:
         for face_idx in face["indices"]:
             brush_mat = material_list[face["brush_id"]]
-            if brush_mat.name not in mesh.materials.keys():
-                mesh.materials.append(brush_mat)
+            if brush_mat.name not in object_mesh.data.materials.keys():
+                object_mesh.data.materials.append(brush_mat)
 
-            mat_id = mesh.materials.keys().index(brush_mat.name)
-            mesh.polygons[poly].material_index = mat_id
+            mat_id = object_mesh.data.materials.keys().index(brush_mat.name)
+            object_mesh.data.polygons[poly].material_index = mat_id
             poly += 1
 
-    loop_normals = [Vector((0.0, 0.0, 1.0))] * len(mesh.loops)
     uv_count = len(node["uvs"][0]) / 2
-    layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
-    layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
+    layer_color = object_mesh.data.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+    layer_uv_0 = object_mesh.data.uv_layers.new(name="uvmap_render")
     if uv_count > 1:
-        layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
+        layer_uv_1 = object_mesh.data.uv_layers.new(name="uvmap_lightmap")
 
-    for poly in mesh.polygons:
+    for poly in object_mesh.data.polygons:
         poly.use_smooth = True
         for loop_index in poly.loop_indices:
-            vert_index = mesh.loops[loop_index].vertex_index
-            loop_normals[loop_index] = -Vector(node["normals"][vert_index])
+            vert_index = object_mesh.data.loops[loop_index].vertex_index
             if uv_count == 1:
                 U0, V0 = node["uvs"][vert_index]
             else:
@@ -66,15 +56,11 @@ def import_mesh(context, data, node, material_list):
             if uv_count > 1:
                 layer_uv_1.data[loop_index].uv = (U1, 1 - V1)
             
-            if len(node["rgba"]) > 0:
+            rgba_count = len(node["rgba"])
+            if rgba_count > 0:
                 layer_color.data[loop_index].color = node["rgba"][vert_index]
 
-    #mesh.normals_split_custom_set(loop_normals)
-
-    mesh.transform(DX_MATRIX_IMPORT)
     mesh.transform(Matrix.Scale(0.00625, 4))
-    object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh)
-    context.collection.objects.link(object_mesh)
 
     data["brush_count"] += 1
 
@@ -184,10 +170,11 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None):
                 object_mesh = bpy.data.objects.new(result["classname"], None)
                 context.collection.objects.link(object_mesh)
 
-        sx, sy, sz = node["scale"]
-        object_mesh.matrix_world = Matrix.LocRotScale(DX_MATRIX_IMPORT @ Vector(node["position"]), Quaternion(node["rotation"]), Vector((sx, sz, sy)))
         if parent_ob is not None:
             object_mesh.parent = parent_ob
+            object_mesh.matrix_world = parent_ob.matrix_world
+        
+        object_mesh.matrix_local = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
 
         import_node_recursive(context, data, node["nodes"], material_list, object_mesh)
 
