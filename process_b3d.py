@@ -144,10 +144,10 @@ class B3DParser:
             elif chunk == 'BONE':
                 bones = []
                 while self.fp.tell() < next_pos:
-                    bone_id = self.i(1)[0]
+                    vertex_idx = self.i(1)[0]
                     weight  = self.f(1)[0]
                     bones.append({
-                        'bone_id': bone_id,
+                        'vertex_idx': vertex_idx,
                         'weight': weight
                     })
                 self.cb_data(chunk, {'bones': bones})
@@ -263,7 +263,7 @@ def make_BONE(bones):
     w = ChunkWriter()
 
     for b in bones:
-        w.i(b['bone_id'])
+        w.i(b['vertex_idx'])
         w.f(b['weight'])
 
     return make_chunk("BONE", w.bytes())
@@ -373,3 +373,4 @@ def write_b3d(path, data, version=1):
         f.write(struct.pack("i", 4 + len(payload)))
         f.write(struct.pack("i", version))
         f.write(payload)
+
