@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from .process_b3d import B3DTree
 from mathutils import Matrix, Vector, Quaternion
-from math import radians
+from math import radians, sqrt
 from .common_functions import RandomColorGenerator, get_file, is_string_empty
 from collections import defaultdict
 from bpy_extras import anim_utils
@@ -200,6 +200,21 @@ def parse_kv_string(s):
 
     return result
 
+def vector_length(v):
+    return v.length if hasattr(v, "length") else sqrt(sum(c * c for c in v))
+
+def avg_length(node):
+    final_length = 0.001
+    vectors = []
+    for node in node["nodes"]:
+        x, y, z = node["position"]
+        vectors.append(Matrix.Scale(0.00625, 4) @ Vector((x, z, y)))
+
+    if len(vectors) >= 1:
+        final_length = sum(vector_length(v) for v in vectors) / len(vectors)
+
+    return final_length
+
 def import_node_recursive(context, data, nodes, material_list, parent_ob=None, armature=None, armature_mesh=None, strips=None):
     for node in nodes:
         has_bones = node.get("bones") is not None
@@ -273,8 +288,7 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
             else:
                 object_mesh.head = (0, 0, 0)
 
-            object_mesh.tail = object_mesh.head + Vector((0, 0.00625, 0))
-
+            object_mesh.length = avg_length(node)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None :
