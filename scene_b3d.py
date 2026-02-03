@@ -82,63 +82,79 @@ def get_fcurve(fcurves, data_path, index):
             return fc
     return None
 
-def import_fcurve_data(armature, bone_name, keyframe_dict, node_transform):
-    action = armature.animation_data.action
-    fcurve_map = defaultdict(lambda: defaultdict(dict))
-    data_paths = {
-        "location": 3,
-        "rotation_euler": 3,
-        "rotation_quaternion": 4,
-        "scale": 3
-    }
+def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_bone=True):
+    last_position = Vector()
+    last_rotation = Quaternion()
+    last_scale = Vector((1,1,1))
+    for strip in strips:
+        action = strip.action
+        fcurve_map = defaultdict(lambda: defaultdict(dict))
+        data_paths={
+            "location": 3,
+            "rotation_euler": 3,
+            "rotation_quaternion": 4,
+            "scale": 3
+        }
 
-    for path, count in data_paths.items():
-        for index in range(count):
-            fcurve_data_path = f'pose.bones["{bone_name}"].{path}'
-            if (5, 0, 0) <= bpy.app.version:
-                if action.slots:
-                    action_slot = action.slots[0]
+        for path,count in data_paths.items():
+            for index in range(count):
+                if is_bone:
+                    fcurve_data_path = f'pose.bones["{bone_name}"].{path}'
+                    group_name = bone_name
+                    slot_name = ob.name
+
                 else:
-                    action_slot = action.slots.new(id_type='OBJECT', name=armature.name)
+                    fcurve_data_path  =path
+                    group_name = ob.name
+                    slot_name = ob.name
 
-                channelbag = anim_utils.action_ensure_channelbag_for_slot(action, action_slot)
-                fcurve = channelbag.fcurves.ensure(fcurve_data_path, index=index, group_name=bone_name)
-            else:
-                fcurve = get_fcurve(action.fcurves, fcurve_data_path, index)
-                if not fcurve:
-                    fcurve = action.fcurves.new(data_path=fcurve_data_path, index=index, action_group=bone_name)
+                if (5,0,0)<=bpy.app.version:
+                    if action.slots:
+                        action_slot = action.slots[0]
 
-            fcurve_map[bone_name][path][index] = fcurve
+                    else:
+                        action_slot = action.slots.new(id_type='OBJECT', name=slot_name)
+                        strip.action_slot = action_slot
 
-    for keyframe_section in keyframe_dict:
-        for frame_data in keyframe_section:
+                    channelbag = anim_utils.action_ensure_channelbag_for_slot(action, action_slot)
+                    fcurve = channelbag.fcurves.ensure(fcurve_data_path, index=index, group_name=group_name)
 
-            frame_number = frame_data["frame"]
-            position_field = frame_data.get("position")
-            rotation_field = frame_data.get("rotation")
-            scale_field = frame_data.get("scale")
-            loc = Vector()
-            rot_quat = Quaternion()
-            scl = Vector((1, 1, 1))
-            if position_field is not None:
-                loc = Matrix.Scale(0.00625, 4) @ Vector(flip(position_field))
+                else:
+                    fcurve = get_fcurve(action.fcurves, fcurve_data_path, index)
+                    if not fcurve:
+                        fcurve = action.fcurves.new(data_path=fcurve_data_path, index=index, action_group=group_name)
 
-            if rotation_field is not None:
-                rot_quat = Quaternion(flip(rotation_field))
+                fcurve_map[group_name][path][index] = fcurve
 
-            if scale_field is not None:
-                scl = Vector(flip(scale_field))
+        for keyframe_section in keyframe_dict:
+            for frame_data in keyframe_section:
+                frame_number = frame_data["frame"]
+                if action.frame_start <= frame_number <= action.frame_end:
+                    position_field = frame_data.get("position")
+                    rotation_field = frame_data.get("rotation")
+                    scale_field = frame_data.get("scale")
+                    if position_field is not None:
+                        last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
 
-            local_matrix = node_transform.inverted() @ Matrix.LocRotScale(loc, rot_quat, scl)
-            loc, rot_quat, scl = local_matrix.decompose()
-            rot_euler = rot_quat.to_euler('XYZ')
-            for i in range(3):
-                fcurve_map[bone_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
-                fcurve_map[bone_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
-                fcurve_map[bone_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
-                fcurve_map[bone_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
+                    if rotation_field is not None:
+                        last_rotation = Quaternion(flip(rotation_field))
 
-            fcurve_map[bone_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+                    if scale_field is not None:
+                        last_scale = Vector(flip(scale_field))
+
+                    if is_bone:
+                        transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
+                    else:
+                        transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
+                    loc, rot_quat, scl = transform_matrix.decompose()
+                    rot_euler = rot_quat.to_euler('XYZ')
+                    for i in range(3):
+                        fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
+                        fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
+                        fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
+                        fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
+
+                    fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
 
 def parse_kv_string(s):
     if not s:
@@ -184,30 +200,19 @@ def parse_kv_string(s):
 
     return result
 
-def import_node_recursive(context, data, nodes, material_list, parent_ob=None, armature=None, armature_mesh=None):
+def import_node_recursive(context, data, nodes, material_list, parent_ob=None, armature=None, armature_mesh=None, strips=None):
     for node in nodes:
-        is_armature = False
-        is_bone = False
-        if armature == None:
-            for child_node in node["nodes"]:
-                is_armature = child_node.get("bones") is not None
-
-        else:
-            is_bone = node.get("bones") is not None
+        has_bones = node.get("bones") is not None
 
         result = parse_kv_string(node["name"])
-        if is_armature:
+        if has_bones and armature is None:
             object_data = bpy.data.armatures.new(result["classname"])
             object_mesh = armature =  bpy.data.objects.new(result["classname"], object_data)
             context.collection.objects.link(object_mesh)
 
-            action = bpy.data.actions.new(name=object_mesh.name)
-
-            armature.animation_data_create()
-            armature.animation_data.action = action
-
-            #if (4, 4, 0) <= bpy.app.version:
-                #armature.animation_data.action_slot = action.slots[0]
+            if armature_mesh:
+                armature_modifier = armature_mesh.modifiers.new("Armature", type='ARMATURE')
+                armature_modifier.object = armature
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
@@ -219,14 +224,49 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
             context.view_layer.objects.active = armature
             bpy.ops.object.mode_set(mode='EDIT')
 
+            actions = []
+            for anim_node in data["nodes"]:
+                anim_dict = anim_node.get("anim")
+                if anim_dict is not None:
+                    bpy.data.scenes["Scene"].frame_end = anim_dict["frames"]
+
+            for sequence_node in data["nodes"]:
+                sequences_dict = sequence_node.get("sequences")
+                if sequences_dict is not None:
+                    for sequence_element in sequences_dict:
+                        action = bpy.data.actions.new(name=sequence_element["name"])
+                        action.use_frame_range = True
+                        action.frame_start = sequence_element["start"]
+                        action.frame_end = sequence_element["end"]
+                        actions.append(action)
+
+            anim_data = armature.animation_data_create()
+            anim_data.action = None 
+            track = anim_data.nla_tracks.get("anim")
+            if track is None:
+                track = anim_data.nla_tracks.new()
+                track.name = "anim"
+
+            strips = []
+            for action in actions:
+                strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
+                strips.append(strip)
+
             if node.get("mesh"):
                 mesh_data = import_mesh(data, node["mesh"], material_list)
                 armature_mesh = mesh_ob = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
                 context.collection.objects.link(mesh_ob)
 
-                mesh_ob.parent = object_mesh
+                #mesh_ob.parent = object_mesh
 
-        elif is_bone:
+                armature_modifier = mesh_ob.modifiers.new("Armature", type='ARMATURE')
+                armature_modifier.object = armature
+
+            keyframe_dict = node.get("key")
+            if keyframe_dict is not None:
+                import_fcurve_data(armature, strips, object_mesh.name, keyframe_dict, Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(), Vector((1,1,1))), False)
+
+        elif has_bones and armature:
             object_mesh = armature.data.edit_bones.new(node["name"])
             if parent_ob is not None and isinstance(parent_ob, bpy.types.EditBone):
                 object_mesh.head = parent_ob.tail
@@ -242,7 +282,7 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
                     object_mesh.parent = parent_ob
                     object_mesh.matrix = parent_ob.matrix @ node_transform
                 else:
-                   object_mesh.matrix = parent_ob.matrix_world @ node_transform
+                   object_mesh.matrix = node_transform
 
             if node.get("mesh"):
                 mesh_ob = import_mesh(data, node["mesh"], material_list)
@@ -259,7 +299,7 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
 
             keyframe_dict = node.get("key")
             if keyframe_dict is not None:
-                import_fcurve_data(armature, object_mesh.name, keyframe_dict, node_transform)
+                import_fcurve_data(armature, strips, object_mesh.name, keyframe_dict, node_transform)
 
         else:
             if result["classname"] == "brush" and node.get("mesh"):
@@ -324,6 +364,16 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
 
                 context.collection.objects.link(object_mesh)
 
+                if node.get("mesh"):
+                    mesh_data = import_mesh(data, node["mesh"], material_list)
+                    armature_mesh = mesh_ob = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
+                    context.collection.objects.link(mesh_ob)
+
+                    mesh_ob.parent = object_mesh
+
+                    armature_modifier = mesh_ob.modifiers.new("Armature", type='ARMATURE')
+                    armature_modifier.object = armature
+
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
                 node_transform = parent_ob.matrix_world @ node_transform
@@ -331,7 +381,9 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
                 
             object_mesh.matrix_world = node_transform
 
-        import_node_recursive(context, data, node["nodes"], material_list, object_mesh, armature, armature_mesh)
+        armature = import_node_recursive(context, data, node["nodes"], material_list, object_mesh, armature, armature_mesh, strips)
+
+    return armature
 
 def export_scene(context, filepath, report):
     print()

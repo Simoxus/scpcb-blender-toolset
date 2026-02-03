@@ -5,7 +5,7 @@ from math import sqrt, radians
 from pathlib import Path
 from mathutils import Matrix, Vector
 from .process_x import write_x, read_x
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, DX_MATRIX
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, DX_MATRIX_IMPORT
 
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
@@ -225,7 +225,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
     mesh.transform(ob.matrix_world)
-    mesh.transform(DX_MATRIX)
+    mesh.transform(DX_MATRIX_IMPORT)
 
     uv_layer = None
     if mesh.uv_layers.active:
@@ -257,7 +257,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            i, j, k  = DX_MATRIX.to_3x3() @ loop.normal
+            i, j, k  = DX_MATRIX_IMPORT.to_3x3() @ loop.normal
             loop_normal = (i, j, k)
 
             pos = v.co
