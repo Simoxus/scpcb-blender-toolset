@@ -326,7 +326,7 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
             else:
                 object_mesh.head = (0, 0, 0)
 
-            object_mesh.tail = object_mesh.head + Vector((0, avg_length(node), 0))
+            object_mesh.tail = object_mesh.head + Vector((0, 0.00625, 0))
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None :
@@ -334,7 +334,7 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
                     object_mesh.parent = parent_ob
                     object_mesh.matrix = parent_ob.matrix @ node_transform
                 else:
-                   object_mesh.matrix = node_transform
+                   object_mesh.matrix = armature.matrix_local.inverted() @ node_transform
 
             if node.get("mesh"):
                 mesh_ob = import_mesh(data, node["mesh"], material_list)
@@ -470,8 +470,6 @@ def get_scene_objects(node_dict, depsgraph, parent_ob=None):
                 mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
                 mesh.calc_loop_triangles()
 
-
-
 def export_scene(context, filepath, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -564,7 +562,6 @@ def import_scene(context, filepath, report):
                     texture = data["textures"][tid_element]
                     print()
                     texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
-
 
                     material.use_nodes = True
                     bsdf = material.node_tree.nodes["Principled BSDF"]
