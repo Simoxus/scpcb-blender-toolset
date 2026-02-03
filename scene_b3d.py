@@ -9,7 +9,39 @@ from math import radians, sqrt
 from .common_functions import RandomColorGenerator, get_file, is_string_empty
 from collections import defaultdict
 from bpy_extras import anim_utils
+from enum import Enum, auto, Flag
 
+class TextureFXFlags(Flag):
+    color = auto()
+    alpha = auto()
+    masked = auto()
+    mipmapped = auto()
+    clamp_u = auto()
+    clamp_v = auto()
+    spherical_environment_map = auto()
+    cubic_environment_map = auto()
+    store_texture_in_vram = auto()
+    force_high_color_textures = auto()
+
+class TextureBlendEnum(Enum):
+    do_not_blend = 0
+    no_blend_or_alpha = auto()
+    multiply = auto()
+    add = auto()
+    dot3 = auto()
+    multiply2 = auto()
+    
+class MaterialFXFlags(Flag):
+    full_bright = auto()
+    use_vertex_colors_instead_of_brush_color = auto()
+    flatshaded = auto()
+    disable_fog = auto()
+    disable_backface_culling = auto()
+
+class MaterialBlendEnum(Enum):
+    alpha = 0
+    multiply = auto()
+    add = auto()
 
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
@@ -214,7 +246,7 @@ def vector_length(v):
     return v.length if hasattr(v, "length") else sqrt(sum(c * c for c in v))
 
 def avg_length(node):
-    final_length = 0.001
+    final_length = 0.00625
     vectors = []
     for node in node["nodes"]:
         x, y, z = node["position"]
@@ -235,16 +267,17 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
             object_mesh = armature =  bpy.data.objects.new(result["classname"], object_data)
             context.collection.objects.link(object_mesh)
 
-            if armature_mesh:
-                armature_modifier = armature_mesh.modifiers.new("Armature", type='ARMATURE')
-                armature_modifier.object = armature
-
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
                 object_mesh.parent = parent_ob
-                node_transform = parent_ob.matrix_world @ node_transform
 
-            object_mesh.matrix_world = node_transform
+            object_mesh.matrix_local = node_transform
+
+            if armature_mesh:
+                armature_mesh.parent = armature
+                armature_mesh.matrix_parent_inverse  = node_transform.inverted()
+                armature_modifier = armature_mesh.modifiers.new("Armature", type='ARMATURE')
+                armature_modifier.object = armature
 
             context.view_layer.objects.active = armature
             bpy.ops.object.mode_set(mode='EDIT')
@@ -282,11 +315,6 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
                 armature_mesh = mesh_ob = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
                 context.collection.objects.link(mesh_ob)
 
-                #mesh_ob.parent = object_mesh
-
-                armature_modifier = mesh_ob.modifiers.new("Armature", type='ARMATURE')
-                armature_modifier.object = armature
-
             keyframe_dict = node.get("key")
             if keyframe_dict is not None:
                 import_fcurve_data(armature, strips, object_mesh.name, keyframe_dict, Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(), Vector((1,1,1))), False)
@@ -298,7 +326,7 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
             else:
                 object_mesh.head = (0, 0, 0)
 
-            object_mesh.length = avg_length(node)
+            object_mesh.tail = object_mesh.head + Vector((0, avg_length(node), 0))
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None :
@@ -395,22 +423,107 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
 
                     mesh_ob.parent = object_mesh
 
-                    armature_modifier = mesh_ob.modifiers.new("Armature", type='ARMATURE')
-                    armature_modifier.object = armature
-
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
-                node_transform = parent_ob.matrix_world @ node_transform
                 object_mesh.parent = parent_ob
                 
-            object_mesh.matrix_world = node_transform
+            object_mesh.matrix_local = node_transform
 
         armature = import_node_recursive(context, data, node["nodes"], material_list, object_mesh, armature, armature_mesh, strips)
 
     return armature
 
+def get_scene_objects(node_dict, depsgraph, parent_ob=None):
+    for ob in bpy.data.objects:
+        if ob.parent == parent_ob:
+            transform_matrix = ob.matrix_world
+            if parent_ob is not None:
+                transform_matrix = parent_ob.matrix_world.inversed() @ ob.matrix_world
+            loc, rot_quat, scl = transform_matrix.decompose()
+
+            tx, ty, tz = Matrix.Scale(0.00625, 4) @ loc
+            sx, sy, sz = scl
+            rw, ri, rj, rk = rot_quat
+            node_dict = {
+                "name": ob.name,
+                "position": [
+                    tx,
+                    tz,
+                    ty
+                ],
+                "scale": [
+                    sx,
+                    sz,
+                    sy
+                ],
+                "rotation": [
+                    rw,
+                    ri,
+                    rk,
+                    rj
+                ],
+                "nodes": []
+            }
+
+            if ob.type == "MESH":
+                ob_eval = ob.evaluated_get(depsgraph)
+                mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+                mesh.calc_loop_triangles()
+
+
+
 def export_scene(context, filepath, report):
-    print()
+    if context.view_layer.objects.active is not None:
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    depsgraph = context.evaluated_depsgraph_get()
+
+    b3d_data = {"nodes": [], "textures": [], "materials": []}
+
+    # flags and blend need to come from something later. Probably a custom shader group or properties - Gen
+    b3d_data["textures"]
+    for img in bpy.data.images:
+        if img.source == 'FILE' and img.filepath:
+            texture_dict = {
+                "name": img.name,
+                "flags": TextureFXFlags.color.value,
+                "blend": TextureBlendEnum.multiply2.value,
+                "position": [
+                    0.0,
+                    0.0
+                ],
+                "scale": [
+                    1.0,
+                    1.0
+                ],
+                "rotation": 0.0
+            }
+
+            b3d_data["textures"].append(texture_dict)
+
+    for mat in bpy.data.materials:
+        material_dict = {
+            "name": mat.name,
+            "rgba": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ],
+            "shine": 0.0,
+            "blend": MaterialBlendEnum.multiply.value,
+            "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
+            "tids": [-1]
+        },
+
+        b3d_data["materials"].append(material_dict)
+
+    object_layer = []
+    for ob in bpy.data.objects:
+        if ob.parent is None:
+            object_layer.append(ob)
+
+    get_scene_objects(b3d_data["nodes"], depsgraph)
 
 def import_scene(context, filepath, report):
     game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)

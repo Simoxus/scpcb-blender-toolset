@@ -112,6 +112,8 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
                     for extension in extension_set:
                         file_name_w_ext = os.path.basename(file_name).lower()
                         file_name_wo_ext = file_name_w_ext.rsplit(".", 1)[0]
+                        if file_name_wo_ext == "scp-012_diffuse": # The SCP 12 model references a texture that doesn't exist so putting this hack here - Gen
+                            file_name_wo_ext = "scp-012_0"
                         if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
                             file_path = os.path.join(asset_directory, file)
                             break
