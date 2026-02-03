@@ -35,15 +35,19 @@ def import_mesh(data, node, material_list):
     mesh.update(calc_edges=True)
     bpy.context.view_layer.update()
 
+    normal_count = len(node["normals"])
+    rgba_count = len(node["rgba"])
+
     material_indicies = []
     for brush in node["faces"]:
         brush_id = brush["brush_id"]
-        for face in brush["indices"]:
-            brush_mat = material_list[brush_id]
-            if brush_mat.name not in mesh.materials.keys():
-                mesh.materials.append(brush_mat)
+        if brush_id >= 0:
+            for face in brush["indices"]:
+                brush_mat = material_list[brush_id]
+                if brush_mat.name not in mesh.materials.keys():
+                    mesh.materials.append(brush_mat)
 
-            material_indicies.append(mesh.materials.keys().index(brush_mat.name))
+                material_indicies.append(mesh.materials.keys().index(brush_mat.name))
 
     uv_count = len(node["uvs"][0]) / 2
     layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
@@ -51,13 +55,17 @@ def import_mesh(data, node, material_list):
     if uv_count > 1:
         layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
 
+    material_count = len(material_indicies)
     for poly_idx, poly in enumerate(mesh.polygons):
         poly.use_smooth = True
-        poly.material_index = material_indicies[poly_idx]
+        if material_count > poly_idx:
+            poly.material_index = material_indicies[poly_idx]
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
-            i, j, k = node["normals"][vert_index]
-            loop_normals.append((i, k, j))
+            if normal_count > 0:
+                i, j, k = node["normals"][vert_index]
+                loop_normals.append((i, k, j))
+
             if uv_count == 1:
                 U0, V0 = node["uvs"][vert_index]
             else:
@@ -67,11 +75,13 @@ def import_mesh(data, node, material_list):
             if uv_count > 1:
                 layer_uv_1.data[loop_index].uv = (U1, 1 - V1)
             
-            rgba_count = len(node["rgba"])
+
             if rgba_count > 0:
                 layer_color.data[loop_index].color = node["rgba"][vert_index]
 
-    mesh.normals_split_custom_set(loop_normals)
+    if normal_count > 0:
+        mesh.normals_split_custom_set(loop_normals)
+
     mesh.transform(Matrix.Scale(0.00625, 4))
 
     return mesh
@@ -414,34 +424,43 @@ def import_scene(context, filepath, report):
     random_color_gen = RandomColorGenerator() # generates a random sequence of colors
 
     material_list = []
-    texture_count = len(data["textures"])
-    for material_dict in data["materials"]:
-        material = bpy.data.materials.new(material_dict["name"])
-        material.diffuse_color = random_color_gen.next()
+    texture_count = 0
+    
+    texture_dict = data.get("textures")
+    material_dict = data.get("materials")
+    if texture_dict is not None:
+        texture_count = len(texture_dict)
 
-        material.use_nodes = True
-        nodes = material.node_tree.nodes
-        bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+    if material_dict is not None:
+        for material_dict in data["materials"]:
+            material = bpy.data.materials.new(material_dict["name"])
+            material.diffuse_color = random_color_gen.next()
 
-        r, g, b, a = material_dict["rgba"]
-        bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
-        bsdf.inputs["Alpha"].default_value = a
+            material.use_nodes = True
+            nodes = material.node_tree.nodes
+            bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
 
-        material.blend_method = 'BLEND' if a < 1.0 else 'OPAQUE'
+            r, g, b, a = material_dict["rgba"]
+            bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
+            bsdf.inputs["Alpha"].default_value = a
 
-        for tid_element in material_dict["tids"]:
-            if tid_element != -1 and texture_count > tid_element:
-                texture = data["textures"][tid_element]
-                texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
+            material.blend_method = 'BLEND' if a < 1.0 else 'OPAQUE'
 
-                material.use_nodes = True
-                bsdf = material.node_tree.nodes["Principled BSDF"]
-                texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
-                texImage.image = texture_asset
-                if not "_lm" in texture['name']:
-                    material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
+            for tid_element in material_dict["tids"]:
+                if tid_element != -1 and texture_count > tid_element:
+                    texture = data["textures"][tid_element]
+                    print()
+                    texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
 
-        material_list.append(material)
+
+                    material.use_nodes = True
+                    bsdf = material.node_tree.nodes["Principled BSDF"]
+                    texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
+                    texImage.image = texture_asset
+                    if not "_lm" in texture['name']:
+                        material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
+
+            material_list.append(material)
 
     import_node_recursive(context, data, data["nodes"], material_list)
     if context.view_layer.objects.active is not None:
