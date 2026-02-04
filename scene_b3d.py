@@ -2,14 +2,14 @@ import os
 import bpy
 import json
 
+from math import radians
 from pathlib import Path
-from .process_b3d import B3DTree
-from mathutils import Matrix, Vector, Quaternion
-from math import radians, sqrt, degrees
-from .common_functions import RandomColorGenerator, get_file, is_string_empty
-from collections import defaultdict
+from .process_b3d import B3DTree, write_b3d
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
+from collections import defaultdict
+from mathutils import Matrix, Vector, Quaternion
+from .common_functions import RandomColorGenerator, get_file, is_string_empty
 
 class TextureFXFlags(Flag):
     color = auto()
@@ -46,7 +46,7 @@ class MaterialBlendEnum(Enum):
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
 
-def import_mesh(data, node, material_list):
+def import_mesh(node, material_list):
     vertices = []
     faces = []
     loop_normals = []
@@ -272,12 +272,9 @@ def get_bone_distance(node, parent_ob):
 
     return bone_distance
 
-
 def import_node_recursive(context, data, nodes, material_list, armature, parent_ob=None, last_mesh=None, strips=None):
     for node in nodes:
         has_skin = node.get("bones") is not None
-        has_anim = node.get("anim") is not None
-        has_sequence = node.get("sequences") is not None
         has_key = node.get("key") is not None
         has_mesh = node.get("mesh") is not None
         generated_mesh = False
@@ -323,6 +320,9 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
                             strips.append(strip)
 
                     elif child_has_anim:
+                        anim_dict = node["anim"]
+                        context.scene.frame_end = anim_dict["frames"]
+
                         anim_data = armature.animation_data_create()
                         anim_data.action = None 
                         track = anim_data.nla_tracks.new()
@@ -360,7 +360,7 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
                 if data.get("brush_count") is None:
                     data["brush_count"] = 0
 
-                mesh_data = import_mesh(data, node["mesh"], material_list)
+                mesh_data = import_mesh(node["mesh"], material_list)
                 object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
@@ -425,7 +425,7 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
             object_mesh.matrix_local = node_transform
 
         if not generated_mesh and has_mesh:
-            mesh_data = import_mesh(data, node["mesh"], material_list)
+            mesh_data = import_mesh(node["mesh"], material_list)
             last_mesh = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
             context.collection.objects.link(last_mesh)
 
@@ -434,10 +434,6 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
             if armature:
                 armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
                 armature_modifier.object = armature
-
-        if has_anim:
-            anim_dict = node["anim"]
-            context.scene.frame_end = anim_dict["frames"]
 
         if has_skin:
             group_name = object_mesh.name
@@ -453,18 +449,18 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
 
         import_node_recursive(context, data, node["nodes"], material_list, armature, object_mesh, last_mesh, strips)
 
-def get_scene_objects(node_dict, depsgraph, parent_ob=None):
+def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
     for ob in bpy.data.objects:
         if ob.parent == parent_ob:
             transform_matrix = ob.matrix_world
             if parent_ob is not None:
-                transform_matrix = parent_ob.matrix_world.inversed() @ ob.matrix_world
+                transform_matrix = parent_ob.matrix_world.inverted() @ ob.matrix_world
             loc, rot_quat, scl = transform_matrix.decompose()
 
-            tx, ty, tz = Matrix.Scale(0.00625, 4) @ loc
+            tx, ty, tz = Matrix.Scale(160, 4) @ loc
             sx, sy, sz = scl
             rw, ri, rj, rk = rot_quat
-            node_dict = {
+            ob_node_dict = {
                 "name": ob.name,
                 "position": [
                     tx,
@@ -490,6 +486,42 @@ def get_scene_objects(node_dict, depsgraph, parent_ob=None):
                 mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
                 mesh.calc_loop_triangles()
 
+                ob_node_dict["mesh"] = {
+                    "brush_id": -1,
+                    "vertices": [],
+                    "normals": [],
+                    "rgba": [],
+                    "uvs": [],
+                    "faces": []
+                }
+
+                for vertex in mesh.vertices:
+                    x, y, z = Matrix.Scale(160, 4) @ vertex.co
+                    ob_node_dict["mesh"]["vertices"].append((x, z ,y))
+
+                brush_dict = {
+                    "brush_id": -1,
+                    "indices": []
+                }
+
+                for tri in mesh.loop_triangles:
+                    face_indicies = []
+                    for loop_index in tri.loops:
+                        loop = mesh.loops[loop_index]
+                        face_indicies.append(loop.vertex_index)
+
+                    brush_dict["indices"].append(face_indicies[::-1])
+
+                ob_node_dict["mesh"]["faces"].append(brush_dict)
+
+
+
+            get_scene_objects(b3d_data, ob_node_dict["nodes"], ob, depsgraph)
+
+            node_dict.append(ob_node_dict)
+
+
+
 def export_scene(context, filepath, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -499,49 +531,50 @@ def export_scene(context, filepath, report):
     b3d_data = {"nodes": [], "textures": [], "materials": []}
 
     # flags and blend need to come from something later. Probably a custom shader group or properties - Gen
-    b3d_data["textures"]
-    for img in bpy.data.images:
-        if img.source == 'FILE' and img.filepath:
-            texture_dict = {
-                "name": img.name,
-                "flags": TextureFXFlags.color.value,
-                "blend": TextureBlendEnum.multiply2.value,
-                "position": [
-                    0.0,
-                    0.0
-                ],
-                "scale": [
+    if False:
+        b3d_data["textures"]
+        for img in bpy.data.images:
+            if img.source == 'FILE' and img.filepath:
+                texture_dict = {
+                    "name": img.name,
+                    "flags": TextureFXFlags.color.value,
+                    "blend": TextureBlendEnum.multiply2.value,
+                    "position": [
+                        0.0,
+                        0.0
+                    ],
+                    "scale": [
+                        1.0,
+                        1.0
+                    ],
+                    "rotation": 0.0
+                }
+
+                b3d_data["textures"].append(texture_dict)
+
+        for mat in bpy.data.materials:
+            material_dict = {
+                "name": mat.name,
+                "rgba": [
+                    1.0,
+                    1.0,
                     1.0,
                     1.0
                 ],
-                "rotation": 0.0
-            }
+                "shine": 0.0,
+                "blend": MaterialBlendEnum.multiply.value,
+                "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
+                "tids": [-1]
+            },
 
-            b3d_data["textures"].append(texture_dict)
+            b3d_data["materials"].append(material_dict)
 
-    for mat in bpy.data.materials:
-        material_dict = {
-            "name": mat.name,
-            "rgba": [
-                1.0,
-                1.0,
-                1.0,
-                1.0
-            ],
-            "shine": 0.0,
-            "blend": MaterialBlendEnum.multiply.value,
-            "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
-            "tids": [-1]
-        },
+    get_scene_objects(b3d_data, b3d_data["nodes"], None, depsgraph)
 
-        b3d_data["materials"].append(material_dict)
+    write_b3d(filepath, b3d_data)
 
-    object_layer = []
-    for ob in bpy.data.objects:
-        if ob.parent is None:
-            object_layer.append(ob)
-
-    get_scene_objects(b3d_data["nodes"], depsgraph)
+    report({'INFO'}, "Export completed successfully")
+    return {'FINISHED'}
 
 def import_scene(context, filepath, report):
     game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)
@@ -593,6 +626,7 @@ def import_scene(context, filepath, report):
 
     strips = []
     armature_ob = None
+
     import_node_recursive(context, data, data["nodes"], material_list, armature_ob, strips=strips)
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
