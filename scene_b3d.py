@@ -242,20 +242,26 @@ def parse_kv_string(s):
 
     return result
 
-def vector_length(v):
-    return v.length if hasattr(v, "length") else sqrt(sum(c * c for c in v))
+def get_bone_distance(node, parent_ob):
+    child_nodes = node["nodes"]
+    child_node_count = len(child_nodes)
+    if child_node_count == 0 and parent_ob:
+        bone_distance = parent_ob.length
 
-def avg_length(node):
-    final_length = 0.00625
-    vectors = []
-    for node in node["nodes"]:
-        x, y, z = node["position"]
-        vectors.append(Matrix.Scale(0.00625, 4) @ Vector((x, z, y)))
+    elif child_node_count == 1:
+        bone_distance = (Matrix.Scale(0.00625, 4) @ Vector(child_nodes[0]["position"])).length
 
-    if len(vectors) >= 1:
-        final_length = sum(vector_length(v) for v in vectors) / len(vectors)
+    elif child_node_count > 1:
+        total_length = 0
+        for child_node in child_nodes:
+            total_length += (Matrix.Scale(0.00625, 4) @ Vector(child_node["position"])).length
+        bone_distance = total_length / child_node_count
 
-    return final_length
+    if bone_distance < 0.000001:
+        bone_distance = 0.00625
+
+    return bone_distance
+
 
 def import_node_recursive(context, data, nodes, material_list, armature, parent_ob=None, last_mesh=None, strips=None):
     for node in nodes:
@@ -331,7 +337,7 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
                 else:
                     object_mesh.head = (0, 0, 0)
 
-                object_mesh.tail = object_mesh.head + Vector((0, 0.00625, 0))
+                object_mesh.tail = object_mesh.head + Vector((0, get_bone_distance(node, parent_ob), 0))
 
                 node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
                 if parent_ob is not None:
