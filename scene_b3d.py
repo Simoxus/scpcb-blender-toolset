@@ -245,17 +245,27 @@ def parse_kv_string(s):
 def get_bone_distance(node, parent_ob):
     child_nodes = node["nodes"]
     child_node_count = len(child_nodes)
+    bone_distance = 0
     if child_node_count == 0 and parent_ob:
-        bone_distance = parent_ob.length
+        if isinstance(parent_ob, bpy.types.EditBone):
+            bone_distance = parent_ob.length
+        else:
+            bone_distance = parent_ob.location.length
 
     elif child_node_count == 1:
-        bone_distance = (Matrix.Scale(0.00625, 4) @ Vector(child_nodes[0]["position"])).length
+        child_position = Vector(child_nodes[0]["position"])
+        position = Vector(node["position"])
+
+        bone_distance = (Matrix.Scale(0.00625, 4) @ (position - child_position)).length
 
     elif child_node_count > 1:
-        total_length = 0
+        positions = []
         for child_node in child_nodes:
-            total_length += (Matrix.Scale(0.00625, 4) @ Vector(child_node["position"])).length
-        bone_distance = total_length / child_node_count
+            positions.append(Vector(child_node["position"]))
+
+        average_position = (sum(positions, Vector()) / len(positions))
+        position = Vector(node["position"])
+        bone_distance = (Matrix.Scale(0.00625, 4) @ (position - average_position)).length
 
     if bone_distance < 0.000001:
         bone_distance = 0.00625
@@ -331,13 +341,7 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
 
             else:
                 object_mesh = armature.data.edit_bones.new(node["name"])
-
-                if parent_ob is not None and isinstance(parent_ob, bpy.types.EditBone):
-                    object_mesh.head = parent_ob.tail
-                else:
-                    object_mesh.head = (0, 0, 0)
-
-                object_mesh.tail = object_mesh.head + Vector((0, get_bone_distance(node, parent_ob), 0))
+                object_mesh.length = 0.00625
 
                 node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
                 if parent_ob is not None:
@@ -348,6 +352,7 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
                         loc, rot, scl = armature.matrix_world.inverted().decompose()
                         object_mesh.matrix = Matrix.Translation(loc) @ node_transform
 
+                object_mesh.length = get_bone_distance(node, parent_ob)
 
         else:
             if result["classname"] == "brush" and node.get("mesh"):
