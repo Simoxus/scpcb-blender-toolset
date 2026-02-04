@@ -124,10 +124,10 @@ def get_fcurve(fcurves, data_path, index):
             return fc
     return None
 
-def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_bone=True):
+def import_fcurve_data(ob, strips, bone_name, keyframe_dict, last_transform, node_transform, is_bone=True):
     last_position = Vector()
     last_rotation = Quaternion()
-    last_scale = Vector((1,1,1))
+    last_scale = Vector((1, 1, 1))
     for strip in strips:
         action = strip.action
         fcurve_map = defaultdict(lambda: defaultdict(dict))
@@ -146,7 +146,7 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
                     slot_name = ob.name
 
                 else:
-                    fcurve_data_path  =path
+                    fcurve_data_path = path
                     group_name = ob.name
                     slot_name = ob.name
 
@@ -185,7 +185,7 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
                         last_scale = Vector(flip(scale_field))
 
                     if is_bone:
-                        transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
+                        transform_matrix = (last_transform @ node_transform).inverted() @ (last_transform @ Matrix.LocRotScale(last_position, last_rotation, last_scale))
                     else:
                         transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
                     loc, rot_quat, scl = transform_matrix.decompose()
@@ -257,70 +257,18 @@ def avg_length(node):
 
     return final_length
 
-def import_node_recursive(context, data, nodes, material_list, parent_ob=None, armature=None, armature_mesh=None, strips=None):
+def import_node_recursive(context, data, nodes, material_list, armature, parent_ob=None, last_mesh=None, last_transform=None, strips=None):
     for node in nodes:
-        has_bones = node.get("bones") is not None
-
+        has_skin = node.get("bones") is not None
+        has_anim = node.get("anim") is not None
+        has_sequence = node.get("sequences") is not None
+        has_key = node.get("key") is not None
+        has_mesh = node.get("mesh") is not None
+                           
         result = parse_kv_string(node["name"])
-        if has_bones and armature is None:
-            object_data = bpy.data.armatures.new(result["classname"])
-            object_mesh = armature =  bpy.data.objects.new(result["classname"], object_data)
-            context.collection.objects.link(object_mesh)
-
-            node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
-            if parent_ob is not None:
-                object_mesh.parent = parent_ob
-
-            object_mesh.matrix_local = node_transform
-
-            if armature_mesh:
-                armature_mesh.parent = armature
-                armature_mesh.matrix_parent_inverse  = node_transform.inverted()
-                armature_modifier = armature_mesh.modifiers.new("Armature", type='ARMATURE')
-                armature_modifier.object = armature
-
-            context.view_layer.objects.active = armature
-            bpy.ops.object.mode_set(mode='EDIT')
-
-            actions = []
-            for anim_node in data["nodes"]:
-                anim_dict = anim_node.get("anim")
-                if anim_dict is not None:
-                    bpy.data.scenes["Scene"].frame_end = anim_dict["frames"]
-
-            for sequence_node in data["nodes"]:
-                sequences_dict = sequence_node.get("sequences")
-                if sequences_dict is not None:
-                    for sequence_element in sequences_dict:
-                        action = bpy.data.actions.new(name=sequence_element["name"])
-                        action.use_frame_range = True
-                        action.frame_start = sequence_element["start"]
-                        action.frame_end = sequence_element["end"]
-                        actions.append(action)
-
-            anim_data = armature.animation_data_create()
-            anim_data.action = None 
-            track = anim_data.nla_tracks.get("anim")
-            if track is None:
-                track = anim_data.nla_tracks.new()
-                track.name = "anim"
-
-            strips = []
-            for action in actions:
-                strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
-                strips.append(strip)
-
-            if node.get("mesh"):
-                mesh_data = import_mesh(data, node["mesh"], material_list)
-                armature_mesh = mesh_ob = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
-                context.collection.objects.link(mesh_ob)
-
-            keyframe_dict = node.get("key")
-            if keyframe_dict is not None:
-                import_fcurve_data(armature, strips, object_mesh.name, keyframe_dict, Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(), Vector((1,1,1))), False)
-
-        elif has_bones and armature:
+        if has_skin or has_key:
             object_mesh = armature.data.edit_bones.new(node["name"])
+
             if parent_ob is not None and isinstance(parent_ob, bpy.types.EditBone):
                 object_mesh.head = parent_ob.tail
             else:
@@ -329,29 +277,11 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
             object_mesh.tail = object_mesh.head + Vector((0, 0.00625, 0))
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
-            if parent_ob is not None :
-                if isinstance(parent_ob, bpy.types.EditBone):
-                    object_mesh.parent = parent_ob
-                    object_mesh.matrix = parent_ob.matrix @ node_transform
-                else:
-                   object_mesh.matrix = armature.matrix_local.inverted() @ node_transform
+            if parent_ob is not None and isinstance(parent_ob, bpy.types.EditBone):
+                object_mesh.parent = parent_ob
 
-            if node.get("mesh"):
-                mesh_ob = import_mesh(data, node["mesh"], material_list)
-                object_mesh = bpy.data.objects.new("mesh_%s" % node["name"], mesh_ob)
-                context.collection.objects.link(object_mesh)
-
-            group_name = object_mesh.name
-            if not group_name in armature_mesh.vertex_groups.keys():
-                armature_mesh.vertex_groups.new(name = group_name)
-
-            group_index = armature_mesh.vertex_groups.keys().index(group_name)
-            for bone_idx, bone_element in enumerate(node["bones"]):
-                armature_mesh.vertex_groups[group_index].add([bone_element["vertex_idx"]], bone_element["weight"], 'ADD')
-
-            keyframe_dict = node.get("key")
-            if keyframe_dict is not None:
-                import_fcurve_data(armature, strips, object_mesh.name, keyframe_dict, node_transform)
+            next_transform = last_transform @ node_transform
+            object_mesh.matrix = next_transform
 
         else:
             if result["classname"] == "brush" and node.get("mesh"):
@@ -416,22 +346,85 @@ def import_node_recursive(context, data, nodes, material_list, parent_ob=None, a
 
                 context.collection.objects.link(object_mesh)
 
-                if node.get("mesh"):
-                    mesh_data = import_mesh(data, node["mesh"], material_list)
-                    armature_mesh = mesh_ob = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
-                    context.collection.objects.link(mesh_ob)
-
-                    mesh_ob.parent = object_mesh
-
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
-                object_mesh.parent = parent_ob
-                
-            object_mesh.matrix_local = node_transform
+                if isinstance(parent_ob, bpy.types.EditBone):
+                    object_mesh.parent = armature
+                    object_mesh.parent_type = "BONE"
+                    object_mesh.parent_bone = parent_ob.name
 
-        armature = import_node_recursive(context, data, node["nodes"], material_list, object_mesh, armature, armature_mesh, strips)
+                    next_transform = last_transform @ node_transform
+                    object_mesh.matrix_local = node_transform
 
-    return armature
+                else:
+                    object_mesh.parent = parent_ob
+            
+                    next_transform = last_transform @ node_transform
+                    object_mesh.matrix_world = next_transform
+
+            else:
+                next_transform = last_transform @ node_transform
+                object_mesh.matrix_world = next_transform
+
+        if armature and has_mesh:
+            mesh_data = import_mesh(data, node["mesh"], material_list)
+            last_mesh = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
+            context.collection.objects.link(last_mesh)
+
+            last_mesh.parent = object_mesh
+
+            if armature:
+                armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
+                armature_modifier.object = armature
+
+        if has_anim:
+            armature.parent = object_mesh
+            anim_dict = node["anim"]
+            context.scene.frame_end = anim_dict["frames"]
+
+        if has_sequence:
+            anim_data = armature.animation_data_create()
+            anim_data.action = None 
+            track = anim_data.nla_tracks.new()
+            track.name = "anim"
+
+            sequences_dict = node["sequences"]
+            for sequence_element in sequences_dict:
+                action = bpy.data.actions.new(name=sequence_element["name"])
+                action.use_frame_range = True
+                action.frame_start = sequence_element["start"]
+                action.frame_end = sequence_element["end"]
+
+                strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
+                strips.append(strip)
+
+        elif has_anim:
+            anim_data = armature.animation_data_create()
+            anim_data.action = None 
+            track = anim_data.nla_tracks.new()
+            track.name = "anim"
+
+            action = bpy.data.actions.new(name="Animation")
+            action.use_frame_range = True
+            action.frame_start = 1
+            action.frame_end = node["anim"]["frames"]
+
+            strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
+            strips.append(strip)
+
+        if has_skin:
+            group_name = object_mesh.name
+            if not group_name in last_mesh.vertex_groups.keys():
+                last_mesh.vertex_groups.new(name = group_name)
+
+            group_index = last_mesh.vertex_groups.keys().index(group_name)
+            for bone_element in node["bones"]:
+                last_mesh.vertex_groups[group_index].add([bone_element["vertex_idx"]], bone_element["weight"], 'ADD')
+
+        if has_key and has_skin:
+            import_fcurve_data(armature, strips, object_mesh.name, node["key"], last_transform, node_transform, has_skin)
+
+        import_node_recursive(context, data, node["nodes"], material_list, armature, object_mesh, last_mesh, next_transform, strips)
 
 def get_scene_objects(node_dict, depsgraph, parent_ob=None):
     for ob in bpy.data.objects:
@@ -560,7 +553,6 @@ def import_scene(context, filepath, report):
             for tid_element in material_dict["tids"]:
                 if tid_element != -1 and texture_count > tid_element:
                     texture = data["textures"][tid_element]
-                    print()
                     texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
 
                     material.use_nodes = True
@@ -572,7 +564,20 @@ def import_scene(context, filepath, report):
 
             material_list.append(material)
 
-    import_node_recursive(context, data, data["nodes"], material_list)
+    last_transform = Matrix()
+    strips = []
+    armature_ob = None
+    for node in data["nodes"]:
+        if node.get("anim") is not None:
+            armature_data = bpy.data.armatures.new("Armature")
+            armature_ob =  bpy.data.objects.new("Armature", armature_data)
+            context.collection.objects.link(armature_ob)
+
+            context.view_layer.objects.active = armature_ob
+
+            bpy.ops.object.mode_set(mode='EDIT')
+
+    import_node_recursive(context, data, data["nodes"], material_list, armature_ob, last_transform=last_transform, strips=strips)
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
