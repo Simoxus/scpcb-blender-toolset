@@ -9,7 +9,7 @@ from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
 from mathutils import Matrix, Vector, Quaternion
-from .common_functions import RandomColorGenerator, get_file, is_string_empty
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, connect_inputs, get_output_material_node
 
 class TextureFXFlags(Flag):
     color = auto()
@@ -486,6 +486,10 @@ def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
                 mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
                 mesh.calc_loop_triangles()
 
+                layer_uv_0 = mesh.uv_layers.get("uvmap_render")
+                layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
+                layer_color = mesh.color_attributes.get("color")
+
                 ob_node_dict["mesh"] = {
                     "brush_id": -1,
                     "vertices": [],
@@ -495,26 +499,115 @@ def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
                     "faces": []
                 }
 
-                for vertex in mesh.vertices:
-                    x, y, z = Matrix.Scale(160, 4) @ vertex.co
-                    ob_node_dict["mesh"]["vertices"].append((x, z ,y))
-
-                brush_dict = {
-                    "brush_id": -1,
-                    "indices": []
-                }
-
+                material_map = {}
+                vertex_map = {}
                 for tri in mesh.loop_triangles:
-                    face_indicies = []
+                    mat_name = get_material_name(ob, tri)
+                    material_dict_idx = -1
+                    for mat_idx, material_dict in enumerate(b3d_data["materials"]):
+                        if mat_name == material_dict["name"]:
+                            material_dict_idx = mat_idx
+                            break
+
+                    if material_dict_idx == -1:
+                        r = g = b = a = 1.0
+
+                        scene_mat = bpy.data.materials[mat_name]
+                        output_material_node = get_output_material_node(scene_mat)
+                        bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+                        image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
+
+                        texture_dict_idx = -1 
+                        img = image_node_a.image
+                        if img and img.source == 'FILE' and img.filepath:
+                            image_name = img.name
+                            for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
+                                if image_name == texture_dict["name"]:
+                                    texture_dict_idx = tex_idx
+
+                            if texture_dict_idx == -1:
+                                texture_dict = {
+                                    "name": img.name,
+                                    "flags": TextureFXFlags.color.value,
+                                    "blend": TextureBlendEnum.multiply2.value,
+                                    "position": [
+                                        0.0,
+                                        0.0
+                                    ],
+                                    "scale": [
+                                        1.0,
+                                        1.0
+                                    ],
+                                    "rotation": 0.0
+                                }
+
+                                b3d_data["textures"].append(texture_dict)
+                                texture_dict_idx = len(b3d_data["textures"]) - 1
+
+
+                        if bdsf_principled:
+                            r, g, b, a = bdsf_principled.inputs["Base Color"].default_value
+                            a = bdsf_principled.inputs["Alpha"].default_value
+
+                        material_dict = {
+                            "name": mat_name,
+                            "rgba": [
+                                r,
+                                g,
+                                b,
+                                a
+                            ],
+                            "shine": 0.0,
+                            "blend": MaterialBlendEnum.multiply.value,
+                            "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
+                            "tids": []
+                        }
+
+                        material_dict["tids"].append(texture_dict_idx)
+                        
+                        b3d_data["materials"].append(material_dict)
+                        material_dict_idx = len(b3d_data["materials"]) - 1
+
+                        material_map[mat_name] = {"brush_id": material_dict_idx, "indices": []}
+
+                    tri_indices = []
                     for loop_index in tri.loops:
                         loop = mesh.loops[loop_index]
-                        face_indicies.append(loop.vertex_index)
+                        v = mesh.vertices[loop.vertex_index]
+                        x, y, z = Matrix.Scale(160.0, 4) @ v.co
+                        i, j, k = loop.normal
+                        pos = (x, z, y)
+                        loop_normal = (i, k, j)
 
-                    brush_dict["indices"].append(face_indicies[::-1])
+                        uv_render = (0.0, 0.0)
+                        uv_lightmap = (0.0, 0.0)
+                        if layer_uv_0:
+                            u0, v0 = layer_uv_0.data[loop_index].uv
+                            uv_render = (u0, 1 - v0)
 
-                ob_node_dict["mesh"]["faces"].append(brush_dict)
+                        if layer_uv_1:
+                            u1, v1 = layer_uv_1.data[loop_index].uv
+                            uv_lightmap = (u1, 1 - v1)
 
+                        color = (0, 0, 0, 0)
+                        if layer_color:
+                            r, g, b, a = layer_color.data[loop_index].color
+                            color = (r, g, b, a)
 
+                        key = (round(pos[0], 6), round(pos[1], 6), round(pos[2], 6), uv_render, uv_lightmap, color, loop_normal)
+                        if key not in vertex_map:
+                            vertex_map[key] = len(ob_node_dict["mesh"]["vertices"])
+                            ob_node_dict["mesh"]["vertices"].append(pos)
+                            ob_node_dict["mesh"]["uvs"].append((*uv_render, *uv_lightmap))
+                            ob_node_dict["mesh"]["normals"].append(loop_normal)
+                            ob_node_dict["mesh"]["rgba"].append(color)
+    
+                        tri_indices.append(vertex_map[key])
+
+                    material_map[mat_name]["indices"].append(tri_indices[::-1])
+
+                for mat_key in material_map.keys():
+                    ob_node_dict["mesh"]["faces"].append(material_map[mat_key])
 
             get_scene_objects(b3d_data, ob_node_dict["nodes"], ob, depsgraph)
 
@@ -529,45 +622,6 @@ def export_scene(context, filepath, report):
     depsgraph = context.evaluated_depsgraph_get()
 
     b3d_data = {"nodes": [], "textures": [], "materials": []}
-
-    # flags and blend need to come from something later. Probably a custom shader group or properties - Gen
-    if False:
-        b3d_data["textures"]
-        for img in bpy.data.images:
-            if img.source == 'FILE' and img.filepath:
-                texture_dict = {
-                    "name": img.name,
-                    "flags": TextureFXFlags.color.value,
-                    "blend": TextureBlendEnum.multiply2.value,
-                    "position": [
-                        0.0,
-                        0.0
-                    ],
-                    "scale": [
-                        1.0,
-                        1.0
-                    ],
-                    "rotation": 0.0
-                }
-
-                b3d_data["textures"].append(texture_dict)
-
-        for mat in bpy.data.materials:
-            material_dict = {
-                "name": mat.name,
-                "rgba": [
-                    1.0,
-                    1.0,
-                    1.0,
-                    1.0
-                ],
-                "shine": 0.0,
-                "blend": MaterialBlendEnum.multiply.value,
-                "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
-                "tids": [-1]
-            },
-
-            b3d_data["materials"].append(material_dict)
 
     get_scene_objects(b3d_data, b3d_data["nodes"], None, depsgraph)
 

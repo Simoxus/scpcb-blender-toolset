@@ -10,7 +10,7 @@ from .scene_x import import_scene as import_x
 from .scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot, get_material_name, get_linked_node, connect_inputs, get_output_material_node
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 
@@ -30,48 +30,6 @@ def get_referenced_collection(collection_name, parent_collection, hide_render=Fa
     asset_collection.hide_viewport = hide_viewport
 
     return asset_collection
-
-def get_linked_node(node, input_name, search_type):
-    linked_node = None
-    node_input = node.inputs[input_name]
-    if node_input.is_linked:
-        for node_link in node_input.links:
-            if node_link.from_node.type == search_type:
-                linked_node = node_link.from_node
-                break
-
-    return linked_node
-
-def connect_inputs(tree, output_node, output_name, input_node, input_name):
-    tree.links.new(output_node.outputs[output_name], input_node.inputs[input_name])
-
-def get_output_material_node(mat):
-    output_material_node = None
-    if not mat == None and mat.use_nodes and not mat.node_tree == None:
-        for node in mat.node_tree.nodes:
-            if node.type == "OUTPUT_MATERIAL" and node.is_active_output:
-                output_material_node = node
-                break
-
-    if output_material_node is None:
-        output_material_node = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
-
-    return output_material_node
-
-def get_material_name(ob, tri):
-    mat_name = "UNASSIGNED"
-    mat_count = len(ob.material_slots)
-    ob_mat_idx = tri.material_index
-    if 0 <= ob_mat_idx < mat_count:
-        mat_slot = ob.material_slots[ob_mat_idx]
-        if mat_slot.link == 'OBJECT':
-            if mat_slot is not None:
-                mat_name = mat_slot.material.name
-        else:
-            if ob.data.materials[ob_mat_idx] is not None:
-                mat_name = ob.data.materials[ob_mat_idx].name
-
-    return mat_name
 
 def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
