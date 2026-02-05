@@ -413,10 +413,17 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
 
                 data["spotlight_count"] += 1
             else:
-                object_mesh = bpy.data.objects.new(result["classname"], None)
-                object_mesh.empty_display_size = 0.00625
+                if not generated_mesh and has_mesh:
+                    generated_mesh = True
+                    mesh_data = import_mesh(node["mesh"], material_list)
+                    last_mesh = object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
+                    context.collection.objects.link(last_mesh)
 
-                context.collection.objects.link(object_mesh)
+                else:
+                    object_mesh = bpy.data.objects.new(result["classname"], None)
+                    object_mesh.empty_display_size = 0.00625
+
+                    context.collection.objects.link(object_mesh)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
@@ -425,15 +432,17 @@ def import_node_recursive(context, data, nodes, material_list, armature, parent_
             object_mesh.matrix_local = node_transform
 
         if not generated_mesh and has_mesh:
+            generated_mesh = True
             mesh_data = import_mesh(node["mesh"], material_list)
-            last_mesh = bpy.data.objects.new("mesh_%s" % node["name"], mesh_data)
+            last_mesh = bpy.data.objects.new(node["name"], mesh_data)
             context.collection.objects.link(last_mesh)
 
-            last_mesh.parent = armature
-
             if armature:
+                last_mesh.parent = armature
                 armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
                 armature_modifier.object = armature
+            elif parent_ob:
+                last_mesh.parent = parent_ob
 
         if has_skin:
             group_name = object_mesh.name
@@ -528,8 +537,8 @@ def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
                             if texture_dict_idx == -1:
                                 texture_dict = {
                                     "name": img.name,
-                                    "flags": TextureFXFlags.color.value,
-                                    "blend": TextureBlendEnum.multiply2.value,
+                                    "flags": 0,
+                                    "blend": 0,
                                     "position": [
                                         0.0,
                                         0.0
@@ -541,6 +550,7 @@ def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
                                     "rotation": 0.0
                                 }
 
+                                get_image_properties(img, texture_dict)
                                 b3d_data["textures"].append(texture_dict)
                                 texture_dict_idx = len(b3d_data["textures"]) - 1
 
@@ -565,6 +575,7 @@ def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
 
                         material_dict["tids"].append(texture_dict_idx)
                         
+                        get_material_properties(scene_mat, material_dict)
                         b3d_data["materials"].append(material_dict)
                         material_dict_idx = len(b3d_data["materials"]) - 1
 
@@ -613,7 +624,97 @@ def get_scene_objects(b3d_data, node_dict, parent_ob, depsgraph):
 
             node_dict.append(ob_node_dict)
 
+def set_image_properties(img, texture_dict):
+    img_b3d = img.b3d
 
+    tex_flags = TextureFXFlags(texture_dict["flags"])
+
+    if TextureFXFlags.color in tex_flags:
+        img_b3d.color = True
+    if TextureFXFlags.alpha in tex_flags:
+        img_b3d.alpha = True
+    if TextureFXFlags.masked in tex_flags:
+        img_b3d.masked = True
+    if TextureFXFlags.mipmapped in tex_flags:
+        img_b3d.mipmapped = True
+    if TextureFXFlags.clamp_u in tex_flags:
+        img_b3d.clamp_u = True
+    if TextureFXFlags.clamp_v in tex_flags:
+        img_b3d.clamp_v = True
+    if TextureFXFlags.spherical_environment_map in tex_flags:
+        img_b3d.spherical_environment_map = True
+    if TextureFXFlags.cubic_environment_map in tex_flags:
+        img_b3d.cubic_environment_map = True
+    if TextureFXFlags.store_texture_in_vram in tex_flags:
+        img_b3d.store_texture_in_vram = True
+    if TextureFXFlags.force_high_color_textures in tex_flags:
+        img_b3d.force_high_color_textures = True
+
+    img_b3d.blend_type = str(texture_dict["blend"])
+
+def set_material_properties(mat, material_dict):
+    mat_b3d = mat.b3d
+
+    mat_flags = MaterialFXFlags(material_dict["fx"])
+
+    if MaterialFXFlags.full_bright in mat_flags:
+        mat_b3d.full_bright = True
+    if MaterialFXFlags.use_vertex_colors_instead_of_brush_color in mat_flags:
+        mat_b3d.use_vertex_colors_instead_of_brush_color = True
+    if MaterialFXFlags.flatshaded in mat_flags:
+        mat_b3d.flatshaded = True
+    if MaterialFXFlags.disable_fog in mat_flags:
+        mat_b3d.disable_fog = True
+    if MaterialFXFlags.disable_backface_culling in mat_flags:
+        mat_b3d.disable_backface_culling = True
+
+    mat_b3d.blend_type = str(material_dict["blend"])
+
+def get_image_properties(img, texture_dict):
+    img_b3d = img.b3d
+
+    tex_flags = 0
+    if img_b3d.color:
+        tex_flags += TextureFXFlags.color.value
+    if img_b3d.alpha:
+        tex_flags += TextureFXFlags.alpha.value
+    if img_b3d.masked:
+        tex_flags += TextureFXFlags.masked.value
+    if img_b3d.mipmapped:
+        tex_flags += TextureFXFlags.mipmapped.value
+    if img_b3d.clamp_u:
+        tex_flags += TextureFXFlags.clamp_u.value
+    if img_b3d.clamp_v:
+        tex_flags += TextureFXFlags.clamp_v.value
+    if img_b3d.spherical_environment_map:
+        tex_flags += TextureFXFlags.spherical_environment_map.value
+    if img_b3d.cubic_environment_map:
+        tex_flags += TextureFXFlags.cubic_environment_map.value
+    if img_b3d.store_texture_in_vram:
+        tex_flags += TextureFXFlags.store_texture_in_vram.value
+    if img_b3d.force_high_color_textures:
+        tex_flags += TextureFXFlags.force_high_color_textures.value
+
+    texture_dict["flags"] = tex_flags
+    texture_dict["blend"] = int(img_b3d.blend_type)
+
+def get_material_properties(mat, material_dict):
+    mat_b3d = mat.b3d
+
+    mat_flags = 0
+    if mat_b3d.full_bright:
+        mat_flags += MaterialFXFlags.full_bright.value
+    if mat_b3d.use_vertex_colors_instead_of_brush_color:
+        mat_flags += MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value
+    if mat_b3d.flatshaded:
+        mat_flags += MaterialFXFlags.flatshaded.value
+    if mat_b3d.disable_fog:
+        mat_flags += MaterialFXFlags.disable_fog.value
+    if mat_b3d.disable_backface_culling:
+        mat_flags += MaterialFXFlags.disable_backface_culling.value
+
+    material_dict["fx"] = mat_flags
+    material_dict["blend"] = int(mat_b3d.blend_type)
 
 def export_scene(context, filepath, report):
     if context.view_layer.objects.active is not None:
@@ -654,6 +755,8 @@ def import_scene(context, filepath, report):
             material = bpy.data.materials.new(material_dict["name"])
             material.diffuse_color = random_color_gen.next()
 
+            set_material_properties(material, material_dict)
+
             material.use_nodes = True
             nodes = material.node_tree.nodes
             bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
@@ -668,6 +771,7 @@ def import_scene(context, filepath, report):
                 if tid_element != -1 and texture_count > tid_element:
                     texture = data["textures"][tid_element]
                     texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
+                    set_image_properties(texture_asset, texture)
 
                     material.use_nodes = True
                     bsdf = material.node_tree.nodes["Principled BSDF"]

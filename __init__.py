@@ -145,6 +145,169 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
         description = "???"
         )
 
+class B3DImagePropertiesGroup(PropertyGroup):
+    color: BoolProperty(
+        name ="Color",
+        description = "???",
+        default = False,
+        )
+
+    alpha: BoolProperty(
+        name ="Alpha",
+        description = "???",
+        default = False,
+        )
+
+    masked: BoolProperty(
+        name ="Masked",
+        description = "???",
+        default = False,
+        )
+
+    mipmapped: BoolProperty(
+        name ="Mipmapped",
+        description = "???",
+        default = False,
+        )
+
+    clamp_u: BoolProperty(
+        name ="Clamp U",
+        description = "???",
+        default = False,
+        )
+    
+    clamp_v: BoolProperty(
+        name ="Clamp V",
+        description = "???",
+        default = False,
+        )
+
+    spherical_environment_map: BoolProperty(
+        name ="Spherical Environment Map",
+        description = "???",
+        default = False,
+        )
+
+    cubic_environment_map: BoolProperty(
+        name ="Cubic Environment Map",
+        description = "???",
+        default = False,
+        )
+
+    store_texture_in_vram: BoolProperty(
+        name ="Store Texture In Vram",
+        description = "???",
+        default = False,
+        )
+
+    force_high_color_textures: BoolProperty(
+        name ="Force High Color Textures",
+        description = "???",
+        default = False,
+        )
+
+    blend_type: EnumProperty(
+        name="Blend Type",
+        description="Set the blend type",
+        items = ( ('0', "Do Not Blend", "Do Not Blend"),
+                    ('1', "No Blend Or Alpha", "No Blend Or Alpha"),
+                    ('2', "Multiply", "Multiply"),
+                    ('3', "Add", "Add"),
+                    ('4', "Dot3", "Dot3"),
+                    ('5', "Multiply2", "Multiply2")
+                )
+        )
+
+class B3DMaterialPropertiesGroup(PropertyGroup):
+    full_bright: BoolProperty(
+        name ="Full Bright",
+        description = "???",
+        default = False,
+        )
+
+    use_vertex_colors_instead_of_brush_color: BoolProperty(
+        name ="Use Vertex Colors Instead Of Brush Color",
+        description = "???",
+        default = False,
+        )
+
+    flatshaded: BoolProperty(
+        name ="Flatshaded",
+        description = "???",
+        default = False,
+        )
+
+    disable_fog: BoolProperty(
+        name ="Disable Fog",
+        description = "???",
+        default = False,
+        )
+
+    disable_backface_culling: BoolProperty(
+        name ="Disable Backface Culling",
+        description = "???",
+        default = False,
+        )
+
+    blend_type: EnumProperty(
+        name="Blend Type",
+        description="Set the blend type",
+        items = ( ('0', "Alpha", "Alpha"),
+                    ('1', "Multiply", "Multiply"),
+                    ('2', "Add", "Add")
+                )
+        )
+
+class B3DIMAGE_PT_SceneProps(Panel):
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = "B3D"
+    bl_label = "B3D Image Properties"
+
+    @classmethod
+    def poll(cls, context):
+        return context.space_data.image is not None
+
+    def draw(self, context):
+        layout = self.layout
+        img = context.space_data.image
+        props = img.b3d
+
+        layout.prop(props, "color")
+        layout.prop(props, "alpha")
+        layout.prop(props, "masked")
+        layout.prop(props, "mipmapped")
+        layout.prop(props, "clamp_u")
+        layout.prop(props, "clamp_v")
+        layout.prop(props, "spherical_environment_map")
+        layout.prop(props, "cubic_environment_map")
+        layout.prop(props, "store_texture_in_vram")
+        layout.prop(props, "force_high_color_textures")
+        layout.prop(props, "blend_type")
+
+class B3DMATERIAL_PT_SceneProps(Panel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "material"
+    bl_label = "B3D Material Properties"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.material is not None
+
+    def draw(self, context):
+        layout = self.layout
+        mat = context.material
+        props = mat.b3d
+
+        layout.prop(props, "full_bright")
+        layout.prop(props, "use_vertex_colors_instead_of_brush_color")
+        layout.prop(props, "flatshaded")
+        layout.prop(props, "disable_fog")
+        layout.prop(props, "disable_backface_culling")
+        layout.prop(props, "blend_type")
+
 def render_trigger(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
@@ -468,7 +631,11 @@ classesscp = [
     ImportB3D,
     ExportB3D,
     RMESHObjectPropertiesGroup,
-    RMESH_ObjectProps
+    RMESH_ObjectProps,
+    B3DImagePropertiesGroup,
+    B3DMaterialPropertiesGroup,
+    B3DIMAGE_PT_SceneProps,
+    B3DMATERIAL_PT_SceneProps
 ]
 
 if (4, 1, 0) <= bpy.app.version:
@@ -484,8 +651,14 @@ def register():
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.Object.rmesh = PointerProperty(type=RMESHObjectPropertiesGroup, name="RMESH Properties", description="Set properties for your rmesh object")
+    bpy.types.Image.b3d = PointerProperty(type=B3DImagePropertiesGroup)
+    bpy.types.Material.b3d = PointerProperty(type=B3DMaterialPropertiesGroup)
+
 
 def unregister():
+    del bpy.types.Image.b3d
+    del bpy.types.Material.b3d
+
     bpy.utils.unregister_class(SCPCBAddonPrefs)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
