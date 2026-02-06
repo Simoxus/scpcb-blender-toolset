@@ -2,13 +2,13 @@ import os
 import bpy
 import json
 
-from math import radians
+from math import radians, degrees
 from pathlib import Path
 from .process_b3d import B3DTree, write_b3d
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
-from mathutils import Matrix, Vector, Quaternion
+from mathutils import Matrix, Vector, Quaternion, Euler
 from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, connect_inputs, get_output_material_node
 
 class TextureFXFlags(Flag):
@@ -303,14 +303,17 @@ def import_node_recursive(context, data, node, material_list, armature, parent_o
                 child_has_anim = child_node.get("anim") is not None
                 child_has_sequence = child_node.get("sequences") is not None
                 if child_has_sequence:
+                    anim_dict = child_node["anim"]
+                    context.scene.frame_end = anim_dict["frames"]
+
                     anim_data = armature.animation_data_create()
                     anim_data.action = None 
                     track = anim_data.nla_tracks.new()
-                    track.name = "anim"
+                    track.name = armature.name
 
                     sequences_dict = child_node["sequences"]
                     for sequence_element in sequences_dict:
-                        action = bpy.data.actions.new(name=sequence_element["name"])
+                        action = bpy.data.actions.new(name="%s_%s" % (armature.name, sequence_element["name"]))
                         action.use_frame_range = True
                         action.frame_start = sequence_element["start"]
                         action.frame_end = sequence_element["end"]
@@ -319,15 +322,15 @@ def import_node_recursive(context, data, node, material_list, armature, parent_o
                         strips.append(strip)
 
                 elif child_has_anim:
-                    anim_dict = node["anim"]
+                    anim_dict = child_node["anim"]
                     context.scene.frame_end = anim_dict["frames"]
 
                     anim_data = armature.animation_data_create()
                     anim_data.action = None 
                     track = anim_data.nla_tracks.new()
-                    track.name = "anim"
+                    track.name = armature.name
 
-                    action = bpy.data.actions.new(name="Animation")
+                    action = bpy.data.actions.new(name="%s_animation" % armature.name)
                     action.use_frame_range = True
                     action.frame_start = 1
                     action.frame_end = child_node["anim"]["frames"]
@@ -412,17 +415,10 @@ def import_node_recursive(context, data, node, material_list, armature, parent_o
 
             data["spotlight_count"] += 1
         else:
-            if not generated_mesh and has_mesh:
-                generated_mesh = True
-                mesh_data = import_mesh(node["mesh"], material_list)
-                last_mesh = object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
-                context.collection.objects.link(last_mesh)
+            object_mesh = bpy.data.objects.new(result["classname"], None)
+            object_mesh.empty_display_size = 0.00625
 
-            else:
-                object_mesh = bpy.data.objects.new(result["classname"], None)
-                object_mesh.empty_display_size = 0.00625
-
-                context.collection.objects.link(object_mesh)
+            context.collection.objects.link(object_mesh)
 
         node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
         if parent_ob is not None:
@@ -453,12 +449,12 @@ def import_node_recursive(context, data, node, material_list, armature, parent_o
             last_mesh.vertex_groups[group_index].add([bone_element["vertex_idx"]], bone_element["weight"], 'ADD')
 
     if has_key and has_skin:
-        import_fcurve_data(armature, strips, object_mesh.name, node["key"], node_transform, has_skin)
+        import_fcurve_data(armature, strips, object_mesh.name, node["key"], node_transform, isinstance(object_mesh, bpy.types.EditBone))
 
     for child_node in node["nodes"]:
         import_node_recursive(context, data, child_node, material_list, armature, object_mesh, last_mesh, strips)
 
-def get_mesh(b3d_data, ob, ob_node_dict, depsgraph):
+def get_mesh(b3d_data, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
@@ -467,7 +463,7 @@ def get_mesh(b3d_data, ob, ob_node_dict, depsgraph):
     layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
     layer_color = mesh.color_attributes.get("color")
 
-    ob_node_dict["mesh"] = {
+    mesh_dict = {
         "brush_id": -1,
         "vertices": [],
         "normals": [],
@@ -582,12 +578,12 @@ def get_mesh(b3d_data, ob, ob_node_dict, depsgraph):
 
             key = (round(pos[0], 6), round(pos[1], 6), round(pos[2], 6), uv_render, uv_lightmap, color, loop_normal)
             if key not in vertex_map:
-                vertex_map_index = len(ob_node_dict["mesh"]["vertices"])
+                vertex_map_index = len(mesh_dict["vertices"])
                 vertex_map[key] = vertex_map_index
-                ob_node_dict["mesh"]["vertices"].append(pos)
-                ob_node_dict["mesh"]["uvs"].append((*uv_render, *uv_lightmap))
-                ob_node_dict["mesh"]["normals"].append(loop_normal)
-                ob_node_dict["mesh"]["rgba"].append(color)
+                mesh_dict["vertices"].append(pos)
+                mesh_dict["uvs"].append((*uv_render, *uv_lightmap))
+                mesh_dict["normals"].append(loop_normal)
+                mesh_dict["rgba"].append(color)
                 for vertex_group in v.groups:
                     group_index = vertex_group.group
                     weight = vertex_group.weight
@@ -604,13 +600,13 @@ def get_mesh(b3d_data, ob, ob_node_dict, depsgraph):
         material_map[mat_name]["indices"].append(tri_indices[::-1])
 
     for mat_key in material_map.keys():
-        ob_node_dict["mesh"]["faces"].append(material_map[mat_key])
+        mesh_dict["faces"].append(material_map[mat_key])
 
     ob_eval.to_mesh_clear()
 
-    return skin_info
+    return skin_info, mesh_dict
 
-def get_scene_bones(b3d_data, node_dict, depsgraph, parent_ob=None, skin_info=None, armature=None):
+def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=None, armature=None, parent_ob=None):
     for bone in armature.data.bones:
         if bone.parent == parent_ob:
             node_transform = bone.matrix_local
@@ -643,16 +639,59 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, parent_ob=None, skin_info=No
             }
 
             ob_node_dict["bones"] = []
-            skin_keys = skin_info.keys()
-            for skin_key in skin_keys:
-                if bone.name == skin_key:
-                    ob_node_dict["bones"] = skin_info[skin_key]
+            if skin_info is not None:
+                skin_keys = skin_info.keys()
+                for skin_key in skin_keys:
+                    if bone.name == skin_key:
+                        ob_node_dict["bones"] = skin_info[skin_key]
 
-            get_scene_bones(b3d_data, ob_node_dict["nodes"], depsgraph, bone, skin_info, armature)
+            key_data = key_info.get(bone.name)
+            if key_data is not None:
+                ob_node_dict["key"] = []
+                for action_group in key_data:
+                    action_entry = []
+                    for frame_data in action_group:
+                        frame_index, frame_transform = frame_data
+
+                        node_transform = bone.matrix_local @ frame_transform
+                        if parent_ob is not None:
+                            node_transform = parent_ob.matrix_local.inverted() @ (bone.matrix_local @ frame_transform)
+
+                        f_loc, f_rot_quat, f_scl = node_transform.decompose()
+
+                        f_tx, f_ty, f_tz = Matrix.Scale(160, 4) @ f_loc
+                        f_sx, f_sy, f_sz = f_scl
+                        f_rw, f_ri, f_rj, f_rk = f_rot_quat
+
+                        key_dict = {
+                            "frame": frame_index,
+                            "position": [
+                                f_tx,
+                                f_tz,
+                                f_ty
+                            ],
+                            "scale": [
+                                f_sx,
+                                f_sz,
+                                f_sy
+                            ],
+                            "rotation": [
+                                f_rw,
+                                f_ri,
+                                f_rk,
+                                f_rj
+                            ],
+                        }
+                        action_entry.append(key_dict)
+
+                    ob_node_dict["key"].append(action_entry)
+
+
+            get_scene_bones(b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, armature, bone)
 
             node_dict.append(ob_node_dict)
 
-def get_scene_objects(b3d_data, node_dict, depsgraph, parent_ob=None, skin_info=None):
+def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_info, armature_ob, parent_ob=None):
     for ob in bpy.data.objects:
         if ob.parent == parent_ob:
             transform_matrix = ob.matrix_local
@@ -682,14 +721,57 @@ def get_scene_objects(b3d_data, node_dict, depsgraph, parent_ob=None, skin_info=
                 "nodes": []
             }
 
-            if ob.type == "MESH":
-                skin_info = get_mesh(b3d_data, ob, ob_node_dict, depsgraph)
+            if armature_ob:
+                if ob.type == "ARMATURE":
+                    ob_node_dict["bones"] = []
+                    get_scene_bones(b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, ob)
 
-            elif ob.type == "ARMATURE":
-                ob_node_dict["bones"] = []
-                get_scene_bones(b3d_data, ob_node_dict["nodes"], depsgraph, None, skin_info, ob)
+                key_data = key_info.get(ob.name)
+                if key_data is not None:
+                    ob_node_dict["key"] = []
+                    for action_group in key_data:
+                        action_entry = []
+                        for frame_data in action_group:
+                            frame_index, frame_transform = frame_data
 
-            get_scene_objects(b3d_data, ob_node_dict["nodes"], depsgraph, ob, skin_info)
+                            f_loc, f_rot_quat, f_scl = frame_transform.decompose()
+
+                            f_tx, f_ty, f_tz = Matrix.Scale(160, 4) @ f_loc
+                            f_sx, f_sy, f_sz = f_scl
+                            f_rw, f_ri, f_rj, f_rk = f_rot_quat
+                            a, b, c = f_rot_quat.to_euler()
+                            print(f_rot_quat.to_euler())
+                            print((a), degrees(b), degrees(c))
+                            key_dict = {
+                                "frame": frame_index,
+                                "position": [
+                                    f_tx,
+                                    f_tz,
+                                    f_ty
+                                ],
+                                "scale": [
+                                    f_sx,
+                                    f_sz,
+                                    f_sy
+                                ],
+                                "rotation": [
+                                    f_rw,
+                                    f_ri,
+                                    f_rk,
+                                    f_rj
+                                ],
+                            }
+
+                            action_entry.append(key_dict)
+
+                        ob_node_dict["key"].append(action_entry)
+
+            else:
+                if ob.type == "MESH":
+                    skin_info, mesh_dict = get_mesh(b3d_data, ob, ob_node_dict, depsgraph)
+                    ob_node_dict["mesh"] = mesh_dict
+
+            get_scene_objects(context, b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, armature_ob, ob)
 
             node_dict.append(ob_node_dict)
 
@@ -785,15 +867,171 @@ def get_material_properties(mat, material_dict):
     material_dict["fx"] = mat_flags
     material_dict["blend"] = int(mat_b3d.blend_type)
 
+def gather_keyframe_data(armature, node_data, bake_action=False):
+    if not armature.animation_data:
+        return
+
+    tracks = armature.animation_data.nla_tracks
+    if not tracks:
+        return
+
+    original_action = armature.animation_data.action
+    temp_action = None
+
+    nla_strips = []
+    for track in tracks:
+        if track.mute:
+            continue
+
+        nla_strips.extend([s for s in track.strips if s.action])
+
+    for strip in nla_strips:
+        action = strip.action
+        if bake_action:
+            temp_action = action.copy()
+            temp_action.name = action.name + "_TEMP"
+            armature.animation_data.action = temp_action
+            bpy.ops.nla.bake(
+                frame_start=int(strip.frame_start),
+                frame_end=int(strip.frame_end),
+                only_selected=False,
+                visual_keying=True,
+                clear_constraints=False,
+                clear_parents=False,
+                use_current_action=True,
+                bake_types={'POSE'}
+            )
+            action = temp_action
+
+        if (5, 0, 0) <= bpy.app.version:
+            if action.slots:
+                slot = action.slots[0]
+            else:
+                slot = action.slots.new(id_type='OBJECT', name=armature.name)
+            channelbag = anim_utils.action_ensure_channelbag_for_slot(action, slot)
+            fcurves = channelbag.fcurves
+        else:
+            fcurves = action.fcurves
+
+        node_fcurves = defaultdict(list)
+        for fc in fcurves:
+            dp = fc.data_path
+            if dp.startswith('pose.bones["'):
+                node_name = dp.split('"', 2)[1]
+
+            else:
+                node_name = armature.name
+
+            node_fcurves[node_name].append(fc)
+            node_data.setdefault(node_name, [])
+
+        for node_name, node_fcs in node_fcurves.items():
+            frames = sorted({int(kp.co.x) for fc in node_fcs for kp in fc.keyframe_points})
+
+            is_bone = node_name != armature.name
+            if is_bone and armature.pose and node_name in armature.pose.bones:
+                rot_mode = armature.pose.bones[node_name].rotation_mode
+
+            else:
+                rot_mode = armature.rotation_mode
+
+            strip_keyframes = []
+            for frame in frames:
+                loc = [0.0, 0.0, 0.0]
+                scale = [1.0, 1.0, 1.0]
+                if rot_mode == 'QUATERNION':
+                    rot = [1.0, 0.0, 0.0, 0.0]
+
+                else:
+                    rot = [0.0, 0.0, 0.0]
+
+                for fc in node_fcs:
+                    val = fc.evaluate(frame)
+                    idx = fc.array_index
+
+                    if fc.data_path.endswith("location"):
+                        loc[idx] = val
+
+                    elif fc.data_path.endswith("scale"):
+                        scale[idx] = val
+
+                    elif fc.data_path.endswith("rotation_quaternion") and rot_mode == 'QUATERNION':
+                        rot[idx] = val
+
+                    elif fc.data_path.endswith("rotation_euler") and rot_mode != 'QUATERNION':
+                        rot[idx] = val
+
+                if rot_mode == 'QUATERNION':
+                    mat = Matrix.LocRotScale(Vector(loc), Quaternion(rot), Vector(scale))
+                else:
+                    mat = Matrix.LocRotScale(Vector(loc), Euler(rot, rot_mode).to_quaternion(), Vector(scale))
+
+                strip_keyframes.append((frame, mat))
+
+            node_data[node_name].append(strip_keyframes)
+
+        nodes_without_fc = set(node_data.keys()) - set(node_fcurves.keys())
+        for node_name in nodes_without_fc:
+            node_data[node_name].append([])
+
+        if bake_action and temp_action:
+            armature.animation_data.action = None
+            bpy.data.actions.remove(temp_action)
+            temp_action = None
+
+    armature.animation_data.action = original_action
+
 def export_scene(context, filepath, report):
-    if context.view_layer.objects.active is not None:
+    active_ob = context.view_layer.objects.active
+    if active_ob is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
     depsgraph = context.evaluated_depsgraph_get()
 
     b3d_data = {"nodes": [], "textures": [], "materials": []}
 
-    get_scene_objects(b3d_data, b3d_data["nodes"], depsgraph)
+    armature_ob = None
+    skin_info = None
+    mesh_dict = None
+    key_dict = defaultdict(list)
+    if active_ob is not None and active_ob.type == "ARMATURE" and active_ob.animation_data is not None and active_ob.animation_data.nla_tracks is not None:
+        armature_ob = active_ob
+
+    if armature_ob is None:
+        for ob in bpy.data.objects:
+            if ob.type == "ARMATURE" and ob.animation_data is not None and ob.animation_data.nla_tracks is not None:
+                armature_ob = ob
+                break
+
+    if armature_ob:
+        for node_ob in bpy.data.objects:
+            if node_ob.type == "MESH" and node_ob.parent == armature_ob:
+                skin_info, mesh_dict = get_mesh(b3d_data, node_ob, depsgraph)
+            elif node_ob.type == "ARMATURE":
+                gather_keyframe_data(node_ob, key_dict)
+
+    get_scene_objects(context, b3d_data, b3d_data["nodes"], depsgraph, skin_info, key_dict, armature_ob)
+
+    if armature_ob and len(b3d_data["nodes"]) > 0:
+        root_node = b3d_data["nodes"][0]
+        if mesh_dict is not None:
+            root_node["mesh"] = mesh_dict
+
+        for nla_track in armature_ob.animation_data.nla_tracks:
+            if nla_track.name == armature_ob.name:
+                flags = 0
+                frame_end = int(context.scene.frame_end)
+                fps = int(context.scene.render.fps)
+
+                root_node["anim"] = {"flags": flags, "frames": frame_end, "fps": fps}
+                root_node["sequences"] = []
+                for strip in nla_track.strips:
+                    strip_name = strip.action.name.replace("%s_" % armature_ob.name, "")
+                    start_frame = int(strip.action_frame_start)
+                    end_frame = int(strip.action_frame_end)
+                    flags = 0
+                    strip_dict = {"name": strip_name, "start": start_frame, "end": end_frame, "flags": flags}
+                    root_node["sequences"].append(strip_dict)
 
     write_b3d(filepath, b3d_data)
 
