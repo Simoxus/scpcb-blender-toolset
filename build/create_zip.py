@@ -60,8 +60,6 @@ def build_release_zip(name: str):
     init_file = init_file.replace("(117, 343, 65521)", f'(2, {version_minor}, 0)')
     init_file = init_file.replace('BUILD_VERSION_STR', version_string)
     zip.writestr('io_scene_cb/__init__.py', init_file)
-    if include_resources:
-        zip.writestr('io_scene_cb/resources.zip', resources.getbuffer())
     zip.printdir()
     zip.close()
 
