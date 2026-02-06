@@ -40,28 +40,28 @@ def build_release_zip(name: str):
     def write_file(zip: ZipFile, path_fs, path_zip = None):
         if path_zip is None:
             path_zip = path_fs
-        zip.write(path_fs, os.path.join("io_scene_halo", path_zip))
+        zip.write(path_fs, os.path.join("io_scene_cb", path_zip))
 
     # Add files to zip
     zip: ZipFile = ZipFile(os.path.join("output", zip_name), mode='w', compression=ZIP_DEFLATED, compresslevel=9)
     write_file(zip, "LICENSE")
     write_file(zip, "README.md")
-    for dir, _, files in os.walk("io_scene_halo"):
-        if dir.startswith(os.path.join("io_scene_halo", "resources")):
+    for dir, _, files in os.walk("io_scene_cb"):
+        if dir.startswith(os.path.join("io_scene_cb", "resources")):
             continue
         for file in files:
             main_dir_ignore = ['resources.zip', '__init__.py']
-            if file.endswith(".pyc") or (dir == 'io_scene_halo' and file in main_dir_ignore):
+            if file.endswith(".pyc") or (dir == 'io_scene_cb' and file in main_dir_ignore):
                 continue
             fs_path = os.path.join(dir, file)
             zip.write(fs_path)
-    init_file = Path('io_scene_halo/__init__.py').read_text()
+    init_file = Path('io_scene_cb/__init__.py').read_text()
     # I hate this code but blender requires it
     init_file = init_file.replace("(117, 343, 65521)", f'(2, {version_minor}, 0)')
     init_file = init_file.replace('BUILD_VERSION_STR', version_string)
-    zip.writestr('io_scene_halo/__init__.py', init_file)
+    zip.writestr('io_scene_cb/__init__.py', init_file)
     if include_resources:
-        zip.writestr('io_scene_halo/resources.zip', resources.getbuffer())
+        zip.writestr('io_scene_cb/resources.zip', resources.getbuffer())
     zip.printdir()
     zip.close()
 
