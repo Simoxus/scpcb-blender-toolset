@@ -1,7 +1,10 @@
-# SCP-CB-RMESH-Tool
+# SCP-CB-Toolset
 
 ## Toolset Description
-A tool to import and export RMESH files from Ultimate Edition Reborn and the original SCP Containment Breach.
+A Blender addon for 4.1+ that allows for the following
+* Import and export RMESH files for the original release of SCP Containment Breach and UER 1.5.6
+* Import and export rigid X files for the original release of SCP Containment Breach
+* Import and export B3D files for the original release of SCP Containment Breach and UER
 
 ## Credits
 
