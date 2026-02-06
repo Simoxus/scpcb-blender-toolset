@@ -8,7 +8,7 @@ A Blender addon for 4.1+ that allows for the following
 
 ## Credits
 
- * joric
+ * Joric
    * For making the b3d import script used during the object import process.
    * [io_scene_b3d](https://github.com/joric/io_scene_b3d)
 
@@ -20,5 +20,5 @@ A Blender addon for 4.1+ that allows for the following
    * For making the X import script used to handle model files for the original scp cb game that is used as reference.
    * [XFileSupport_for_BVE](https://github.com/kusaanko/XFileSupport_for_BVE)
 
- * Discord user general_101
+ * Discord user General_101
    * Getting the ball rolling I guess?
