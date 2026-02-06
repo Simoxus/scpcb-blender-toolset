@@ -6,9 +6,9 @@ from math import radians
 from pathlib import Path
 from mathutils import Matrix, Vector, Euler
 from enum import Flag, Enum, auto
-from io_scene_rmesh.scene_x import import_scene as import_x
-from io_scene_rmesh.process_b3d import B3DTree
-from io_scene_rmesh.scene_b3d import import_node_recursive
+from io_scene_cb.scene_x import import_scene as import_x
+from io_scene_cb.process_b3d import B3DTree
+from io_scene_cb.scene_b3d import import_node_recursive
 from bpy_extras.image_utils import load_image
 
 RoomScale = 1
@@ -50,7 +50,7 @@ def CreateObject(model_path, model_name="mesh"):
             texture_name = os.path.basename(texture['name'])
             for mat in data.materials:
                 if mat.tids[0]==i:
-                    images[i] = (texture_name, load_image(texture_name, bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path, check_existing=True,
+                    images[i] = (texture_name, load_image(texture_name, bpy.context.preferences.addons["io_scene_cb"].preferences.game_path, check_existing=True,
                         place_holder=False, recursive=IMAGE_SEARCH))
 
 
@@ -87,7 +87,7 @@ def CreateObject(model_path, model_name="mesh"):
 
 def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed):
     pivot_matrix = Matrix.LocRotScale(position, Euler((0, 0, radians(angle))), Vector((RoomScale, RoomScale, RoomScale)))
-    game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
+    game_path = bpy.context.preferences.addons["io_scene_cb"].preferences.game_path
     BigDoorLeftPath = Path(os.path.join(game_path, r"GFX\map\ContDoorLeft.x"))
     BigDoorRightPath = Path(os.path.join(game_path, r"GFX\map\ContDoorRight.x"))
     HeavyDoorLeftPath = Path(os.path.join(game_path, r"GFX\map\heavydoor1.x"))

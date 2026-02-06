@@ -400,7 +400,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
         if random_color_gen is None:
             random_color_gen = RandomColorGenerator() # generates a random sequence of colors
 
-        game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)
+        game_path = Path(bpy.context.preferences.addons["io_scene_cb"].preferences.game_path)
 
         local_asset_path = ""
         if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):

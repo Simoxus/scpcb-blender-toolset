@@ -431,7 +431,7 @@ def export_scene(context, filepath, file_type, report):
 def import_scene(context, filepath, file_type, report):
     file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
-    game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)
+    game_path = Path(bpy.context.preferences.addons["io_scene_cb"].preferences.game_path)
 
     pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 

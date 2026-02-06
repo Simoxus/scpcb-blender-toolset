@@ -102,7 +102,7 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
 
     file_asset = None
     file_path = None
-    game_path = bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path
+    game_path = bpy.context.preferences.addons["io_scene_cb"].preferences.game_path
     asset_directory = os.path.join(game_path, directory_path)
     if not is_string_empty(asset_directory) and file_name is not None:
         if not is_string_empty(directory_path):

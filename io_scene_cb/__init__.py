@@ -1,10 +1,10 @@
 bl_info = {
     "name": "SCP CB Toolset",
     "author": "General_101",
-    "version": (1, 0, 0),
-    "blender": (5, 0, 0),
+    "version": (117, 343, 65521),
+    "blender": (4, 0, 0),
     "location": "File > Import-Export",
-    "description": "Import-Export SCP CB and UER game assets",
+    "description": "Import-Export SCP CB and UER game assets Build: BUILD_VERSION_STR",
     "warning": "",
     "support": 'COMMUNITY',
     "category": "Import-Export"}

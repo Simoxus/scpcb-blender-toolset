@@ -1039,7 +1039,7 @@ def export_scene(context, filepath, report):
     return {'FINISHED'}
 
 def import_scene(context, filepath, report):
-    game_path = Path(bpy.context.preferences.addons["io_scene_rmesh"].preferences.game_path)
+    game_path = Path(bpy.context.preferences.addons["io_scene_cb"].preferences.game_path)
 
     local_asset_path = ""
     if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
