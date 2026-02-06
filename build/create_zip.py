@@ -63,5 +63,5 @@ def build_release_zip(name: str):
     zip.printdir()
     zip.close()
 
-build_release_zip(name="halo-asset-blender-toolset")
+build_release_zip(name="scp-cb-asset-blender-toolset")
 print("done!")
