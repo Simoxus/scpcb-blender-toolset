@@ -46,7 +46,7 @@ class MaterialBlendEnum(Enum):
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
 
-def import_mesh(node, material_list):
+def import_mesh(node, material_list, is_simple=False, ob_data=None):
     vertices = []
     faces = []
     loop_normals = []
@@ -78,6 +78,8 @@ def import_mesh(node, material_list):
                 brush_mat = material_list[brush_id]
                 if brush_mat.name not in mesh.materials.keys():
                     mesh.materials.append(brush_mat)
+                    if is_simple:
+                        ob_data.materials.append(brush_mat)
 
                 material_indicies.append(mesh.materials.keys().index(brush_mat.name))
 
@@ -272,187 +274,204 @@ def get_bone_distance(node, parent_ob):
 
     return bone_distance
 
-def import_node_recursive(context, data, node, material_list, armature, parent_ob=None, last_mesh=None, strips=None):
+def import_node_recursive(context, data, node, material_list, armature=None, strips=None, parent_ob=None, last_mesh=None, is_simple=False, bm=None, ob_data=None, bm_transform=None):
     has_skin = node.get("bones") is not None
     has_key = node.get("key") is not None
     has_mesh = node.get("mesh") is not None
     generated_mesh = False
                         
     result = parse_kv_string(node["name"])
-    if has_skin or has_key or armature:
-        if armature is None:
-            armature_data = bpy.data.armatures.new(node["name"])
-            armature = object_mesh =  bpy.data.objects.new(node["name"], armature_data)
-            context.collection.objects.link(armature)
-
-            context.view_layer.objects.active = armature
-
+    if is_simple:
+        if has_mesh:
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
-            if parent_ob is not None:
-                armature.parent = parent_ob
-        
-            armature.matrix_local = node_transform
+            if bm_transform is not None:
+                bm_transform = bm_transform @ node_transform
+            else:
+                bm_transform = node_transform
 
-            if last_mesh:
-                armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
-                armature_modifier.object = armature
-                last_mesh.parent = armature
-                last_mesh.matrix_parent_inverse = node_transform.inverted()
+            mesh_data = import_mesh(node["mesh"], material_list, is_simple, ob_data)
+            mesh_data.transform(bm_transform)
+            bm.from_mesh(mesh_data)
+            bpy.data.meshes.remove(mesh_data)
 
-            for child_node in data["nodes"]:
-                child_has_anim = child_node.get("anim") is not None
-                child_has_sequence = child_node.get("sequences") is not None
-                if child_has_sequence:
-                    anim_dict = child_node["anim"]
-                    context.scene.frame_end = anim_dict["frames"]
+        for child_node in node["nodes"]:
+            import_node_recursive(context, data, child_node, material_list, is_simple=is_simple, bm=bm, ob_data=ob_data, bm_transform=bm_transform)
 
-                    anim_data = armature.animation_data_create()
-                    anim_data.action = None 
-                    track = anim_data.nla_tracks.new()
-                    track.name = armature.name
+    else:
+        if has_skin or has_key or armature:
+            if armature is None:
+                armature_data = bpy.data.armatures.new(node["name"])
+                armature = object_mesh =  bpy.data.objects.new(node["name"], armature_data)
+                context.collection.objects.link(armature)
 
-                    sequences_dict = child_node["sequences"]
-                    for sequence_element in sequences_dict:
-                        action = bpy.data.actions.new(name="%s_%s" % (armature.name, sequence_element["name"]))
+                context.view_layer.objects.active = armature
+
+                node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+                if parent_ob is not None:
+                    armature.parent = parent_ob
+            
+                armature.matrix_local = node_transform
+
+                if last_mesh:
+                    armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
+                    armature_modifier.object = armature
+                    last_mesh.parent = armature
+                    last_mesh.matrix_parent_inverse = node_transform.inverted()
+
+                for child_node in data["nodes"]:
+                    child_has_anim = child_node.get("anim") is not None
+                    child_has_sequence = child_node.get("sequences") is not None
+                    if child_has_sequence:
+                        anim_dict = child_node["anim"]
+                        context.scene.frame_end = anim_dict["frames"]
+
+                        anim_data = armature.animation_data_create()
+                        anim_data.action = None 
+                        track = anim_data.nla_tracks.new()
+                        track.name = armature.name
+
+                        sequences_dict = child_node["sequences"]
+                        for sequence_element in sequences_dict:
+                            action = bpy.data.actions.new(name="%s_%s" % (armature.name, sequence_element["name"]))
+                            action.use_frame_range = True
+                            action.frame_start = sequence_element["start"]
+                            action.frame_end = sequence_element["end"]
+
+                            strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
+                            strips.append(strip)
+
+                    elif child_has_anim:
+                        anim_dict = child_node["anim"]
+                        context.scene.frame_end = anim_dict["frames"]
+
+                        anim_data = armature.animation_data_create()
+                        anim_data.action = None 
+                        track = anim_data.nla_tracks.new()
+                        track.name = armature.name
+
+                        action = bpy.data.actions.new(name="%s_animation" % armature.name)
                         action.use_frame_range = True
-                        action.frame_start = sequence_element["start"]
-                        action.frame_end = sequence_element["end"]
+                        action.frame_start = 1
+                        action.frame_end = child_node["anim"]["frames"]
 
                         strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
                         strips.append(strip)
+                    break
 
-                elif child_has_anim:
-                    anim_dict = child_node["anim"]
-                    context.scene.frame_end = anim_dict["frames"]
+                bpy.ops.object.mode_set(mode='EDIT')
 
-                    anim_data = armature.animation_data_create()
-                    anim_data.action = None 
-                    track = anim_data.nla_tracks.new()
-                    track.name = armature.name
+            else:
+                object_mesh = armature.data.edit_bones.new(node["name"])
+                object_mesh.length = 0.00625
 
-                    action = bpy.data.actions.new(name="%s_animation" % armature.name)
-                    action.use_frame_range = True
-                    action.frame_start = 1
-                    action.frame_end = child_node["anim"]["frames"]
+                node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+                if parent_ob is not None:
+                    if isinstance(parent_ob, bpy.types.EditBone):
+                        object_mesh.parent = parent_ob
+                        object_mesh.matrix = parent_ob.matrix @ node_transform
+                    else:
+                        loc, rot, scl = armature.matrix_world.inverted().decompose()
+                        object_mesh.matrix = node_transform
 
-                    strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
-                    strips.append(strip)
-                break
-
-            bpy.ops.object.mode_set(mode='EDIT')
+                object_mesh.length = get_bone_distance(node, parent_ob)
 
         else:
-            object_mesh = armature.data.edit_bones.new(node["name"])
-            object_mesh.length = 0.00625
+            if result["classname"] == "brush" and node.get("mesh"):
+                generated_mesh = True
+                if data.get("brush_count") is None:
+                    data["brush_count"] = 0
+
+                mesh_data = import_mesh(node["mesh"], material_list)
+                object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh_data)
+                context.collection.objects.link(object_mesh)
+
+                data["brush_count"] += 1
+
+            elif result["classname"] == "soundemitter":
+                if data.get("soundemitter_count") is None:
+                    data["soundemitter_count"] = 0
+
+                speaker_data = bpy.data.speakers.new("%s soundemitter" % data["soundemitter_count"])
+                object_mesh = bpy.data.objects.new("%s_soundemitter" % data["soundemitter_count"], speaker_data)
+                context.collection.objects.link(object_mesh)
+
+                data["soundemitter_count"] += 1
+
+            elif result["classname"] == "light":
+                if data.get("light_count") is None:
+                    data["light_count"] = 0
+
+                light_data = bpy.data.lights.new("%s light" % data["light_count"], "POINT")
+                object_mesh = bpy.data.objects.new("%s_light" % data["light_count"], light_data)
+                context.collection.objects.link(object_mesh)
+
+                light_data.energy = result["intensity"] * 50
+                light_data.shadow_soft_size = result["range"] / 1000
+                r, g, b = result["color"]
+                light_data.color = (r / 255, g / 255, b / 255)
+
+                data["light_count"] += 1
+
+            elif result["classname"] == "spotlight":
+                if data.get("spotlight_count") is None:
+                    data["spotlight_count"] = 0
+
+                spotlight_data = bpy.data.lights.new("%s spotlight" % data["spotlight_count"], "SPOT")
+                object_mesh = bpy.data.objects.new("%s_spotlight" % data["spotlight_count"], spotlight_data)
+                context.collection.objects.link(object_mesh)
+
+                spotlight_data.energy = result["intensity"] * 50
+                spotlight_data.shadow_soft_size = result["range"] / 1000
+                r, g, b = result["color"]
+                spotlight_data.color = (r / 255, g / 255, b / 255)
+
+                outer_deg: float = max(1.0, min(180.0, result["outerconeangle"]))
+                inner_deg: float = max(1.0, min(180.0, result["innerconeangle"]))
+                ratio = inner_deg / outer_deg if outer_deg > 0.0 else 1.0
+
+                spotlight_data.spot_size = radians(outer_deg)
+                spotlight_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
+
+                data["spotlight_count"] += 1
+            else:
+                object_mesh = bpy.data.objects.new(result["classname"], None)
+                object_mesh.empty_display_size = 0.00625
+
+                context.collection.objects.link(object_mesh)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
-                if isinstance(parent_ob, bpy.types.EditBone):
-                    object_mesh.parent = parent_ob
-                    object_mesh.matrix = parent_ob.matrix @ node_transform
-                else:
-                    loc, rot, scl = armature.matrix_world.inverted().decompose()
-                    object_mesh.matrix = node_transform
+                object_mesh.parent = parent_ob
+        
+            object_mesh.matrix_local = node_transform
 
-            object_mesh.length = get_bone_distance(node, parent_ob)
-
-    else:
-        if result["classname"] == "brush" and node.get("mesh"):
+        if not generated_mesh and has_mesh:
             generated_mesh = True
-            if data.get("brush_count") is None:
-                data["brush_count"] = 0
-
             mesh_data = import_mesh(node["mesh"], material_list)
-            object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh_data)
-            context.collection.objects.link(object_mesh)
+            last_mesh = bpy.data.objects.new(node["name"], mesh_data)
+            context.collection.objects.link(last_mesh)
 
-            data["brush_count"] += 1
+            if armature:
+                last_mesh.parent = armature
+                armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
+                armature_modifier.object = armature
+            elif parent_ob:
+                last_mesh.parent = parent_ob
 
-        elif result["classname"] == "soundemitter":
-            if data.get("soundemitter_count") is None:
-                data["soundemitter_count"] = 0
+        if has_skin and len(node["bones"]) > 0:
+            group_name = object_mesh.name
+            if not group_name in last_mesh.vertex_groups.keys():
+                last_mesh.vertex_groups.new(name = group_name)
 
-            speaker_data = bpy.data.speakers.new("%s soundemitter" % data["soundemitter_count"])
-            object_mesh = bpy.data.objects.new("%s_soundemitter" % data["soundemitter_count"], speaker_data)
-            context.collection.objects.link(object_mesh)
+            group_index = last_mesh.vertex_groups.keys().index(group_name)
+            for bone_element in node["bones"]:
+                last_mesh.vertex_groups[group_index].add([bone_element["vertex_idx"]], bone_element["weight"], 'ADD')
 
-            data["soundemitter_count"] += 1
+        if has_key and has_skin:
+            import_fcurve_data(armature, strips, object_mesh.name, node["key"], node_transform, isinstance(object_mesh, bpy.types.EditBone))
 
-        elif result["classname"] == "light":
-            if data.get("light_count") is None:
-                data["light_count"] = 0
-
-            light_data = bpy.data.lights.new("%s light" % data["light_count"], "POINT")
-            object_mesh = bpy.data.objects.new("%s_light" % data["light_count"], light_data)
-            context.collection.objects.link(object_mesh)
-
-            light_data.energy = result["intensity"] * 50
-            light_data.shadow_soft_size = result["range"] / 1000
-            r, g, b = result["color"]
-            light_data.color = (r / 255, g / 255, b / 255)
-
-            data["light_count"] += 1
-
-        elif result["classname"] == "spotlight":
-            if data.get("spotlight_count") is None:
-                data["spotlight_count"] = 0
-
-            spotlight_data = bpy.data.lights.new("%s spotlight" % data["spotlight_count"], "SPOT")
-            object_mesh = bpy.data.objects.new("%s_spotlight" % data["spotlight_count"], spotlight_data)
-            context.collection.objects.link(object_mesh)
-
-            spotlight_data.energy = result["intensity"] * 50
-            spotlight_data.shadow_soft_size = result["range"] / 1000
-            r, g, b = result["color"]
-            spotlight_data.color = (r / 255, g / 255, b / 255)
-
-            outer_deg: float = max(1.0, min(180.0, result["outerconeangle"]))
-            inner_deg: float = max(1.0, min(180.0, result["innerconeangle"]))
-            ratio = inner_deg / outer_deg if outer_deg > 0.0 else 1.0
-
-            spotlight_data.spot_size = radians(outer_deg)
-            spotlight_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
-
-            data["spotlight_count"] += 1
-        else:
-            object_mesh = bpy.data.objects.new(result["classname"], None)
-            object_mesh.empty_display_size = 0.00625
-
-            context.collection.objects.link(object_mesh)
-
-        node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
-        if parent_ob is not None:
-            object_mesh.parent = parent_ob
-    
-        object_mesh.matrix_local = node_transform
-
-    if not generated_mesh and has_mesh:
-        generated_mesh = True
-        mesh_data = import_mesh(node["mesh"], material_list)
-        last_mesh = bpy.data.objects.new(node["name"], mesh_data)
-        context.collection.objects.link(last_mesh)
-
-        if armature:
-            last_mesh.parent = armature
-            armature_modifier = last_mesh.modifiers.new("Armature", type='ARMATURE')
-            armature_modifier.object = armature
-        elif parent_ob:
-            last_mesh.parent = parent_ob
-
-    if has_skin and len(node["bones"]) > 0:
-        group_name = object_mesh.name
-        if not group_name in last_mesh.vertex_groups.keys():
-            last_mesh.vertex_groups.new(name = group_name)
-
-        group_index = last_mesh.vertex_groups.keys().index(group_name)
-        for bone_element in node["bones"]:
-            last_mesh.vertex_groups[group_index].add([bone_element["vertex_idx"]], bone_element["weight"], 'ADD')
-
-    if has_key and has_skin:
-        import_fcurve_data(armature, strips, object_mesh.name, node["key"], node_transform, isinstance(object_mesh, bpy.types.EditBone))
-
-    for child_node in node["nodes"]:
-        import_node_recursive(context, data, child_node, material_list, armature, object_mesh, last_mesh, strips)
+        for child_node in node["nodes"]:
+            import_node_recursive(context, data, child_node, material_list, armature, strips, object_mesh, last_mesh)
 
 def get_mesh(b3d_data, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
@@ -1038,7 +1057,7 @@ def export_scene(context, filepath, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
-def import_scene(context, filepath, report):
+def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
     game_path = Path(bpy.context.preferences.addons["io_scene_cb"].preferences.game_path)
 
     local_asset_path = ""
@@ -1047,7 +1066,10 @@ def import_scene(context, filepath, report):
 
     data = B3DTree().parse(Path(filepath))
 
-    random_color_gen = RandomColorGenerator() # generates a random sequence of colors
+    if error_log is None:
+        error_log = set()
+    if random_color_gen is None:
+        random_color_gen = RandomColorGenerator() # generates a random sequence of colors
 
     material_list = []
     texture_count = 0
@@ -1093,9 +1115,14 @@ def import_scene(context, filepath, report):
     armature_ob = None
 
     for child_node in data["nodes"]:
-        import_node_recursive(context, data, child_node, material_list, armature_ob, strips=strips)
-    if context.view_layer.objects.active is not None:
-        bpy.ops.object.mode_set(mode='OBJECT')
+        import_node_recursive(context, data, child_node, material_list, armature_ob, strips, is_simple=is_simple, bm=bm, ob_data=ob_data)
+
+    if not is_simple:
+        if context.view_layer.objects.active is not None:
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        for error in error_log:
+            report({'WARNING'}, error)
 
     report({'INFO'}, "Import completed successfully")
     return {'FINISHED'}
