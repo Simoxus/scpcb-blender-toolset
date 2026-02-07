@@ -4,8 +4,8 @@ import bmesh
 
 from math import radians
 from pathlib import Path
+from enum import Enum, auto
 from mathutils import Matrix, Vector, Euler
-from enum import Flag, Enum, auto
 from io_scene_cb.scene_x import import_scene as import_x
 from io_scene_cb.scene_b3d import import_scene as import_b3d
 

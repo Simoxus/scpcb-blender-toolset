@@ -3,16 +3,14 @@ import os
 import bpy
 import bmesh
 
-from pathlib import Path
 from . import ObjectType
-from .process_b3d import B3DTree
+from pathlib import Path
+from mathutils import Matrix, Vector, Euler
 from .scene_x import import_scene as import_x
-from .scene_b3d import import_node_recursive
-from bpy_extras.image_utils import load_image
-from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot, get_material_name, get_linked_node, connect_inputs, get_output_material_node
+from .scene_b3d import import_scene as import_b3d
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot, get_material_name, get_linked_node, connect_inputs, get_output_material_node, RTOD
 
 def natural_key(s):
     return [int(t) if t.isdigit() else t.lower()
@@ -743,37 +741,9 @@ def import_scene(context, filepath, file_type, report):
 
             if ob_data is None and model_path:
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
-                data = B3DTree().parse(Path(model_path))
-                for i, texture in enumerate(data['textures'] if 'textures' in data else []):
-                    texture_name = os.path.basename(texture['name'])
-                    for mat in data.materials:
-                        if mat.tids[0]==i:
-                            images[i] = (texture_name, load_image(texture_name, game_path, check_existing=True,
-                                place_holder=False, recursive=IMAGE_SEARCH))
-
-                for i, mat in enumerate(data.materials if 'materials' in data else []):
-                    material = bpy.data.materials.new(mat.name)
-                    material.diffuse_color = random_color_gen.next()
-                    material_mapping[i] = material.name
-                    #material.diffuse_color = mat.rgba #B3D models have a material color but we're not exporting these so who cares.
-                    material.blend_method = 'BLEND' if mat.rgba[3] < 1.0 else 'OPAQUE'
-
-                    tid = mat.tids[0] if len(mat.tids) else -1
-
-                    if tid in images:
-                        name, image = images[tid]
-                        texture = bpy.data.textures.new(name=name, type='IMAGE')
-                        material.use_nodes = True
-                        bsdf = material.node_tree.nodes["Principled BSDF"]
-                        texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
-                        texImage.image = image
-                        material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
-
-                for key, value in material_mapping.items():
-                    ob_data.materials.append(bpy.data.materials[value])
-
                 bm = bmesh.new()
-                import_node_recursive(data, material_mapping, bm)
+                is_simple=True
+                import_b3d(bpy.context, model_path, print, bm, ob_data, is_simple)
                 bm.to_mesh(ob_data)
                 bm.free()
 

@@ -1,15 +1,14 @@
 import os
 import bpy
-import json
 
-from math import radians, degrees
 from pathlib import Path
-from .process_b3d import B3DTree, write_b3d
+from math import radians, degrees
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
+from .process_b3d import B3DTree, write_b3d
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, connect_inputs, get_output_material_node
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, get_output_material_node
 
 class TextureFXFlags(Flag):
     color = auto()

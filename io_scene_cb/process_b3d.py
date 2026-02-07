@@ -373,4 +373,3 @@ def write_b3d(path, data, version=1):
         f.write(struct.pack("i", 4 + len(payload)))
         f.write(struct.pack("i", version))
         f.write(payload)
-
