@@ -300,6 +300,26 @@ def read_rmesh(file_path, file_type):
                 entity_dict["has_collision"] = read_byte(rmesh_stream)
                 entity_dict["fx"] = read_unsigned_int(rmesh_stream)
                 entity_dict["texture_name"] = read_string(rmesh_stream)
+
+            elif entity_dict["entity_type"] == "item":
+                entity_dict["position"] = read_vector(rmesh_stream)
+                entity_dict["item_name"] = read_string(rmesh_stream)
+                entity_dict["model_name"] = read_string(rmesh_stream)
+                entity_dict["use_custom_rotation"] = read_byte(rmesh_stream)
+                entity_dict["euler_rotation"] = read_vector(rmesh_stream)
+                entity_dict["state_1"] = read_float(rmesh_stream)
+                entity_dict["state_2"] = read_float(rmesh_stream)
+                entity_dict["spawn_chance"] = read_float(rmesh_stream)
+
+            elif entity_dict["entity_type"] == "door":
+                entity_dict["position"] = read_vector(rmesh_stream)
+                entity_dict["door_type"] = read_unsigned_int(rmesh_stream)
+                entity_dict["key_card_level"] = read_unsigned_int(rmesh_stream)
+                entity_dict["keypad_code"] = read_string(rmesh_stream)
+                entity_dict["angle"] = read_float(rmesh_stream)
+                entity_dict["start_open"] = read_byte(rmesh_stream)
+                entity_dict["allow_scp_079_remote_control"] = read_byte(rmesh_stream)
+
             else:
                 print("Unknown entity type: %s" % entity_dict["entity_type"])
 
@@ -452,6 +472,26 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_byte(rmesh_stream, entity_dict["has_collision"])
                 write_unsigned_int(rmesh_stream, entity_dict["fx"])
                 write_string(rmesh_stream, entity_dict["texture_name"])
+
+            elif entity_dict["entity_type"] == "item":
+                write_vector(rmesh_stream, entity_dict["position"])
+                write_string(rmesh_stream, entity_dict["item_name"])
+                write_string(rmesh_stream, entity_dict["model_name"])
+                write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
+                write_vector(rmesh_stream, entity_dict["euler_rotation"])
+                write_float(rmesh_stream, entity_dict["state_1"])
+                write_float(rmesh_stream, entity_dict["state_2"])
+                write_float(rmesh_stream, entity_dict["spawn_chance"])
+
+            elif entity_dict["entity_type"] == "door":
+                write_vector(rmesh_stream, entity_dict["position"])
+                write_unsigned_int(rmesh_stream, entity_dict["door_type"])
+                write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
+                write_string(rmesh_stream, entity_dict["keypad_code"])
+                write_float(rmesh_stream, entity_dict["angle"])
+                write_byte(rmesh_stream, entity_dict["start_open"])
+                write_byte(rmesh_stream, entity_dict["allow_scp_079_remote_control"])
+
             else:
                 print("Unknown entity type: %s" % entity_dict["entity_type"])
 

@@ -51,6 +51,8 @@ class ObjectType(Enum):
     entity_player_start = auto()
     entity_model = auto()
     entity_mesh = auto()
+    entity_item = auto()
+    entity_door = auto()
 
 class SCPCBAddonPrefs(bpy.types.AddonPreferences):
     bl_idname = __name__
@@ -87,7 +89,9 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
                     ('10', "Entity Sound Emitter", "Object is valid for CB/UER/UER2"),
                     ('11', "Entity Player Start", "Object is valid for CB"),
                     ('12', "Entity Model", "Object is valid for CB/UER/UER2"),
-                    ('13', "Entity Mesh", "Object is valid for CB/UER/UER2")
+                    ('13', "Entity Mesh", "Object is valid for CB/UER/UER2"),
+                    ('14', "Entity Item", "Object is valid for CB-S"),
+                    ('15', "Entity Door", "Object is valid for CB-S")
                 )
         )
 
@@ -143,6 +147,61 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
     scattering: FloatProperty(
         name = "Scattering",
         description = "???"
+        )
+
+    item_name: StringProperty(
+            name = "Item Name",
+            description="The name used for the item when interacted with",
+            default="",
+    )
+
+    use_custom_rotation: BoolProperty(
+        name ="Use Custom Rotation",
+        description = "Use Custom Rotation",
+        default = False,
+        )
+
+    state_1: FloatProperty(
+        name = "State 1",
+        description = "???"
+        )
+    
+    state_2: FloatProperty(
+        name = "State 2",
+        description = "???"
+        )
+    
+    spawn_chance: FloatProperty(
+        name = "Spawn Chance",
+        description = "???"
+        )
+
+    door_type: IntProperty(
+        name = "Door Type",
+        description = "???"
+        )
+    
+    key_card_level: IntProperty(
+        name = "Key Card Level",
+        description = "???"
+        )
+
+    keypad_code: StringProperty(
+            name = "Keypad Code",
+            description="????",
+            default="",
+    )
+
+    start_open: BoolProperty(
+        name ="Start Open",
+        description = "???",
+        default = False,
+        )
+
+    allow_scp_079_remote_control: BoolProperty(
+        name ="Allow SCP-079 Remote Control",
+        description = "???",
+        default = False,
         )
 
 class B3DImagePropertiesGroup(PropertyGroup):
@@ -379,6 +438,47 @@ def render_entity_mesh(context, layout, active_property):
     row.label(text='FX:')
     row.prop(active_property, "fx", text='')
 
+def render_entity_item(context, layout, active_property):
+    box = layout.split()
+    col = box.column(align=True)
+    row = col.row()
+    row.label(text='Item Name:')
+    row.prop(active_property, "item_name", text='')
+    row = col.row()
+    row.label(text='Model Path:')
+    row.prop(active_property, "model_path", text='')
+    row = col.row()
+    row.label(text='Use Custom Rotation:')
+    row.prop(active_property, "use_custom_rotation", text='')
+    row = col.row()
+    row.label(text='State 1:')
+    row.prop(active_property, "state_1", text='')
+    row = col.row()
+    row.label(text='State 2:')
+    row.prop(active_property, "state_2", text='')
+    row = col.row()
+    row.label(text='Spawn Chance:')
+    row.prop(active_property, "spawn_chance", text='')
+
+def render_entity_door(context, layout, active_property):
+    box = layout.split()
+    col = box.column(align=True)
+    row = col.row()
+    row.label(text='Door Type:')
+    row.prop(active_property, "door_type", text='')
+    row = col.row()
+    row.label(text='Key Card Level:')
+    row.prop(active_property, "key_card_level", text='')
+    row = col.row()
+    row.label(text='Keypad Code:')
+    row.prop(active_property, "keypad_code", text='')
+    row = col.row()
+    row.label(text='Start Open:')
+    row.prop(active_property, "start_open", text='')
+    row = col.row()
+    row.label(text='Allow SCP-079 Remote Control:')
+    row.prop(active_property, "allow_scp_079_remote_control", text='')
+
 class RMESH_ObjectProps(Panel):
     bl_label = "Rmesh Object Properties"
     bl_idname = "RMESH_PT_ObjectDetailsPanel"
@@ -425,6 +525,10 @@ class RMESH_ObjectProps(Panel):
             render_entity_model(context, layout, ob_rmesh)
         elif object_type == ObjectType.entity_mesh:
             render_entity_mesh(context, layout, ob_rmesh)
+        elif object_type == ObjectType.entity_item:
+            render_entity_item(context, layout, ob_rmesh)
+        elif object_type == ObjectType.entity_door:
+            render_entity_door(context, layout, ob_rmesh)
 
 class ExportRMESH(Operator, ExportHelper):
     """Write an RMESH file"""
@@ -661,17 +765,16 @@ def register():
     bpy.types.Image.b3d = PointerProperty(type=B3DImagePropertiesGroup)
     bpy.types.Material.b3d = PointerProperty(type=B3DMaterialPropertiesGroup)
 
-
 def unregister():
-    del bpy.types.Image.b3d
-    del bpy.types.Material.b3d
-
     bpy.utils.unregister_class(SCPCBAddonPrefs)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
-    del bpy.types.Object.rmesh
     for clsscp in classesscp:
         bpy.utils.unregister_class(clsscp)
+
+    del bpy.types.Object.rmesh
+    del bpy.types.Image.b3d
+    del bpy.types.Material.b3d
 
 if __name__ == '__main__':
     register()
