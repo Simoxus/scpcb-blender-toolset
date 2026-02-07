@@ -1131,6 +1131,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
     has_skeleton = False
     bone_check_list = {}
     for child_node in data["nodes"]:
+        find_bones(child_node, bone_check_list)
 
     for bone in bone_check_list:
         if bone_check_list[bone]:
