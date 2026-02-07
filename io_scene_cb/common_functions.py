@@ -2,8 +2,8 @@ import os
 import bpy
 import colorsys
 
-from math import pi
-from mathutils import Matrix, Quaternion
+from math import pi, radians
+from mathutils import Matrix, Quaternion, Vector
 
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
@@ -102,7 +102,7 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
 
     file_asset = None
     file_path = None
-    game_path = bpy.context.preferences.addons["io_scene_cb"].preferences.game_path
+    game_path = bpy.context.preferences.addons[__package__].preferences.game_path
     asset_directory = os.path.join(game_path, directory_path)
     if not is_string_empty(asset_directory) and file_name is not None:
         if not is_string_empty(directory_path):
@@ -180,3 +180,6 @@ def get_output_material_node(mat):
         output_material_node = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
 
     return output_material_node
+
+def flip(v):
+    return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))

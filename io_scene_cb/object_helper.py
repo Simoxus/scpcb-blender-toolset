@@ -53,7 +53,7 @@ def CreateObject(model_path, model_name="mesh"):
 
 def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed):
     pivot_matrix = Matrix.LocRotScale(position, Euler((0, 0, radians(angle))), Vector((RoomScale, RoomScale, RoomScale)))
-    game_path = bpy.context.preferences.addons["io_scene_cb"].preferences.game_path
+    game_path = bpy.context.preferences.addons[__package__].preferences.game_path
     BigDoorLeftPath = Path(os.path.join(game_path, r"GFX\map\ContDoorLeft.x"))
     BigDoorRightPath = Path(os.path.join(game_path, r"GFX\map\ContDoorRight.x"))
     HeavyDoorLeftPath = Path(os.path.join(game_path, r"GFX\map\heavydoor1.x"))

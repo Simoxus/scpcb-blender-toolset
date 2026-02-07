@@ -1,14 +1,15 @@
 import os
 import bpy
+import json
 
 from pathlib import Path
-from math import radians, degrees
+from math import radians
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
 from .process_b3d import B3DTree, write_b3d
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, get_output_material_node
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, get_output_material_node, flip
 
 class TextureFXFlags(Flag):
     color = auto()
@@ -36,35 +37,27 @@ class MaterialFXFlags(Flag):
     flatshaded = auto()
     disable_fog = auto()
     disable_backface_culling = auto()
+    unk5 = auto()
 
 class MaterialBlendEnum(Enum):
     alpha = 0
     multiply = auto()
     add = auto()
 
-def flip(v):
-    return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
-
 def import_mesh(node, material_list, is_simple=False, ob_data=None):
     vertices = []
     faces = []
     loop_normals = []
-    for vertex in node["vertices"]:
-        x, y, z = vertex
-        vertices.append(Vector((x, z, y)))
 
-    for brush in node["faces"]:
-        for face in brush["indices"]:
-            x, y, z = face
-            faces.append((x, z, y))
-        
+    m_scl = Matrix.Scale(0.00625, 4)
+
+    vertices = [m_scl @ Vector(flip(vertex)) for vertex in node["vertices"]]
+    faces = [face[::-1] for brush in node["faces"] for face in brush["indices"]]
     mesh = bpy.data.meshes.new("mesh")
     mesh.from_pydata(vertices, [], faces)
 
-    # One of these is for some reason fixing a crash I get when I set custom normals. - Gen
+    # This is for some reason fixing a crash I get when I set custom normals. - Gen
     mesh.validate(clean_customdata=True)
-    mesh.update(calc_edges=True)
-    bpy.context.view_layer.update()
 
     normal_count = len(node["normals"])
     rgba_count = len(node["rgba"])
@@ -96,8 +89,7 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
             if normal_count > 0:
-                i, j, k = node["normals"][vert_index]
-                loop_normals.append((i, k, j))
+                loop_normals.append(flip(node["normals"][vert_index]))
 
             if uv_count == 1:
                 U0, V0 = node["uvs"][vert_index]
@@ -114,8 +106,6 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
 
     if normal_count > 0:
         mesh.normals_split_custom_set(loop_normals)
-
-    mesh.transform(Matrix.Scale(0.00625, 4))
 
     return mesh
 
@@ -273,7 +263,7 @@ def get_bone_distance(node, parent_ob):
 
     return bone_distance
 
-def import_node_recursive(context, data, node, material_list, armature=None, strips=None, parent_ob=None, last_mesh=None, is_simple=False, bm=None, ob_data=None, bm_transform=None):
+def import_node_recursive(context, data, node, material_list, armature=None, strips=None, has_skeleton=False, parent_ob=None, last_mesh=None, is_simple=False, bm=None, ob_data=None, bm_transform=None):
     has_skin = node.get("bones") is not None
     has_key = node.get("key") is not None
     has_mesh = node.get("mesh") is not None
@@ -386,6 +376,17 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
                 data["brush_count"] += 1
 
+            elif result["classname"] == "terrainsector":
+                generated_mesh = True
+                if data.get("terrainsector_count") is None:
+                    data["terrainsector_count"] = 0
+
+                mesh_data = import_mesh(node["mesh"], material_list)
+                object_mesh = bpy.data.objects.new("terrainsector_%s" % data["terrainsector_count"], mesh_data)
+                context.collection.objects.link(object_mesh)
+
+                data["terrainsector_count"] += 1
+
             elif result["classname"] == "soundemitter":
                 if data.get("soundemitter_count") is None:
                     data["soundemitter_count"] = 0
@@ -433,10 +434,16 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
                 data["spotlight_count"] += 1
             else:
-                object_mesh = bpy.data.objects.new(result["classname"], None)
-                object_mesh.empty_display_size = 0.00625
+                if not generated_mesh and has_mesh and not has_skeleton:
+                    generated_mesh = True
+                    mesh_data = import_mesh(node["mesh"], material_list)
+                    object_mesh = bpy.data.objects.new(node["name"], mesh_data)
+                    context.collection.objects.link(object_mesh)
+                else:
+                    object_mesh = bpy.data.objects.new(result["classname"], None)
+                    object_mesh.empty_display_size = 0.00625
 
-                context.collection.objects.link(object_mesh)
+                    context.collection.objects.link(object_mesh)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
@@ -470,7 +477,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
             import_fcurve_data(armature, strips, object_mesh.name, node["key"], node_transform, isinstance(object_mesh, bpy.types.EditBone))
 
         for child_node in node["nodes"]:
-            import_node_recursive(context, data, child_node, material_list, armature, strips, object_mesh, last_mesh)
+            import_node_recursive(context, data, child_node, material_list, armature, strips, has_skeleton, object_mesh, last_mesh)
 
 def get_mesh(b3d_data, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
@@ -757,9 +764,6 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
                             f_tx, f_ty, f_tz = Matrix.Scale(160, 4) @ f_loc
                             f_sx, f_sy, f_sz = f_scl
                             f_rw, f_ri, f_rj, f_rk = f_rot_quat
-                            a, b, c = f_rot_quat.to_euler()
-                            print(f_rot_quat.to_euler())
-                            print((a), degrees(b), degrees(c))
                             key_dict = {
                                 "frame": frame_index,
                                 "position": [
@@ -794,50 +798,54 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
             node_dict.append(ob_node_dict)
 
 def set_image_properties(img, texture_dict):
-    img_b3d = img.b3d
+    if img:
+        img_b3d = img.b3d
 
-    tex_flags = TextureFXFlags(texture_dict["flags"])
+        tex_flags = TextureFXFlags(texture_dict["flags"])
 
-    if TextureFXFlags.color in tex_flags:
-        img_b3d.color = True
-    if TextureFXFlags.alpha in tex_flags:
-        img_b3d.alpha = True
-    if TextureFXFlags.masked in tex_flags:
-        img_b3d.masked = True
-    if TextureFXFlags.mipmapped in tex_flags:
-        img_b3d.mipmapped = True
-    if TextureFXFlags.clamp_u in tex_flags:
-        img_b3d.clamp_u = True
-    if TextureFXFlags.clamp_v in tex_flags:
-        img_b3d.clamp_v = True
-    if TextureFXFlags.spherical_environment_map in tex_flags:
-        img_b3d.spherical_environment_map = True
-    if TextureFXFlags.cubic_environment_map in tex_flags:
-        img_b3d.cubic_environment_map = True
-    if TextureFXFlags.store_texture_in_vram in tex_flags:
-        img_b3d.store_texture_in_vram = True
-    if TextureFXFlags.force_high_color_textures in tex_flags:
-        img_b3d.force_high_color_textures = True
+        if TextureFXFlags.color in tex_flags:
+            img_b3d.color = True
+        if TextureFXFlags.alpha in tex_flags:
+            img_b3d.alpha = True
+        if TextureFXFlags.masked in tex_flags:
+            img_b3d.masked = True
+        if TextureFXFlags.mipmapped in tex_flags:
+            img_b3d.mipmapped = True
+        if TextureFXFlags.clamp_u in tex_flags:
+            img_b3d.clamp_u = True
+        if TextureFXFlags.clamp_v in tex_flags:
+            img_b3d.clamp_v = True
+        if TextureFXFlags.spherical_environment_map in tex_flags:
+            img_b3d.spherical_environment_map = True
+        if TextureFXFlags.cubic_environment_map in tex_flags:
+            img_b3d.cubic_environment_map = True
+        if TextureFXFlags.store_texture_in_vram in tex_flags:
+            img_b3d.store_texture_in_vram = True
+        if TextureFXFlags.force_high_color_textures in tex_flags:
+            img_b3d.force_high_color_textures = True
 
-    img_b3d.blend_type = str(texture_dict["blend"])
+        img_b3d.blend_type = str(texture_dict["blend"])
 
 def set_material_properties(mat, material_dict):
-    mat_b3d = mat.b3d
+    if mat:
+        mat_b3d = mat.b3d
 
-    mat_flags = MaterialFXFlags(material_dict["fx"])
+        mat_flags = MaterialFXFlags(material_dict["fx"])
 
-    if MaterialFXFlags.full_bright in mat_flags:
-        mat_b3d.full_bright = True
-    if MaterialFXFlags.use_vertex_colors_instead_of_brush_color in mat_flags:
-        mat_b3d.use_vertex_colors_instead_of_brush_color = True
-    if MaterialFXFlags.flatshaded in mat_flags:
-        mat_b3d.flatshaded = True
-    if MaterialFXFlags.disable_fog in mat_flags:
-        mat_b3d.disable_fog = True
-    if MaterialFXFlags.disable_backface_culling in mat_flags:
-        mat_b3d.disable_backface_culling = True
+        if MaterialFXFlags.full_bright in mat_flags:
+            mat_b3d.full_bright = True
+        if MaterialFXFlags.use_vertex_colors_instead_of_brush_color in mat_flags:
+            mat_b3d.use_vertex_colors_instead_of_brush_color = True
+        if MaterialFXFlags.flatshaded in mat_flags:
+            mat_b3d.flatshaded = True
+        if MaterialFXFlags.disable_fog in mat_flags:
+            mat_b3d.disable_fog = True
+        if MaterialFXFlags.disable_backface_culling in mat_flags:
+            mat_b3d.disable_backface_culling = True
+        if MaterialFXFlags.unk5 in mat_flags:
+            mat_b3d.unk5 = True
 
-    mat_b3d.blend_type = str(material_dict["blend"])
+        mat_b3d.blend_type = str(material_dict["blend"])
 
 def get_image_properties(img, texture_dict):
     img_b3d = img.b3d
@@ -881,6 +889,8 @@ def get_material_properties(mat, material_dict):
         mat_flags += MaterialFXFlags.disable_fog.value
     if mat_b3d.disable_backface_culling:
         mat_flags += MaterialFXFlags.disable_backface_culling.value
+    if mat_b3d.unk5:
+        mat_flags += MaterialFXFlags.unk5.value
 
     material_dict["fx"] = mat_flags
     material_dict["blend"] = int(mat_b3d.blend_type)
@@ -1056,8 +1066,13 @@ def export_scene(context, filepath, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
+def find_bones(node, bone_check_list):
+    bone_check_list[node["name"]] = node.get("bones") is not None
+    for child_node in node["nodes"]:
+        find_bones(child_node, bone_check_list)
+    
 def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
-    game_path = Path(bpy.context.preferences.addons["io_scene_cb"].preferences.game_path)
+    game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
 
     local_asset_path = ""
     if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
@@ -1113,8 +1128,17 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
     strips = []
     armature_ob = None
 
+    has_skeleton = False
+    bone_check_list = {}
     for child_node in data["nodes"]:
-        import_node_recursive(context, data, child_node, material_list, armature_ob, strips, is_simple=is_simple, bm=bm, ob_data=ob_data)
+
+    for bone in bone_check_list:
+        if bone_check_list[bone]:
+            has_skeleton = True
+            break
+
+    for child_node in data["nodes"]:
+        import_node_recursive(context, data, child_node, material_list, armature_ob, strips, has_skeleton, is_simple=is_simple, bm=bm, ob_data=ob_data)
 
     if not is_simple:
         if context.view_layer.objects.active is not None:

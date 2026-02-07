@@ -5,12 +5,21 @@ import bmesh
 
 from . import ObjectType
 from pathlib import Path
-from mathutils import Matrix, Vector, Euler
+from mathutils import Matrix, Vector, Euler, Quaternion
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_blender_rot, get_material_name, get_linked_node, connect_inputs, get_output_material_node, RTOD
+from .common_functions import (RandomColorGenerator, 
+                               get_file, 
+                               is_string_empty, 
+                               get_blender_rot, 
+                               get_material_name, 
+                               get_linked_node, 
+                               connect_inputs, 
+                               get_output_material_node, 
+                               flip, 
+                               RTOD)
 
 def natural_key(s):
     return [int(t) if t.isdigit() else t.lower()
@@ -429,7 +438,7 @@ def export_scene(context, filepath, file_type, report):
 def import_scene(context, filepath, file_type, report):
     file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
-    game_path = Path(bpy.context.preferences.addons["io_scene_cb"].preferences.game_path)
+    game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
 
     pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
@@ -457,8 +466,7 @@ def import_scene(context, filepath, file_type, report):
         mesh = bpy.data.meshes.new("temp_mesh_%s" % mesh_idx)
 
         vertices = [pivot_matrix @ Vector(vertex["position"]) for vertex in mesh_dict["vertices"]]
-        triangles = [[triangle["c"], triangle["b"], triangle["a"]] for triangle in mesh_dict["triangles"]]
-        #blender_normals = [(-Vector(vertex["normal"])).normalized() for vertex in mesh_dict["vertices"]]
+        triangles = [list(triangle.values())[::-1] for triangle in mesh_dict["triangles"]]
         mesh.from_pydata(vertices, [], triangles)
 
         mat = bpy.data.materials.new(name="texture_%s" % mesh_idx)
@@ -527,6 +535,7 @@ def import_scene(context, filepath, file_type, report):
             else:
                 report({'WARNING'}, 'Texture index out of range: %s' % texture_idx)
 
+        loop_normals = []
         layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
         layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
         layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
@@ -539,9 +548,11 @@ def import_scene(context, filepath, file_type, report):
                 layer_uv_0.data[loop_index].uv = (vertex["uv_render"][0], 1 - vertex["uv_render"][1])
                 layer_uv_1.data[loop_index].uv = (vertex["uv_lightmap"][0], 1 - vertex["uv_lightmap"][1])
                 layer_color.data[loop_index].color = (vertex["color"][0] / 255, vertex["color"][1] / 255, vertex["color"][2] / 255, 1.0)
+                if file_type == ImportFileType.rmesh_uer2:
+                    loop_normals.append(Vector(flip(vertex["normal"])))
 
-        #if is_rmesh2:
-            #mesh.normals_split_custom_set_from_vertices(blender_normals)
+        if file_type == ImportFileType.rmesh_uer2:
+            mesh.normals_split_custom_set(loop_normals)
 
         bm.from_mesh(mesh)
         bpy.data.meshes.remove(mesh)
@@ -580,9 +591,6 @@ def import_scene(context, filepath, file_type, report):
                     poly.use_smooth = True
 
     entity_meshes = {}
-    images = {}
-    material_mapping = {}
-    IMAGE_SEARCH=True
     for entity_idx, entity_dict in enumerate(rmesh_dict["entities"]):
         if entity_dict["entity_type"] == "screen":
             object_mesh = bpy.data.objects.new("%s screen" % entity_idx, None)

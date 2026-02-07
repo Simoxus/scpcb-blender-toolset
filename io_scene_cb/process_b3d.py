@@ -20,6 +20,9 @@ class B3DParser:
     def i(self, n):
         return struct.unpack(n * 'i', self.fp.read(n * 4))
 
+    def s(self, n):
+        return struct.unpack(n * 'h', self.fp.read(n * 2))
+
     def f(self, n):
         return struct.unpack(n * 'f', self.fp.read(n * 4))
 
@@ -66,7 +69,8 @@ class B3DParser:
                 tex = []
                 while self.fp.tell() < next_pos:
                     name = self.gets()
-                    flags, blend = self.i(2)
+                    flags, pad0 = self.s(2)
+                    blend, pad1 = self.s(2)
                     pos2 = self.f(2)
                     scale = self.f(2)
                     rot = self.f(1)[0]
@@ -87,7 +91,8 @@ class B3DParser:
                     name = self.gets()
                     rgba = self.f(4)
                     shine = self.f(1)[0]
-                    blend, fx = self.i(2)
+                    blend, pad0 = self.s(2)
+                    fx, pad1 = self.s(2)
                     tids = self.i(n_texs)
                     mats.append({
                         'name': name,
@@ -230,6 +235,9 @@ class ChunkWriter:
     def i(self, *v):
         self.buf.write(struct.pack(f"{len(v)}i", *v))
 
+    def s(self, *v):
+        self.buf.write(struct.pack(f"{len(v)}h", *v))
+
     def f(self, *v):
         self.buf.write(struct.pack(f"{len(v)}f", *v))
 
@@ -340,7 +348,8 @@ def write_b3d(path, data, version=1):
 
         for t in data['textures']:
             w.writes(t['name'])
-            w.i(t['flags'], t['blend'])
+            w.s(t['flags'], 0)
+            w.s(t['blend'], 0)
             w.f(*t['position'])
             w.f(*t['scale'])
             w.f(t['rotation'])
@@ -359,7 +368,9 @@ def write_b3d(path, data, version=1):
             w.writes(m['name'])
             w.f(*m['rgba'])
             w.f(m['shine'])
-            w.i(m['blend'], m['fx'])
+            w.s(m['blend'], 0)
+            w.s(m['fx'], 0)
+
 
             w.i(*m['tids'])
 

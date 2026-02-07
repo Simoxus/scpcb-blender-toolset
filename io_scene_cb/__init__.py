@@ -248,6 +248,12 @@ class B3DMaterialPropertiesGroup(PropertyGroup):
         description = "???",
         default = False,
         )
+    
+    unk5: BoolProperty(
+        name ="Unk 5",
+        description = "???",
+        default = False,
+        )
 
     blend_type: EnumProperty(
         name="Blend Type",
@@ -306,6 +312,7 @@ class B3DMATERIAL_PT_SceneProps(Panel):
         layout.prop(props, "flatshaded")
         layout.prop(props, "disable_fog")
         layout.prop(props, "disable_backface_culling")
+        layout.prop(props, "unk5")
         layout.prop(props, "blend_type")
 
 def render_trigger(context, layout, active_property):
