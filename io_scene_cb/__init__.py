@@ -53,6 +53,17 @@ class ObjectType(Enum):
     entity_mesh = auto()
     entity_item = auto()
     entity_door = auto()
+    node_brush = auto()
+    node_terrainsector = auto()
+    node_terrain = auto()
+    node_mesh = auto()
+    node_field_hit = auto()
+    node_light = auto()
+    node_spotlight = auto()
+    node_sunlight = auto()
+    node_soundemitter = auto()
+    node_waypoint = auto()
+    node_object = auto()
 
 class SCPCBAddonPrefs(bpy.types.AddonPreferences):
     bl_idname = __name__
@@ -72,26 +83,37 @@ class SCPCBAddonPrefs(bpy.types.AddonPreferences):
         row.label(text='Game Path:')
         row.prop(self, "game_path", text='')
 
-class RMESHObjectPropertiesGroup(PropertyGroup):
+class CBObjectPropertiesGroup(PropertyGroup):
     object_type: EnumProperty(
         name="Type",
-        description="Set the classification for the RMESH object",
+        description="Set the classification for the CB object",
         items = ( ('0', "Exclude", "Object is excluded from export"),
-                    ('1', "Mesh", "Object is valid for CB/UER/UER2"),
-                    ('2', "Collision", "Object is valid for CB/UER/UER2"),
-                    ('3', "Trigger Box", "Object is valid for CB"),
-                    ('4', "Entity Screen", "Object is valid for CB/UER/UER2"),
-                    ('5', "Entity Save Screen", "Object is valid for CB/UER/UER2"),
-                    ('6', "Entity Waypoint", "Object is valid for CB/UER/UER2"),
-                    ('7', "Entity Light", "Object is valid for CB/UER/UER2"),
+                    ('1', "Mesh", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('2', "Collision", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('3', "Trigger Box", "Object is valid for CB/CB-S"),
+                    ('4', "Entity Screen", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('5', "Entity Save Screen", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('6', "Entity Waypoint", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('7', "Entity Light", "Object is valid for CB/CB-S/UER/UER2"),
                     ('8', "Entity Light Fix", "Object is valid for UER/UER2"),
-                    ('9', "Entity Spotlight", "Object is valid for CB/UER/UER2"),
-                    ('10', "Entity Sound Emitter", "Object is valid for CB/UER/UER2"),
+                    ('9', "Entity Spotlight", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('10', "Entity Sound Emitter", "Object is valid for CB/CB-S/UER/UER2"),
                     ('11', "Entity Player Start", "Object is valid for CB"),
-                    ('12', "Entity Model", "Object is valid for CB/UER/UER2"),
-                    ('13', "Entity Mesh", "Object is valid for CB/UER/UER2"),
+                    ('12', "Entity Model", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('13', "Entity Mesh", "Object is valid for CB/CB-S/UER/UER2"),
                     ('14', "Entity Item", "Object is valid for CB-S"),
-                    ('15', "Entity Door", "Object is valid for CB-S")
+                    ('15', "Entity Door", "Object is valid for CB-S"),
+                    ('16', "Node Brush", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('17', "Node Terrain Sector", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('18', "Node Terrain", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('19', "Node Mesh", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('20', "Node Field Hit", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('21', "Node Light", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('22', "Node Spotlight", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('23', "Node Sunlight", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('24', "Node Sound Emitter", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('25', "Node Waypoint", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('26', "Node Object", "Object is valid for CB/CB-S/UER/UER2")
                 )
         )
 
@@ -202,6 +224,11 @@ class RMESHObjectPropertiesGroup(PropertyGroup):
         name ="Allow SCP-079 Remote Control",
         description = "???",
         default = False,
+        )
+
+    linear_falloff: FloatProperty(
+        name = "Linear Falloff",
+        description = "???"
         )
 
 class B3DImagePropertiesGroup(PropertyGroup):
@@ -336,7 +363,7 @@ class B3DIMAGE_PT_SceneProps(Panel):
     def draw(self, context):
         layout = self.layout
         img = context.space_data.image
-        props = img.b3d
+        props = img.cb
 
         layout.prop(props, "color")
         layout.prop(props, "alpha")
@@ -364,7 +391,7 @@ class B3DMATERIAL_PT_SceneProps(Panel):
     def draw(self, context):
         layout = self.layout
         mat = context.material
-        props = mat.b3d
+        props = mat.cb
 
         layout.prop(props, "full_bright")
         layout.prop(props, "use_vertex_colors_instead_of_brush_color")
@@ -479,9 +506,9 @@ def render_entity_door(context, layout, active_property):
     row.label(text='Allow SCP-079 Remote Control:')
     row.prop(active_property, "allow_scp_079_remote_control", text='')
 
-class RMESH_ObjectProps(Panel):
-    bl_label = "Rmesh Object Properties"
-    bl_idname = "RMESH_PT_ObjectDetailsPanel"
+class CB_ObjectProps(Panel):
+    bl_label = "CB Object Properties"
+    bl_idname = "CB_PT_ObjectDetailsPanel"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "object"
@@ -492,7 +519,7 @@ class RMESH_ObjectProps(Panel):
         valid = False
         ob = context.object
 
-        if hasattr(ob, 'rmesh'):
+        if hasattr(ob, 'cb'):
             valid = True
 
         return valid
@@ -501,34 +528,34 @@ class RMESH_ObjectProps(Panel):
         layout = self.layout
 
         ob = context.object
-        ob_rmesh = ob.rmesh
+        ob_cb = ob.cb
         col = layout.column(align=True)
         row = col.row()
         row.label(text='Object Type:')
-        row.prop(ob_rmesh, "object_type", text='')
-        object_type = ObjectType(int(ob_rmesh.object_type))
+        row.prop(ob_cb, "object_type", text='')
+        object_type = ObjectType(int(ob_cb.object_type))
         if object_type == ObjectType.trigger_box:
-            render_trigger(context, layout, ob_rmesh)
+            render_trigger(context, layout, ob_cb)
         elif object_type == ObjectType.entity_screen:
-            render_screen(context, layout, ob_rmesh)
+            render_screen(context, layout, ob_cb)
         elif object_type == ObjectType.entity_save_screen:
-            render_save_screen(context, layout, ob_rmesh)
+            render_save_screen(context, layout, ob_cb)
         elif object_type == ObjectType.entity_light:
-            render_entity_light(context, layout, ob_rmesh)
+            render_entity_light(context, layout, ob_cb)
         elif object_type == ObjectType.entity_light_fix:
-            render_entity_light(context, layout, ob_rmesh)
+            render_entity_light(context, layout, ob_cb)
         elif object_type == ObjectType.entity_spotlight:
-            render_entity_light(context, layout, ob_rmesh)
+            render_entity_light(context, layout, ob_cb)
         elif object_type == ObjectType.entity_sound_emitter:
-            render_sound_emitter(context, layout, ob_rmesh)
+            render_sound_emitter(context, layout, ob_cb)
         elif object_type == ObjectType.entity_model:
-            render_entity_model(context, layout, ob_rmesh)
+            render_entity_model(context, layout, ob_cb)
         elif object_type == ObjectType.entity_mesh:
-            render_entity_mesh(context, layout, ob_rmesh)
+            render_entity_mesh(context, layout, ob_cb)
         elif object_type == ObjectType.entity_item:
-            render_entity_item(context, layout, ob_rmesh)
+            render_entity_item(context, layout, ob_cb)
         elif object_type == ObjectType.entity_door:
-            render_entity_door(context, layout, ob_rmesh)
+            render_entity_door(context, layout, ob_cb)
 
 class ExportRMESH(Operator, ExportHelper):
     """Write an RMESH file"""
@@ -741,8 +768,8 @@ classesscp = [
     ExportX,
     ImportB3D,
     ExportB3D,
-    RMESHObjectPropertiesGroup,
-    RMESH_ObjectProps,
+    CBObjectPropertiesGroup,
+    CB_ObjectProps,
     B3DImagePropertiesGroup,
     B3DMaterialPropertiesGroup,
     B3DIMAGE_PT_SceneProps,
@@ -761,9 +788,9 @@ def register():
 
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
-    bpy.types.Object.rmesh = PointerProperty(type=RMESHObjectPropertiesGroup, name="RMESH Properties", description="Set properties for your rmesh object")
-    bpy.types.Image.b3d = PointerProperty(type=B3DImagePropertiesGroup)
-    bpy.types.Material.b3d = PointerProperty(type=B3DMaterialPropertiesGroup)
+    bpy.types.Object.cb = PointerProperty(type=CBObjectPropertiesGroup, name="RMESH Properties", description="Set properties for your rmesh object")
+    bpy.types.Image.cb = PointerProperty(type=B3DImagePropertiesGroup)
+    bpy.types.Material.cb = PointerProperty(type=B3DMaterialPropertiesGroup)
 
 def unregister():
     bpy.utils.unregister_class(SCPCBAddonPrefs)
@@ -772,9 +799,9 @@ def unregister():
     for clsscp in classesscp:
         bpy.utils.unregister_class(clsscp)
 
-    del bpy.types.Object.rmesh
-    del bpy.types.Image.b3d
-    del bpy.types.Material.b3d
+    del bpy.types.Object.cb
+    del bpy.types.Image.cb
+    del bpy.types.Material.cb
 
 if __name__ == '__main__':
     register()

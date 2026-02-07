@@ -1,7 +1,7 @@
 import os
 import bpy
-import json
 
+from . import ObjectType
 from pathlib import Path
 from math import radians
 from bpy_extras import anim_utils
@@ -289,11 +289,13 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
     else:
         if has_skin or has_key or armature:
             if armature is None:
-                armature_data = bpy.data.armatures.new(node["name"])
-                armature = object_mesh =  bpy.data.objects.new(node["name"], armature_data)
+                armature_data = bpy.data.armatures.new(result["classname"])
+                armature = object_mesh =  bpy.data.objects.new(result["classname"], armature_data)
                 context.collection.objects.link(armature)
 
                 context.view_layer.objects.active = armature
+
+                armature.cb.object_type = str(ObjectType.node_object.value)
 
                 node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
                 if parent_ob is not None:
@@ -365,59 +367,82 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh.length = get_bone_distance(node, parent_ob)
 
         else:
-            if result["classname"] == "brush" and node.get("mesh"):
+            if result["classname"].lower().startswith("brush"):
                 generated_mesh = True
-                if data.get("brush_count") is None:
-                    data["brush_count"] = 0
+                
+                mesh_data = None
+                if node.get("mesh"):
+                    mesh_data = import_mesh(node["mesh"], material_list)
 
-                mesh_data = import_mesh(node["mesh"], material_list)
-                object_mesh = bpy.data.objects.new("brush_%s" % data["brush_count"], mesh_data)
+                object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                data["brush_count"] += 1
+                object_mesh.cb.object_type = str(ObjectType.node_brush.value)
 
-            elif result["classname"] == "terrainsector":
+            elif result["classname"].lower().startswith("terrainsector"):
                 generated_mesh = True
-                if data.get("terrainsector_count") is None:
-                    data["terrainsector_count"] = 0
 
-                mesh_data = import_mesh(node["mesh"], material_list)
-                object_mesh = bpy.data.objects.new("terrainsector_%s" % data["terrainsector_count"], mesh_data)
+                mesh_data = None
+                if node.get("mesh"):
+                    mesh_data = import_mesh(node["mesh"], material_list)
+
+                object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                data["terrainsector_count"] += 1
+                object_mesh.cb.object_type = str(ObjectType.node_terrainsector.value)
 
-            elif result["classname"] == "soundemitter":
-                if data.get("soundemitter_count") is None:
-                    data["soundemitter_count"] = 0
+            elif result["classname"].lower().startswith("terrain"):
+                generated_mesh = True
 
-                speaker_data = bpy.data.speakers.new("%s soundemitter" % data["soundemitter_count"])
-                object_mesh = bpy.data.objects.new("%s_soundemitter" % data["soundemitter_count"], speaker_data)
+                mesh_data = None
+                if node.get("mesh"):
+                    mesh_data = import_mesh(node["mesh"], material_list)
+
+                object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                data["soundemitter_count"] += 1
+                object_mesh.cb.object_type = str(ObjectType.node_terrain.value)
+
+            elif result["classname"].lower().startswith("mesh"):
+                generated_mesh = True
+
+                mesh_data = None
+                if node.get("mesh"):
+                    mesh_data = import_mesh(node["mesh"], material_list)
+
+                object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
+                context.collection.objects.link(object_mesh)
+
+                object_mesh.cb.object_type = str(ObjectType.node_mesh.value)
+
+            elif result["classname"].lower().startswith("field_hit"):
+                generated_mesh = True
+
+                mesh_data = None
+                if node.get("mesh"):
+                    mesh_data = import_mesh(node["mesh"], material_list)
+
+                object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
+                context.collection.objects.link(object_mesh)
+
+                object_mesh.cb.object_type = str(ObjectType.node_field_hit.value)
 
             elif result["classname"] == "light":
-                if data.get("light_count") is None:
-                    data["light_count"] = 0
-
-                light_data = bpy.data.lights.new("%s light" % data["light_count"], "POINT")
-                object_mesh = bpy.data.objects.new("%s_light" % data["light_count"], light_data)
+                light_data = bpy.data.lights.new(result["classname"], "POINT")
+                object_mesh = bpy.data.objects.new(result["classname"], light_data)
                 context.collection.objects.link(object_mesh)
 
                 light_data.energy = result["intensity"] * 50
                 light_data.shadow_soft_size = result["range"] / 1000
                 r, g, b = result["color"]
                 light_data.color = (r / 255, g / 255, b / 255)
+                light_data.cb.linear_falloff = result["linearfalloff"]
 
-                data["light_count"] += 1
+                object_mesh.cb.object_type = str(ObjectType.node_light.value)
 
             elif result["classname"] == "spotlight":
-                if data.get("spotlight_count") is None:
-                    data["spotlight_count"] = 0
-
-                spotlight_data = bpy.data.lights.new("%s spotlight" % data["spotlight_count"], "SPOT")
-                object_mesh = bpy.data.objects.new("%s_spotlight" % data["spotlight_count"], spotlight_data)
+                spotlight_data = bpy.data.lights.new(result["classname"], "SPOT")
+                object_mesh = bpy.data.objects.new(result["classname"], spotlight_data)
                 context.collection.objects.link(object_mesh)
 
                 spotlight_data.energy = result["intensity"] * 50
@@ -432,7 +457,33 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 spotlight_data.spot_size = radians(outer_deg)
                 spotlight_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
 
-                data["spotlight_count"] += 1
+                light_data.cb.linear_falloff = result["linearfalloff"]
+
+                object_mesh.cb.object_type = str(ObjectType.node_spotlight.value)
+
+            elif result["classname"] == "sunlight":
+                sunlight_data = bpy.data.lights.new(result["classname"], "SUN")
+                object_mesh = bpy.data.objects.new(result["classname"], sunlight_data)
+                context.collection.objects.link(object_mesh)
+
+                object_mesh.cb.object_type = str(ObjectType.node_sunlight.value)
+
+            elif result["classname"].startswith("soundemitter"):
+                speaker_data = bpy.data.speakers.new(result["classname"])
+                object_mesh = bpy.data.objects.new(result["classname"], speaker_data)
+                context.collection.objects.link(object_mesh)
+
+                object_mesh.cb.sound_emitter_id = result["sound"]
+                object_mesh.data.distance_max = result["range"]
+
+                object_mesh.cb.object_type = str(ObjectType.node_soundemitter.value)
+
+            elif result["classname"].startswith("waypoint"):
+                object_mesh = bpy.data.objects.new(result["classname"], None)
+                context.collection.objects.link(object_mesh)
+
+                object_mesh.cb.object_type = str(ObjectType.node_waypoint.value)
+
             else:
                 if not generated_mesh and has_mesh and not has_skeleton:
                     generated_mesh = True
@@ -444,6 +495,8 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                     object_mesh.empty_display_size = 0.00625
 
                     context.collection.objects.link(object_mesh)
+
+                object_mesh.cb.object_type = str(ObjectType.node_object.value)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
@@ -463,6 +516,8 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 armature_modifier.object = armature
             elif parent_ob:
                 last_mesh.parent = parent_ob
+            
+            last_mesh.cb.object_type = str(ObjectType.node_object.value)
 
         if has_skin and len(node["bones"]) > 0:
             group_name = object_mesh.name
@@ -518,32 +573,33 @@ def get_mesh(b3d_data, ob, depsgraph):
             image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
 
             texture_dict_idx = -1 
-            img = image_node_a.image
-            if img and img.source == 'FILE' and img.filepath:
-                image_name = img.name
-                for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
-                    if image_name == texture_dict["name"]:
-                        texture_dict_idx = tex_idx
+            if image_node_a is not None:
+                img = image_node_a.image
+                if img and img.source == 'FILE' and img.filepath:
+                    image_name = img.name
+                    for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
+                        if image_name == texture_dict["name"]:
+                            texture_dict_idx = tex_idx
 
-                if texture_dict_idx == -1:
-                    texture_dict = {
-                        "name": img.name,
-                        "flags": 0,
-                        "blend": 0,
-                        "position": [
-                            0.0,
-                            0.0
-                        ],
-                        "scale": [
-                            1.0,
-                            1.0
-                        ],
-                        "rotation": 0.0
-                    }
+                    if texture_dict_idx == -1:
+                        texture_dict = {
+                            "name": img.name,
+                            "flags": 0,
+                            "blend": 0,
+                            "position": [
+                                0.0,
+                                0.0
+                            ],
+                            "scale": [
+                                1.0,
+                                1.0
+                            ],
+                            "rotation": 0.0
+                        }
 
-                    get_image_properties(img, texture_dict)
-                    b3d_data["textures"].append(texture_dict)
-                    texture_dict_idx = len(b3d_data["textures"]) - 1
+                        get_image_properties(img, texture_dict)
+                        b3d_data["textures"].append(texture_dict)
+                        texture_dict_idx = len(b3d_data["textures"]) - 1
 
             if bdsf_principled:
                 r, g, b, a = bdsf_principled.inputs["Base Color"].default_value
@@ -790,7 +846,7 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
 
             else:
                 if ob.type == "MESH":
-                    skin_info, mesh_dict = get_mesh(b3d_data, ob, ob_node_dict, depsgraph)
+                    skin_info, mesh_dict = get_mesh(b3d_data, ob, depsgraph)
                     ob_node_dict["mesh"] = mesh_dict
 
             get_scene_objects(context, b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, armature_ob, ob)
@@ -799,7 +855,7 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
 
 def set_image_properties(img, texture_dict):
     if img:
-        img_b3d = img.b3d
+        img_b3d = img.cb
 
         tex_flags = TextureFXFlags(texture_dict["flags"])
 
@@ -828,7 +884,7 @@ def set_image_properties(img, texture_dict):
 
 def set_material_properties(mat, material_dict):
     if mat:
-        mat_b3d = mat.b3d
+        mat_b3d = mat.cb
 
         mat_flags = MaterialFXFlags(material_dict["fx"])
 
@@ -848,7 +904,7 @@ def set_material_properties(mat, material_dict):
         mat_b3d.blend_type = str(material_dict["blend"])
 
 def get_image_properties(img, texture_dict):
-    img_b3d = img.b3d
+    img_b3d = img.cb
 
     tex_flags = 0
     if img_b3d.color:
@@ -876,7 +932,7 @@ def get_image_properties(img, texture_dict):
     texture_dict["blend"] = int(img_b3d.blend_type)
 
 def get_material_properties(mat, material_dict):
-    mat_b3d = mat.b3d
+    mat_b3d = mat.cb
 
     mat_flags = 0
     if mat_b3d.full_bright:
