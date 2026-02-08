@@ -728,7 +728,12 @@ def import_scene(context, filepath, file_type, report):
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
                 bm = bmesh.new()
                 is_simple=True
-                import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+                if model_path.lower().endswith(".b3d"):
+                    import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
+                else:
+                    import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
                 bm.to_mesh(ob_data)
                 bm.free()
 
@@ -751,7 +756,12 @@ def import_scene(context, filepath, file_type, report):
                 ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
                 bm = bmesh.new()
                 is_simple=True
-                import_b3d(bpy.context, model_path, print, bm, ob_data, is_simple)
+                if model_path.lower().endswith(".b3d"):
+                    import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
+                else:
+                    import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
                 bm.to_mesh(ob_data)
                 bm.free()
 

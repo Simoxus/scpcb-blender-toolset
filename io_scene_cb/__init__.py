@@ -349,6 +349,11 @@ class B3DMaterialPropertiesGroup(PropertyGroup):
                     ('2', "Add", "Add")
                 )
         )
+    
+    shine: FloatProperty(
+        name = "Shine",
+        description = "???"
+        )
 
 class B3DIMAGE_PT_SceneProps(Panel):
     bl_space_type = 'IMAGE_EDITOR'
@@ -400,6 +405,7 @@ class B3DMATERIAL_PT_SceneProps(Panel):
         layout.prop(props, "disable_backface_culling")
         layout.prop(props, "unk5")
         layout.prop(props, "blend_type")
+        layout.prop(props, "shine")
 
 def render_trigger(context, layout, active_property):
     box = layout.split()

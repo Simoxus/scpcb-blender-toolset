@@ -436,7 +436,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 light_data.shadow_soft_size = result["range"] / 1000
                 r, g, b = result["color"]
                 light_data.color = (r / 255, g / 255, b / 255)
-                light_data.cb.linear_falloff = result["linearfalloff"]
+                object_mesh.cb.linear_falloff = result["linearfalloff"]
 
                 object_mesh.cb.object_type = str(ObjectType.node_light.value)
 
@@ -457,7 +457,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 spotlight_data.spot_size = radians(outer_deg)
                 spotlight_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
 
-                light_data.cb.linear_falloff = result["linearfalloff"]
+                object_mesh.cb.linear_falloff = result["linearfalloff"]
 
                 object_mesh.cb.object_type = str(ObjectType.node_spotlight.value)
 
@@ -613,7 +613,7 @@ def get_mesh(b3d_data, ob, depsgraph):
                     b,
                     a
                 ],
-                "shine": 0.0,
+                "shine": scene_mat.cb.shine,
                 "blend": MaterialBlendEnum.multiply.value,
                 "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
                 "tids": []
@@ -1134,7 +1134,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
     if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
         local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
 
-    data = B3DTree().parse(Path(filepath))
+    data = B3DTree().parse(filepath)
 
     if error_log is None:
         error_log = set()
@@ -1155,6 +1155,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
             material.diffuse_color = random_color_gen.next()
 
             set_material_properties(material, material_dict)
+            material.cb.shine = material_dict["shine"]
 
             material.use_nodes = True
             nodes = material.node_tree.nodes
