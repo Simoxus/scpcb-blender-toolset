@@ -3,7 +3,7 @@ import bpy
 
 from . import ObjectType
 from pathlib import Path
-from math import radians
+from math import radians, degrees
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
@@ -539,9 +539,18 @@ def get_mesh(b3d_data, ob, depsgraph):
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
 
+    uv_layer_count = len(mesh.uv_layers)
+    color_layer_count = len(mesh.color_attributes)
     layer_uv_0 = mesh.uv_layers.get("uvmap_render")
     layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
     layer_color = mesh.color_attributes.get("color")
+    if uv_layer_count > 0 and not layer_uv_0:
+        layer_uv_0 = mesh.uv_layers[0]
+    if uv_layer_count > 0 and not layer_uv_1:
+        layer_uv_1 = mesh.uv_layers[1]
+    if color_layer_count > 0 and not layer_color:
+        layer_color = mesh.color_attributes[0]
+
 
     mesh_dict = {
         "brush_id": -1,
@@ -559,8 +568,8 @@ def get_mesh(b3d_data, ob, depsgraph):
     for tri in mesh.loop_triangles:
         mat_name = get_material_name(ob, tri)
         material_dict_idx = -1
-        for mat_idx, material_dict in enumerate(b3d_data["materials"]):
-            if mat_name == material_dict["name"]:
+        for mat_idx, b3d_material_dict in enumerate(b3d_data["materials"]):
+            if mat_name == b3d_material_dict["name"]:
                 material_dict_idx = mat_idx
                 break
 
@@ -625,8 +634,6 @@ def get_mesh(b3d_data, ob, depsgraph):
             b3d_data["materials"].append(material_dict)
             material_dict_idx = len(b3d_data["materials"]) - 1
 
-            material_map[mat_name] = {"brush_id": material_dict_idx, "indices": []}
-
         tri_indices = []
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
@@ -678,7 +685,11 @@ def get_mesh(b3d_data, ob, depsgraph):
 
             tri_indices.append(vertex_map[key])
 
-        material_map[mat_name]["indices"].append(tri_indices[::-1])
+        material_section = material_map.get(mat_name)
+        if material_section is None:
+            material_section = material_map[mat_name] = {"brush_id": material_dict_idx, "indices": []}
+
+        material_section["indices"].append(tri_indices[::-1])
 
     for mat_key in material_map.keys():
         mesh_dict["faces"].append(material_map[mat_key])
@@ -772,17 +783,70 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=Non
 
             node_dict.append(ob_node_dict)
 
+def get_node_name(ob):
+    node_name = ob.name
+    object_type_enum = ObjectType(int(ob.cb.object_type))
+    if object_type_enum == ObjectType.node_brush:
+        node_name = "classname=brush"
+    elif object_type_enum == ObjectType.node_terrainsector:
+        node_name = "classname=terrainsector"
+    elif object_type_enum == ObjectType.node_terrain:
+        node_name = "classname=terrain"
+    elif object_type_enum == ObjectType.node_mesh:
+        node_name = "classname=mesh"
+    elif object_type_enum == ObjectType.node_field_hit:
+        node_name = "classname=field_hit"
+    elif object_type_enum == ObjectType.node_light:
+        r, g, b = ob.data.color
+
+        light_color = "color=%s %s %s" % (r * 255, g * 255, b * 255)
+        light_intensity = "intensity=%s" % (ob.data.energy * 50)
+        light_range = "range=%s" % (ob.data.shadow_soft_size / 1000)
+        light_linear_falloff = "linearfalloff=%s" % ob.cb.linear_falloff
+        node_name = "classname=light\r\n%s\r\n%s\r\n%s\r\n%s" % (light_color, light_intensity, light_range, light_linear_falloff)
+    elif object_type_enum == ObjectType.node_spotlight:
+        r, g, b = ob.data.color
+        outer_deg = degrees(ob.data.spot_size)
+
+        light_angles = "angles=%s %s %s" % (0, 0, 0)
+        light_color = "color=%s %s %s" % (r * 255, g * 255, b * 255)
+        light_intensity = "intensity=%s" % (ob.data.energy * 50)
+        light_range = "range=%s" % (ob.data.shadow_soft_size / 1000)
+        light_inner_cone_angle = "innerconeangle=%s" % int(ob.data.spot_blend * outer_deg)
+        light_outer_cone_angle = "outerconeangle=%s" % int(outer_deg)
+        light_linear_falloff = "linearfalloff=%s" % ob.cb.linear_falloff
+
+        node_name = "classname=spotlight\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s" % (light_angles, light_color, light_intensity, light_range, light_inner_cone_angle, light_outer_cone_angle, light_linear_falloff)
+    elif object_type_enum == ObjectType.node_sunlight:
+        r, g, b = ob.data.color
+
+        light_angles = "angles=%s %s %s" % (0, 0, 0)
+        light_color = "color=%s %s %s" % (r * 255, g * 255, b * 255)
+        light_intensity = "intensity=%s" % (ob.data.energy * 50)
+
+        node_name = "classname=sunlight\r\n%s\r\n%s\r\n%s" % (light_angles, light_color, light_intensity)
+    elif object_type_enum == ObjectType.node_soundemitter:
+        sound_id_str = "sound=%s" % ob.cb.sound_emitter_id
+        range_str = "range=%s" % ob.data.distance_max
+        node_name = "classname=soundemitter\r\n%s\r\n%s" % (sound_id_str, range_str)
+    elif object_type_enum == ObjectType.node_waypoint:
+        node_name = "classname=waypoint"
+
+    return node_name
+
 def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_info, armature_ob, parent_ob=None):
     for ob in bpy.data.objects:
         if ob.parent == parent_ob:
             transform_matrix = ob.matrix_local
             loc, rot_quat, scl = transform_matrix.decompose()
 
+            node_name = get_node_name(ob)
+
             tx, ty, tz = Matrix.Scale(160, 4) @ loc
             sx, sy, sz = scl
             rw, ri, rj, rk = rot_quat
             ob_node_dict = {
-                "name": ob.name,
+                "name": node_name,
                 "position": [
                     tx,
                     tz,
