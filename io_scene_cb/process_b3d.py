@@ -69,7 +69,7 @@ class B3DParser:
                 tex = []
                 while self.fp.tell() < next_pos:
                     name = self.gets()
-                    flags, pad0 = self.s(2)
+                    flags, texture_type = self.s(2)
                     blend, pad1 = self.s(2)
                     pos2 = self.f(2)
                     scale = self.f(2)
@@ -77,6 +77,7 @@ class B3DParser:
                     tex.append({
                         'name': name,
                         'flags': flags,
+                        'texture_type': texture_type,
                         'blend': blend,
                         'position': pos2,
                         'scale': scale,
@@ -348,7 +349,8 @@ def write_b3d(path, data, version=1):
 
         for t in data['textures']:
             w.writes(t['name'])
-            w.s(t['flags'], 0)
+            w.s(t['flags'])
+            w.s(t['texture_type'])
             w.s(t['blend'], 0)
             w.f(*t['position'])
             w.f(*t['scale'])

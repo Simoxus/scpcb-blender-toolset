@@ -607,6 +607,10 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                             texture_id_list.append(texture_dict_idx)
                         continue
 
+                    texture_type_val = 0
+                    if texture_entry_idx == 0:
+                        texture_type_val = 1
+
                     mapping_node = get_linked_node(texture_entry, "Vector", "MAPPING")
                     tx = ty = tz = 0.0
                     sx = sy = sz = 1.0
@@ -661,6 +665,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                         texture_dict = {
                             "name": img.name,
                             "flags": fx,
+                            "texture_type": texture_type_val,
                             "blend": img.cb.blend_type,
                             "position": [tx, ty],
                             "scale": [sx, sy],
@@ -936,30 +941,30 @@ def get_node_name(ob):
     elif object_type_enum == ObjectType.node_light:
         r, g, b = ob.data.color
 
-        light_color = "color=%s %s %s" % (r * 255, g * 255, b * 255)
-        light_intensity = "intensity=%s" % (ob.data.energy * 50)
-        light_range = "range=%s" % (ob.data.shadow_soft_size / 1000)
-        light_linear_falloff = "linearfalloff=%s" % ob.cb.linear_falloff
+        light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
+        light_intensity = "intensity=%s" % (ob.data.energy / 50)
+        light_range = "range=%s" % int(ob.data.shadow_soft_size * 1000)
+        light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
         node_name = "classname=light\r\n%s\r\n%s\r\n%s\r\n%s" % (light_color, light_intensity, light_range, light_linear_falloff)
     elif object_type_enum == ObjectType.node_spotlight:
         r, g, b = ob.data.color
         outer_deg = degrees(ob.data.spot_size)
 
         light_angles = "angles=%s %s %s" % (0, 0, 0)
-        light_color = "color=%s %s %s" % (r * 255, g * 255, b * 255)
-        light_intensity = "intensity=%s" % (ob.data.energy * 50)
-        light_range = "range=%s" % (ob.data.shadow_soft_size / 1000)
+        light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
+        light_intensity = "intensity=%s" % (ob.data.energy / 50)
+        light_range = "range=%s" % int(ob.data.shadow_soft_size * 1000)
         light_inner_cone_angle = "innerconeangle=%s" % int(ob.data.spot_blend * outer_deg)
         light_outer_cone_angle = "outerconeangle=%s" % int(outer_deg)
-        light_linear_falloff = "linearfalloff=%s" % ob.cb.linear_falloff
+        light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
 
         node_name = "classname=spotlight\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s" % (light_angles, light_color, light_intensity, light_range, light_inner_cone_angle, light_outer_cone_angle, light_linear_falloff)
     elif object_type_enum == ObjectType.node_sunlight:
         r, g, b = ob.data.color
 
         light_angles = "angles=%s %s %s" % (0, 0, 0)
-        light_color = "color=%s %s %s" % (r * 255, g * 255, b * 255)
-        light_intensity = "intensity=%s" % (ob.data.energy * 50)
+        light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
+        light_intensity = "intensity=%s" % (ob.data.energy / 50)
 
         node_name = "classname=sunlight\r\n%s\r\n%s\r\n%s" % (light_angles, light_color, light_intensity)
     elif object_type_enum == ObjectType.node_soundemitter:
