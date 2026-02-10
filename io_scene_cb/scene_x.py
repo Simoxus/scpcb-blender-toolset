@@ -3,11 +3,12 @@ import bpy
 
 from pathlib import Path
 from math import sqrt, radians
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Vector, Quaternion
 from .process_x import write_x, read_x
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, DX_MATRIX_IMPORT
+from .common_functions import RandomColorGenerator, get_file, is_string_empty, flip, DX_MATRIX_IMPORT
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
+    loop_normals = []
     mesh_name = mesh_dict["name"]
     if mesh_name == None:
         if parent_bone is not None:
@@ -15,11 +16,11 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         else:
             mesh_name = "mesh"
 
-    pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
-    mesh = bpy.data.meshes.new(mesh_name)
-
-    vertices = [Vector(vertex) for vertex in mesh_dict["vertices"]]
+    m_scl = Matrix.Scale(0.00625, 4)
+    
+    vertices = [m_scl @ Vector(flip(vertex)) for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
+    mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
     if not is_simple:
         object_mesh = bpy.data.objects.new(mesh_name, mesh)
@@ -28,8 +29,6 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
     else:
         if world_transform is not None:
             mesh.transform(world_transform)
-
-    mesh.transform(pivot_matrix)
 
     uv_render = mesh.uv_layers.new(name="UVMap_Render")
     for poly_idx, poly in enumerate(mesh.polygons):
@@ -83,7 +82,6 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
             if is_simple:
                 ob_data.materials.append(mat)
 
-    loop_normals = [Vector((0.0, 0.0, 1.0))] * len(mesh.loops)
     if x_dict["xof_header"] == "xof 0302txt 0064":
         for mat_data_idx, material_face in enumerate(mesh_dict["material_indices"]):
             material_index = 0
@@ -101,7 +99,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
             if not x_dict["xof_header"] == "xof 0302txt 0064":
-                loop_normals[loop_index] = -Vector(mesh_dict["normals"][vert_index])
+                loop_normals.append(Vector(flip(mesh_dict["normals"][vert_index])))
 
             u, v = mesh_dict["texcoords"][vert_index]
             uv_render.data[loop_index].uv = (u, 1 - v)
@@ -116,9 +114,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
                 group_index = object_mesh.vertex_groups.keys().index(group_name)
                 object_mesh.vertex_groups[group_index].add([skin_element], skin_weight["weights"][skin_idx], 'ADD')
 
-    #if not x_dict["xof_header"] == "xof 0302txt 0064":
-        # I need to look at this more. I don't think I'm applying these right. - Gen
-        #mesh.normals_split_custom_set(loop_normals)
+    if not x_dict["xof_header"] == "xof 0302txt 0064":
+        mesh.normals_split_custom_set(loop_normals)
 
     entity_mesh = mesh
     if not is_simple:
@@ -127,34 +124,18 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
     return entity_mesh
 
 def x_matrix_to_blender(mat):
-    r0 = mat[0]
-    r1 = mat[1]
-    r2 = mat[2]
-    o0 = mat[3]
-    r3 = mat[4]
-    r4 = mat[5]
-    r5 = mat[6]
-    o1 = mat[7]
-    r6 = mat[8]
-    r7 = mat[9]
-    r8 = mat[10]
-    o2 = mat[11]
-    t0 = mat[12]
-    t1 = mat[13]
-    t2 = mat[14]
-    o3 = mat[15]
-
-    matrix = [
-        [r0, r1, r2, t0],
-        [r3, r4, r5, t1],
-        [r6, r7, r8, t2],
-        [o0, o1, o2, o3]
-    ]
-
-    return Matrix(matrix)
+    loc, rot, scl = Matrix((mat[0:4], mat[4:8], mat[8:12], mat[12:16])).transposed().decompose()
+    return Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(loc)), Quaternion(flip(rot)), Vector(flip(scl)))
 
 def blender_matrix_to_x(mat):
-    return [mat[0][0], mat[0][1], mat[0][2], mat[3][0],mat[1][0], mat[1][1], mat[1][2], mat[3][1],mat[2][0], mat[2][1], mat[2][2], mat[3][2],mat[0][3], mat[1][3], mat[2][3], mat[3][3],]
+    loc, rot, scl = mat.decompose()
+    b_matrix = Matrix.LocRotScale(Matrix.Scale(160, 4) @ Vector(flip(loc)), Quaternion(flip(rot)), Vector(flip(scl))).transposed()
+    matrix_array = []
+    for row in b_matrix:
+        for element in row:
+            matrix_array.append(element)
+
+    return matrix_array
 
 def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm=None, ob_data=None, is_simple=False, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
     name = frame["name"]
@@ -174,8 +155,7 @@ def create_bone(filepath, rigid_obs, arm_ob, x_dict, frame, parent_bone=None, bm
         if parent_bone:
             bone.parent = parent_bone
 
-        pivot_matrix = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
-        bone.matrix = pivot_matrix @ world_transform
+        bone.matrix = world_transform
 
     for mesh_dict in frame["meshes"]:
         object_mesh = create_object(arm_ob, bone, x_dict, mesh_dict, ob_data, is_simple, world_transform, material_list, local_asset_path, error_log, random_color_gen)
@@ -223,12 +203,13 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
-    mesh.transform(ob.matrix_world)
-    mesh.transform(DX_MATRIX_IMPORT)
 
     uv_layer = None
+    uv_count = len(mesh.uv_layers)
     if mesh.uv_layers.active:
         uv_layer = mesh.uv_layers.active
+    if uv_count > 0:
+        uv_layer = mesh.uv_layers[0]
 
     mesh_dict = {
         "name": ob.name,
@@ -241,13 +222,16 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         "dup_indices": [],
         "material_indices": [],
         "materials": [],
-        "max_weights_per_vertex": 1.0,
-        "max_weights_per_face": 1.0,
+        "max_weights_per_vertex": 1,
+        "max_weights_per_face": 1,
         "group_count": 0,
         "skin_weights": []
     }
 
     mesh_dict["dup_preexport_count"] = len(mesh.vertices)
+
+    original_vertex_map = {}
+    original_vertices = []
     vertex_map = {}
     for tri in mesh.loop_triangles:
         tri_indices = []
@@ -256,25 +240,35 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            i, j, k  = DX_MATRIX_IMPORT.to_3x3() @ loop.normal
-            loop_normal = (i, j, k)
+            i, j, k  = loop.normal
+            loop_normal = (i, k, j)
 
-            pos = v.co
+            x, y, z = v.co
+            pos = Matrix.Scale(160.0, 4) @ Vector((x, z, y))
 
             uv = (0.0, 0.0)
             if uv_layer:
                 u0, v0 = uv_layer.data[loop_index].uv
                 uv = (u0, 1 - v0)
 
-            key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv, loop_normal)
-            if key not in vertex_map:
-                vertex_map[key] = len(mesh_dict["vertices"])
+            pos_key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6))
+
+            if pos_key not in original_vertex_map:
+                original_vertex_map[pos_key] = len(original_vertices)
+                original_vertices.append(pos_key)
+
+            original_index = original_vertex_map[pos_key]
+
+            expanded_key = (pos_key, uv, loop_normal)
+
+            if expanded_key not in vertex_map:
+                vertex_map[expanded_key] = len(mesh_dict["vertices"])
                 mesh_dict["vertices"].append(pos)
                 mesh_dict["texcoords"].append(uv)
                 mesh_dict["normals"].append(loop_normal)
-                mesh_dict["dup_indices"].append(loop.vertex_index)
+                mesh_dict["dup_indices"].append(original_index)
 
-            tri_indices.append(vertex_map[key])
+            tri_indices.append(vertex_map[expanded_key])
 
         mesh_dict["faces"].append(tri_indices[::-1])
         mesh_dict["normal_indices"].append(tri_indices[::-1])

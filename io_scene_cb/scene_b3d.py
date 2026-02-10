@@ -60,8 +60,6 @@ class TextureTypeEnum(Enum):
     specular = auto()
 
 def import_mesh(node, material_list, is_simple=False, ob_data=None):
-    vertices = []
-    faces = []
     loop_normals = []
 
     m_scl = Matrix.Scale(0.00625, 4)
