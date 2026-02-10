@@ -304,57 +304,6 @@ class B3DImagePropertiesGroup(PropertyGroup):
                 )
         )
 
-class B3DMaterialPropertiesGroup(PropertyGroup):
-    full_bright: BoolProperty(
-        name ="Full Bright",
-        description = "???",
-        default = False,
-        )
-
-    use_vertex_colors_instead_of_brush_color: BoolProperty(
-        name ="Use Vertex Colors Instead Of Brush Color",
-        description = "???",
-        default = False,
-        )
-
-    flatshaded: BoolProperty(
-        name ="Flatshaded",
-        description = "???",
-        default = False,
-        )
-
-    disable_fog: BoolProperty(
-        name ="Disable Fog",
-        description = "???",
-        default = False,
-        )
-
-    disable_backface_culling: BoolProperty(
-        name ="Disable Backface Culling",
-        description = "???",
-        default = False,
-        )
-    
-    unk5: BoolProperty(
-        name ="Unk 5",
-        description = "???",
-        default = False,
-        )
-
-    blend_type: EnumProperty(
-        name="Blend Type",
-        description="Set the blend type",
-        items = ( ('0', "Alpha", "Alpha"),
-                    ('1', "Multiply", "Multiply"),
-                    ('2', "Add", "Add")
-                )
-        )
-    
-    shine: FloatProperty(
-        name = "Shine",
-        description = "???"
-        )
-
 class B3DIMAGE_PT_SceneProps(Panel):
     bl_space_type = 'IMAGE_EDITOR'
     bl_region_type = 'UI'
@@ -381,31 +330,6 @@ class B3DIMAGE_PT_SceneProps(Panel):
         layout.prop(props, "store_texture_in_vram")
         layout.prop(props, "force_high_color_textures")
         layout.prop(props, "blend_type")
-
-class B3DMATERIAL_PT_SceneProps(Panel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = "material"
-    bl_label = "B3D Material Properties"
-    bl_options = {'DEFAULT_CLOSED'}
-
-    @classmethod
-    def poll(cls, context):
-        return context.material is not None
-
-    def draw(self, context):
-        layout = self.layout
-        mat = context.material
-        props = mat.cb
-
-        layout.prop(props, "full_bright")
-        layout.prop(props, "use_vertex_colors_instead_of_brush_color")
-        layout.prop(props, "flatshaded")
-        layout.prop(props, "disable_fog")
-        layout.prop(props, "disable_backface_culling")
-        layout.prop(props, "unk5")
-        layout.prop(props, "blend_type")
-        layout.prop(props, "shine")
 
 def render_trigger(context, layout, active_property):
     box = layout.split()
@@ -777,9 +701,7 @@ classesscp = [
     CBObjectPropertiesGroup,
     CB_ObjectProps,
     B3DImagePropertiesGroup,
-    B3DMaterialPropertiesGroup,
-    B3DIMAGE_PT_SceneProps,
-    B3DMATERIAL_PT_SceneProps
+    B3DIMAGE_PT_SceneProps
 ]
 
 if (4, 1, 0) <= bpy.app.version:
@@ -796,7 +718,6 @@ def register():
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.Object.cb = PointerProperty(type=CBObjectPropertiesGroup, name="RMESH Properties", description="Set properties for your rmesh object")
     bpy.types.Image.cb = PointerProperty(type=B3DImagePropertiesGroup)
-    bpy.types.Material.cb = PointerProperty(type=B3DMaterialPropertiesGroup)
 
 def unregister():
     bpy.utils.unregister_class(SCPCBAddonPrefs)
@@ -807,7 +728,6 @@ def unregister():
 
     del bpy.types.Object.cb
     del bpy.types.Image.cb
-    del bpy.types.Material.cb
 
 if __name__ == '__main__':
     register()

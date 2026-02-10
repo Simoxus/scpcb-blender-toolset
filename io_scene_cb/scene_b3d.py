@@ -9,7 +9,17 @@ from enum import Enum, auto, Flag
 from collections import defaultdict
 from .process_b3d import B3DTree, write_b3d
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, get_material_name, get_linked_node, get_output_material_node, flip
+from .common_functions import (RandomColorGenerator, 
+                               get_file, 
+                               is_string_empty, 
+                               get_material_name, 
+                               get_linked_node, 
+                               get_output_material_node, 
+                               flip, 
+                               get_shader_node, 
+                               connect_inputs, 
+                               generate_texture_mapping,
+                               SHADER_RESOURCES)
 
 class TextureFXFlags(Flag):
     color = auto()
@@ -43,6 +53,11 @@ class MaterialBlendEnum(Enum):
     alpha = 0
     multiply = auto()
     add = auto()
+
+class TextureTypeEnum(Enum):
+    lightmap = 0
+    diffuse = auto()
+    specular = auto()
 
 def import_mesh(node, material_list, is_simple=False, ob_data=None):
     vertices = []
@@ -534,7 +549,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
         for child_node in node["nodes"]:
             import_node_recursive(context, data, child_node, material_list, armature, strips, has_skeleton, object_mesh, last_mesh)
 
-def get_mesh(b3d_data, ob, depsgraph):
+def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
@@ -546,11 +561,10 @@ def get_mesh(b3d_data, ob, depsgraph):
     layer_color = mesh.color_attributes.get("color")
     if uv_layer_count > 0 and not layer_uv_0:
         layer_uv_0 = mesh.uv_layers[0]
-    if uv_layer_count > 0 and not layer_uv_1:
+    if uv_layer_count > 1 and not layer_uv_1:
         layer_uv_1 = mesh.uv_layers[1]
     if color_layer_count > 0 and not layer_color:
         layer_color = mesh.color_attributes[0]
-
 
     mesh_dict = {
         "brush_id": -1,
@@ -574,45 +588,170 @@ def get_mesh(b3d_data, ob, depsgraph):
                 break
 
         if material_dict_idx == -1:
+            texture_id_list = []
             r = g = b = a = 1.0
 
             scene_mat = bpy.data.materials[mat_name]
             output_material_node = get_output_material_node(scene_mat)
             bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
-            image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
+            node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+            if node_group and node_group.node_tree.name == "b3d_material":
+                lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
+                specular_node = get_linked_node(node_group, "Specular Map", "TEX_IMAGE")
+                texture_entries = [lightmap_node, diffuse_node, specular_node]
+                for texture_entry_idx, texture_entry in enumerate(texture_entries):
+                    texture_dict_idx = -1 
+                    if not texture_entry:
+                        if armature_ob is None and texture_entry_idx < 2:
+                            texture_id_list.append(texture_dict_idx)
+                        continue
 
-            texture_dict_idx = -1 
-            if image_node_a is not None:
-                img = image_node_a.image
-                if img and img.source == 'FILE' and img.filepath:
-                    image_name = img.name
-                    for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
-                        if image_name == texture_dict["name"]:
+                    mapping_node = get_linked_node(texture_entry, "Vector", "MAPPING")
+                    tx = ty = tz = 0.0
+                    sx = sy = sz = 1.0
+                    rx = ry = rz = 0.0
+                    if mapping_node is not None:
+                        tx, ty, tz = mapping_node.inputs["Location"].default_value
+                        sx, sy, sz = mapping_node.inputs["Scale"].default_value
+                        rx, ry, rz = mapping_node.inputs["Rotation"].default_value
+
+                    img = texture_entry.image
+                    if img and img.source == 'FILE' and img.filepath:
+                        image_name = img.name
+                        for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
+                            txd, tyd = texture_dict["position"]
+                            sxd, syd = texture_dict["scale"]
+                            rxd = texture_dict["rotation"]
+
+                            if image_name != texture_dict["name"]:
+                                continue
+                            if (tx, ty) != (txd, tyd):
+                                continue
+                            if (sx, sy) != (sxd, syd):
+                                continue
+                            if degrees(rx) != rxd:
+                                continue
+
                             texture_dict_idx = tex_idx
 
                     if texture_dict_idx == -1:
+                        fx = 0
+                        if img.cb.color:
+                            fx += TextureFXFlags.color.value
+                        if img.cb.alpha:
+                            fx += TextureFXFlags.alpha.value
+                        if img.cb.masked:
+                            fx += TextureFXFlags.masked.value
+                        if img.cb.mipmapped:
+                            fx += TextureFXFlags.mipmapped.value
+                        if img.cb.clamp_u:
+                            fx += TextureFXFlags.clamp_u.value
+                        if img.cb.clamp_v:
+                            fx += TextureFXFlags.clamp_v.value
+                        if img.cb.spherical_environment_map:
+                            fx += TextureFXFlags.spherical_environment_map.value
+                        if img.cb.cubic_environment_map:
+                            fx += TextureFXFlags.cubic_environment_map.value
+                        if img.cb.store_texture_in_vram:
+                            fx += TextureFXFlags.store_texture_in_vram.value
+                        if img.cb.force_high_color_textures:
+                            fx += TextureFXFlags.force_high_color_textures.value
+
                         texture_dict = {
                             "name": img.name,
-                            "flags": 0,
-                            "blend": 0,
-                            "position": [
-                                0.0,
-                                0.0
-                            ],
-                            "scale": [
-                                1.0,
-                                1.0
-                            ],
-                            "rotation": 0.0
+                            "flags": fx,
+                            "blend": img.cb.blend_type,
+                            "position": [tx, ty],
+                            "scale": [sx, sy],
+                            "rotation": degrees(rx)
                         }
 
                         get_image_properties(img, texture_dict)
                         b3d_data["textures"].append(texture_dict)
-                        texture_dict_idx = len(b3d_data["textures"]) - 1
+                        texture_id = len(b3d_data["textures"]) - 1
+                        texture_dict_idx = texture_id
 
-            if bdsf_principled:
-                r, g, b, a = bdsf_principled.inputs["Base Color"].default_value
-                a = bdsf_principled.inputs["Alpha"].default_value
+                    r, g, b, a = node_group.inputs["Diffuse Overlay"].default_value
+                    material_shine = node_group.inputs["Shine"].default_value
+                    blend_type = node_group.inputs["Blend Type"].default_value
+                    fx = 0
+                    if node_group.inputs["Full Bright"].default_value:
+                        fx += MaterialFXFlags.full_bright.value
+                    if node_group.inputs["Use Vertex Colors Instead Of Brush Color"].default_value:
+                        fx += MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value
+                    if node_group.inputs["Flat Shaded"].default_value:
+                        fx += MaterialFXFlags.flatshaded.value
+                    if node_group.inputs["Disable Fog"].default_value:
+                        fx += MaterialFXFlags.disable_fog.value
+                    if node_group.inputs["Disable Backface Culling"].default_value:
+                        fx += MaterialFXFlags.disable_backface_culling.value
+                    if node_group.inputs["Unknown 5"].default_value:
+                        fx += MaterialFXFlags.unk5.value
+                    
+                    texture_id_list.append(texture_dict_idx)
+
+            elif bdsf_principled:
+                diffuse_node = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
+
+                texture_dict_idx = -1 
+                if diffuse_node is not None:
+                    img = diffuse_node.image
+                    if img and img.source == 'FILE' and img.filepath:
+                        image_name = img.name
+                        for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
+                            if image_name == texture_dict["name"]:
+                                texture_dict_idx = tex_idx
+
+                        if texture_dict_idx == -1:
+                            fx = 0
+                            if img.cb.color:
+                                fx += TextureFXFlags.color.value
+                            if img.cb.alpha:
+                                fx += TextureFXFlags.alpha.value
+                            if img.cb.masked:
+                                fx += TextureFXFlags.masked.value
+                            if img.cb.mipmapped:
+                                fx += TextureFXFlags.mipmapped.value
+                            if img.cb.clamp_u:
+                                fx += TextureFXFlags.clamp_u.value
+                            if img.cb.clamp_v:
+                                fx += TextureFXFlags.clamp_v.value
+                            if img.cb.spherical_environment_map:
+                                fx += TextureFXFlags.spherical_environment_map.value
+                            if img.cb.cubic_environment_map:
+                                fx += TextureFXFlags.cubic_environment_map.value
+                            if img.cb.store_texture_in_vram:
+                                fx += TextureFXFlags.store_texture_in_vram.value
+                            if img.cb.force_high_color_textures:
+                                fx += TextureFXFlags.force_high_color_textures.value
+
+                            texture_dict = {
+                                "name": img.name,
+                                "flags": fx,
+                                "blend": img.cb.blend_type,
+                                "position": [
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": [
+                                    1.0,
+                                    1.0
+                                ],
+                                "rotation": 0.0
+                            }
+
+                            get_image_properties(img, texture_dict)
+                            b3d_data["textures"].append(texture_dict)
+                            texture_dict_idx = len(b3d_data["textures"]) - 1
+
+                    r, g, b, a = bdsf_principled.inputs["Base Color"].default_value
+                    a = bdsf_principled.inputs["Alpha"].default_value
+                    material_shine = 0.0
+                    blend_type = 0
+                    fx = 0
+
+                texture_id_list.append(texture_dict_idx)
 
             material_dict = {
                 "name": mat_name,
@@ -622,15 +761,13 @@ def get_mesh(b3d_data, ob, depsgraph):
                     b,
                     a
                 ],
-                "shine": scene_mat.cb.shine,
-                "blend": MaterialBlendEnum.multiply.value,
-                "fx": MaterialFXFlags.full_bright.value + MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value,
+                "shine": material_shine,
+                "blend": blend_type,
+                "fx": fx,
                 "tids": []
             }
 
-            material_dict["tids"].append(texture_dict_idx)
-            
-            get_material_properties(scene_mat, material_dict)
+            material_dict["tids"] = texture_id_list
             b3d_data["materials"].append(material_dict)
             material_dict_idx = len(b3d_data["materials"]) - 1
 
@@ -946,26 +1083,26 @@ def set_image_properties(img, texture_dict):
 
         img_b3d.blend_type = str(texture_dict["blend"])
 
-def set_material_properties(mat, material_dict):
-    if mat:
-        mat_b3d = mat.cb
-
+def set_material_properties(b3d_node, material_dict):
+    if b3d_node:
         mat_flags = MaterialFXFlags(material_dict["fx"])
 
         if MaterialFXFlags.full_bright in mat_flags:
-            mat_b3d.full_bright = True
+            b3d_node.inputs["Full Bright"].default_value = True
         if MaterialFXFlags.use_vertex_colors_instead_of_brush_color in mat_flags:
-            mat_b3d.use_vertex_colors_instead_of_brush_color = True
+            b3d_node.inputs["Use Vertex Colors Instead Of Brush Color"].default_value = True
         if MaterialFXFlags.flatshaded in mat_flags:
-            mat_b3d.flatshaded = True
+            b3d_node.inputs["Flat Shaded"].default_value = True
         if MaterialFXFlags.disable_fog in mat_flags:
-            mat_b3d.disable_fog = True
+            b3d_node.inputs["Disable Fog"].default_value = True
         if MaterialFXFlags.disable_backface_culling in mat_flags:
-            mat_b3d.disable_backface_culling = True
+            b3d_node.inputs["Disable Backface Culling"].default_value = True
         if MaterialFXFlags.unk5 in mat_flags:
-            mat_b3d.unk5 = True
+            b3d_node.inputs["Unknown 5"].default_value = True
 
-        mat_b3d.blend_type = str(material_dict["blend"])
+        b3d_node.inputs["Blend Type"].default_value = material_dict["blend"]
+        b3d_node.inputs["Shine"].default_value = material_dict["shine"]
+        b3d_node.inputs["Diffuse Overlay"].default_value = material_dict["rgba"]
 
 def get_image_properties(img, texture_dict):
     img_b3d = img.cb
@@ -994,26 +1131,6 @@ def get_image_properties(img, texture_dict):
 
     texture_dict["flags"] = tex_flags
     texture_dict["blend"] = int(img_b3d.blend_type)
-
-def get_material_properties(mat, material_dict):
-    mat_b3d = mat.cb
-
-    mat_flags = 0
-    if mat_b3d.full_bright:
-        mat_flags += MaterialFXFlags.full_bright.value
-    if mat_b3d.use_vertex_colors_instead_of_brush_color:
-        mat_flags += MaterialFXFlags.use_vertex_colors_instead_of_brush_color.value
-    if mat_b3d.flatshaded:
-        mat_flags += MaterialFXFlags.flatshaded.value
-    if mat_b3d.disable_fog:
-        mat_flags += MaterialFXFlags.disable_fog.value
-    if mat_b3d.disable_backface_culling:
-        mat_flags += MaterialFXFlags.disable_backface_culling.value
-    if mat_b3d.unk5:
-        mat_flags += MaterialFXFlags.unk5.value
-
-    material_dict["fx"] = mat_flags
-    material_dict["blend"] = int(mat_b3d.blend_type)
 
 def gather_keyframe_data(armature, node_data, bake_action=False):
     if not armature.animation_data:
@@ -1154,7 +1271,7 @@ def export_scene(context, filepath, report):
     if armature_ob:
         for node_ob in bpy.data.objects:
             if node_ob.type == "MESH" and node_ob.parent == armature_ob:
-                skin_info, mesh_dict = get_mesh(b3d_data, node_ob, depsgraph)
+                skin_info, mesh_dict = get_mesh(b3d_data, node_ob, depsgraph, armature_ob)
             elif node_ob.type == "ARMATURE":
                 gather_keyframe_data(node_ob, key_dict)
 
@@ -1186,10 +1303,15 @@ def export_scene(context, filepath, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
-def find_bones(node, bone_check_list):
-    bone_check_list[node["name"]] = node.get("bones") is not None
+def find_bones(node, bone_check_list, uv_counts):
+    mesh_dict = node.get("mesh")
+    bone_check_list.append(node.get("bones") is not None)
+    if mesh_dict is not None:
+        for uv_channel in mesh_dict["uvs"]:
+            uv_counts.append(len(uv_channel))
+
     for child_node in node["nodes"]:
-        find_bones(child_node, bone_check_list)
+        find_bones(child_node, bone_check_list, uv_counts)
     
 def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
@@ -1208,54 +1330,139 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
     material_list = []
     texture_count = 0
     
+    has_skeleton = False
+    bone_check_list = []
+    uv_counts = []
+    for child_node in data["nodes"]:
+        find_bones(child_node, bone_check_list, uv_counts)
+
     texture_dict = data.get("textures")
     material_dict = data.get("materials")
     if texture_dict is not None:
         texture_count = len(texture_dict)
+
+    has_lightmap_data = False
+    for uv_count in uv_counts:
+        if uv_count > 2:
+            has_lightmap_data = True
 
     if material_dict is not None:
         for material_dict in data["materials"]:
             material = bpy.data.materials.new(material_dict["name"])
             material.diffuse_color = random_color_gen.next()
 
-            set_material_properties(material, material_dict)
-            material.cb.shine = material_dict["shine"]
-
             material.use_nodes = True
-            nodes = material.node_tree.nodes
-            bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+            for node in material.node_tree.nodes:
+                material.node_tree.nodes.remove(node)
 
-            r, g, b, a = material_dict["rgba"]
-            bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
-            bsdf.inputs["Alpha"].default_value = a
+            output_material_node = get_output_material_node(material)
+            output_material_node.location = Vector((0.0, 0.0))
 
-            material.blend_method = 'BLEND' if a < 1.0 else 'OPAQUE'
+            b3d_node = get_shader_node(material.node_tree, SHADER_RESOURCES, "b3d_material")
+            b3d_node.name = "B3D Material"
+            b3d_node.location = (-440.0, 0.0)
+            set_material_properties(b3d_node, material_dict)
 
+            connect_inputs(material.node_tree, b3d_node, "Shader", output_material_node, "Surface")
+
+            valid_texture_id_count = 0
             for tid_element in material_dict["tids"]:
+                if tid_element != -1 and texture_count > tid_element:
+                    valid_texture_id_count += 1
+
+            for tex_idx, tid_element in enumerate(material_dict["tids"]):
+                if valid_texture_id_count == 1:
+                    texture_type = TextureTypeEnum.diffuse
+                else:
+                    if tex_idx == 0:
+                        texture_type = TextureTypeEnum.lightmap
+                    elif tex_idx == 1:
+                        texture_type = TextureTypeEnum.diffuse
+                    elif tex_idx == 2:
+                        texture_type = TextureTypeEnum.specular
+
+                if texture_type == TextureTypeEnum.lightmap and not has_lightmap_data:
+                    continue
+
                 if tid_element != -1 and texture_count > tid_element:
                     texture = data["textures"][tid_element]
                     texture_asset = get_file(os.path.basename(texture['name']), True, True, directory_path=local_asset_path)
-                    set_image_properties(texture_asset, texture)
+                    if texture_asset:
+                        set_image_properties(texture_asset, texture)
 
-                    material.use_nodes = True
-                    bsdf = material.node_tree.nodes["Principled BSDF"]
-                    texImage = material.node_tree.nodes.new('ShaderNodeTexImage')
-                    texImage.image = texture_asset
-                    if not "_lm" in texture['name']:
-                        material.node_tree.links.new(bsdf.inputs['Base Color'], texImage.outputs['Color'])
+                        texture_node = material.node_tree.nodes.new('ShaderNodeTexImage')
+                        texture_node.image = texture_asset
+
+                        if texture_type == TextureTypeEnum.lightmap:
+                            texture_node.location = (-720.0, 0)
+                            connect_inputs(material.node_tree, texture_node, "Color", b3d_node, "Light Map")
+                            connect_inputs(material.node_tree, texture_node, "Alpha", b3d_node, "Light Map Alpha")
+                            mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture_node)
+                            uv_node.uv_map = "uvmap_lightmap"
+                            mapping_node.vector_type = 'TEXTURE'
+                            tx, ty = texture["position"]
+                            sx, sy = texture["scale"]
+                            rx = texture["rotation"]
+                            mapping_node.inputs["Location"].default_value = (tx, ty, 0)
+                            mapping_node.inputs["Scale"].default_value = (sx, sy, 1)
+                            mapping_node.inputs["Rotation"].default_value = (radians(rx), 0, 0)
+
+
+                        elif texture_type == TextureTypeEnum.diffuse:
+                            texture_node.location = (-720.0, -380)
+                            connect_inputs(material.node_tree, texture_node, "Color", b3d_node, "Diffuse Map")
+                            connect_inputs(material.node_tree, texture_node, "Alpha", b3d_node, "Diffuse Map Alpha")
+                            mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture_node)
+                            uv_node.uv_map = "uvmap_render"
+                            mapping_node.vector_type = 'TEXTURE'
+                            tx, ty = texture["position"]
+                            sx, sy = texture["scale"]
+                            rx = texture["rotation"]
+                            mapping_node.inputs["Location"].default_value = (tx, ty, 0)
+                            mapping_node.inputs["Scale"].default_value = (sx, sy, 1)
+                            mapping_node.inputs["Rotation"].default_value = (radians(rx), 0, 0)
+
+                        elif texture_type == TextureTypeEnum.specular:
+                            texture_node.location = (-720.0, -760)
+                            connect_inputs(material.node_tree, texture_node, "Color", b3d_node, "Specular Map")
+                            connect_inputs(material.node_tree, texture_node, "Alpha", b3d_node, "Specular Map Alpha")
+                            mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture_node)
+                            uv_node.uv_map = "uvmap_render"
+                            mapping_node.vector_type = 'TEXTURE'
+                            tx, ty = texture["position"]
+                            sx, sy = texture["scale"]
+                            rx = texture["rotation"]
+                            mapping_node.inputs["Location"].default_value = (tx, ty, 0)
+                            mapping_node.inputs["Scale"].default_value = (sx, sy, 1)
+                            mapping_node.inputs["Rotation"].default_value = (radians(rx), 0, 0)
+
+                    if not texture_asset and texture_type == TextureTypeEnum.diffuse:
+                        texture_bump_data = get_file("%sbump" % os.path.basename(texture['name']).rsplit(".", 1)[0], directory_path=local_asset_path)
+                        if texture_bump_data:
+                            texture_bump = material.node_tree.nodes.new("ShaderNodeTexImage")
+                            texture_bump.image = texture_bump_data
+                            texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
+                            texture_bump.interpolation = 'Cubic'
+                            texture_bump.image.colorspace_settings.name = 'Non-Color'
+                            texture_bump.location = (-720.0, -1140)
+                            connect_inputs(material.node_tree, texture_bump, "Color", b3d_node, "Normal Map")
+                            connect_inputs(material.node_tree, texture_bump, "Alpha", b3d_node, "Normal Map Alpha")
+                            mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture_node)
+                            uv_node.uv_map = "uvmap_render"
+                            mapping_node.vector_type = 'TEXTURE'
+                            tx, ty = texture["position"]
+                            sx, sy = texture["scale"]
+                            rx = texture["rotation"]
+                            mapping_node.inputs["Location"].default_value = (tx, ty, 0)
+                            mapping_node.inputs["Scale"].default_value = (sx, sy, 1)
+                            mapping_node.inputs["Rotation"].default_value = (radians(rx), 0, 0)
 
             material_list.append(material)
 
     strips = []
     armature_ob = None
-
-    has_skeleton = False
-    bone_check_list = {}
-    for child_node in data["nodes"]:
-        find_bones(child_node, bone_check_list)
-
-    for bone in bone_check_list:
-        if bone_check_list[bone]:
+    for has_bone in bone_check_list:
+        if has_bone:
             has_skeleton = True
             break
 

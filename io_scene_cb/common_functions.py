@@ -5,6 +5,8 @@ import colorsys
 from math import pi, radians
 from mathutils import Matrix, Quaternion, Vector
 
+SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "shader_resources.blend")
+
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
 
@@ -128,8 +130,9 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
                             file_path = os.path.join(root, file)
                             break
 
-        if file_path is None:
-            file_path = ""
+        # Not sure why I do this - Gen
+        #if file_path is None:
+            #file_path = ""
 
     if use_image_set and generate_image_node:
         if file_path is not None and os.path.isfile(file_path):
@@ -180,6 +183,29 @@ def get_output_material_node(mat):
         output_material_node = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
 
     return output_material_node
+
+def get_shader_node(tree, shader_resource, shader_name):
+    print(shader_resource)
+    if not bpy.data.node_groups.get(shader_name):
+        with bpy.data.libraries.load(shader_resource) as (data_from, data_to):
+            data_to.node_groups.append(data_from.node_groups[data_from.node_groups.index(shader_name)])
+
+    shader_node = tree.nodes.new('ShaderNodeGroup')
+    shader_node.node_tree = bpy.data.node_groups.get(shader_name)
+
+    return shader_node
+
+def generate_texture_mapping(node_tree, input_node, input_key="Vector"):
+    mapping_node = node_tree.nodes.new("ShaderNodeMapping")
+    uv_node = node_tree.nodes.new("ShaderNodeUVMap")
+
+    mapping_node.location = Vector((-180.0, 0.0)) + input_node.location
+    uv_node.location = Vector((-360.0, 0.0)) + input_node.location
+
+    connect_inputs(node_tree, uv_node, "UV", mapping_node, "Vector")
+    connect_inputs(node_tree, mapping_node, "Vector", input_node, input_key)
+
+    return mapping_node, uv_node
 
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))

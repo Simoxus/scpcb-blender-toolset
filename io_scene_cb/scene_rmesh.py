@@ -138,9 +138,17 @@ def export_scene(context, filepath, file_type, report):
         mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
         mesh.calc_loop_triangles()
 
+        uv_layer_count = len(mesh.uv_layers)
+        color_layer_count = len(mesh.color_attributes)
         layer_uv_0 = mesh.uv_layers.get("uvmap_render")
         layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
         layer_color = mesh.color_attributes.get("color")
+        if uv_layer_count > 0 and not layer_uv_0:
+            layer_uv_0 = mesh.uv_layers[0]
+        if uv_layer_count > 1 and not layer_uv_1:
+            layer_uv_1 = mesh.uv_layers[1]
+        if color_layer_count > 0 and not layer_color:
+            layer_color = mesh.color_attributes[0]
 
         for tri in mesh.loop_triangles:
             mat_name = get_material_name(ob, tri)
