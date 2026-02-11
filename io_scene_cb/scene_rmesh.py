@@ -802,19 +802,26 @@ def import_scene(context, filepath, file_type, report):
         elif entity_dict["entity_type"] == "item":
             ob_data = None
             model_path = None
+            model_scale = 1
             if items_ini:
-                print()
-                print("ITEM INI WAS TRUE")
-                item_entry = items_ini.get(entity_dict["model_name"], "model", fallback=None)
-                print("TEMPLATE NAME: ", entity_dict["model_name"])
-                print("ITEM NAME: ", entity_dict["item_name"])
-                print("ITEM ENTRY: ", item_entry)
+                model_name = entity_dict["model_name"]
+
+                if model_name == "misc":
+                    model_name = "playingcard"
+                elif model_name == "paper":
+                    model_name = "doc079"
+                elif model_name == "vest":
+                    model_name = "vest"
+                elif model_name == "hazmat":
+                    model_name = "hazmatsuit"
+                elif model_name == "nav":
+                    model_name = "snav"
+
+                item_entry = items_ini.get(model_name, "model", fallback=None)
                 if item_entry:
-                    print("ITEM ENTRY WAS FOUND")
-                    print(item_entry)
                     model_path = get_file(item_entry, False)
                     ob_data = entity_meshes.get(model_path)
-
+                    model_scale = float(items_ini.get(model_name, "scale", fallback=0.01)) * 160
                     if ob_data is None and model_path:
                         ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
                         bm = bmesh.new()
@@ -833,7 +840,7 @@ def import_scene(context, filepath, file_type, report):
             entity_collection.objects.link(object_mesh)
 
             loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
-            global_transform = Matrix.LocRotScale(loc, rot, Vector((1,1,1)))
+            global_transform = Matrix.LocRotScale(loc, rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion(), Vector((model_scale, model_scale, model_scale)))
 
             object_mesh.matrix_world =  global_transform
             object_mesh.cb.item_name = entity_dict["item_name"]
