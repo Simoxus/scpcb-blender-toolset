@@ -536,18 +536,19 @@ def write_mesh(mesh_dict, x_stream, indent_level=0, final_mesh=False):
     x_stream.write("%s}\n" % get_indentation(indent_level + 1))
     x_stream.write("\n")
 
-    x_stream.write("%sVertexDuplicationIndices {\n" % get_indentation(indent_level + 1))
-    dup_indices_count = len(mesh_dict["dup_indices"])
-    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), dup_indices_count))
-    x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["dup_preexport_count"]))
-    for dup_idx, dup_index in enumerate(mesh_dict["dup_indices"]):
-        final_seperator = ","
-        if dup_idx == dup_indices_count - 1:
-            final_seperator = ";"
+    if False:
+        x_stream.write("%sVertexDuplicationIndices {\n" % get_indentation(indent_level + 1))
+        dup_indices_count = len(mesh_dict["dup_indices"])
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), dup_indices_count))
+        x_stream.write("%s%s;\n" % (get_indentation(indent_level + 2), mesh_dict["dup_preexport_count"]))
+        for dup_idx, dup_index in enumerate(mesh_dict["dup_indices"]):
+            final_seperator = ","
+            if dup_idx == dup_indices_count - 1:
+                final_seperator = ";"
 
-        x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), dup_index, final_seperator))
-    x_stream.write("%s}\n" % get_indentation(indent_level + 1))
-    x_stream.write("\n")
+            x_stream.write("%s%s%s\n" % (get_indentation(indent_level + 2), dup_index, final_seperator))
+        x_stream.write("%s}\n" % get_indentation(indent_level + 1))
+        x_stream.write("\n")
 
     x_stream.write("%sMeshMaterialList {\n" % get_indentation(indent_level + 1))
     material_count = len(mesh_dict["materials"])

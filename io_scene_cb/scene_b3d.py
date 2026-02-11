@@ -601,6 +601,8 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                 for texture_entry_idx, texture_entry in enumerate(texture_entries):
                     texture_dict_idx = -1 
                     if not texture_entry:
+                        # Limiting it to 2 because honestly I think the max inputs on this game is 2. Everything else is derived from the diffuse name
+                        # Check goes away during rigged exports to allow SCP 1048a to export with its third texture id that I'm pretty sure does nothing - Gen
                         if armature_ob is None and texture_entry_idx < 2:
                             texture_id_list.append(texture_dict_idx)
                         continue

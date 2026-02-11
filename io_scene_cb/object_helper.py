@@ -6,8 +6,8 @@ from math import radians
 from pathlib import Path
 from enum import Enum, auto
 from mathutils import Matrix, Vector, Euler
-from io_scene_cb.scene_x import import_scene as import_x
-from io_scene_cb.scene_b3d import import_scene as import_b3d
+from .scene_x import import_scene as import_x
+from .scene_b3d import import_scene as import_b3d
 
 RoomScale = 1
 
@@ -28,31 +28,43 @@ class DoorState(Enum):
     open = auto()
     broken = auto()
 
-def CreateObject(model_path, model_name="mesh"):
-    ob_data = None
+def CreateObject(ob_bm, ob_data, ob_transform, model_path):
     if str(model_path).lower().endswith(".x"):
-        ob_data = bpy.data.meshes.new(model_name)
+        material_count = len(ob_data.materials)
+
+        temp_data = bpy.data.meshes.new("door_entity")
         bm = bmesh.new()
         is_simple=True
         import_x(bpy.context, model_path, print, bm, ob_data, is_simple)
-        bm.to_mesh(ob_data)
+        for f in bm.faces:
+            f.material_index = material_count + f.material_index
+
+        bm.to_mesh(temp_data)
+        temp_data.transform(ob_transform)
+        ob_bm.from_mesh(temp_data)
         bm.free()
+        bpy.data.meshes.remove(temp_data)
 
     if str(model_path).lower().endswith(".b3d"):
-        ob_data = bpy.data.meshes.new(model_name)
+        material_count = len(ob_data.materials)
+
+        temp_data = bpy.data.meshes.new("door_entity")
         bm = bmesh.new()
         is_simple=True
         import_b3d(bpy.context, model_path, print, bm, ob_data, is_simple)
-        bm.to_mesh(ob_data)
+        for f in bm.faces:
+            f.material_index = material_count + f.material_index
+
+        bm.to_mesh(temp_data)
+        temp_data.transform(ob_transform)
+        ob_bm.from_mesh(temp_data)
         bm.free()
+        bpy.data.meshes.remove(temp_data)
 
-    object_mesh = bpy.data.objects.new(model_name, ob_data)
-    bpy.context.collection.objects.link(object_mesh)
+def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed):
+    ob_data = bpy.data.meshes.new("door_entity")
+    ob_bm = bmesh.new()
 
-    return object_mesh
-
-def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed):
-    pivot_matrix = Matrix.LocRotScale(position, Euler((0, 0, radians(angle))), Vector((RoomScale, RoomScale, RoomScale)))
     game_path = bpy.context.preferences.addons[__package__].preferences.game_path
     BigDoorLeftPath = Path(os.path.join(game_path, r"GFX\map\ContDoorLeft.x"))
     BigDoorRightPath = Path(os.path.join(game_path, r"GFX\map\ContDoorRight.x"))
@@ -78,63 +90,51 @@ def CreateDoor(position=Vector(), angle=0.0, door_type=DoorType.normal, button_t
         if not door_state == DoorState.closed:
             x = 1.2732
 
-        ob = CreateObject(BigDoorLeftPath, "BigLeftDoor")
         ob_matrix = Matrix.LocRotScale(Vector((-x, 0.0002, -0.03263)), Euler((0, 0, 0)), Vector((55, 55, 55)) * RoomScale)
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(BigDoorRightPath, "BigRightDoor")
+        CreateObject(ob_bm, ob_data, ob_matrix, BigDoorLeftPath)
         ob_matrix = Matrix.LocRotScale(Vector((x, 0.0002, -0.03263)), Euler((0, 0, 0)), Vector((55, 55, 55)) * RoomScale)
-        ob.matrix_world = pivot_matrix @ ob_matrix
+        CreateObject(ob_bm, ob_data, ob_matrix, BigDoorRightPath)
 
     elif door_type == DoorType.heavy:
-        ob = CreateObject(HeavyDoorLeftPath, "HeavyLeftDoor")
         ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(HeavyDoorRightPath, "HeavyRightDoor")
+        CreateObject(ob_bm, ob_data, ob_matrix, HeavyDoorLeftPath)
         ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, radians(180))), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(DoorFramePath, "DoorFrame")
+        CreateObject(ob_bm, ob_data, ob_matrix, HeavyDoorRightPath)
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
+        CreateObject(ob_bm, ob_data, ob_matrix, DoorFramePath)
 
     elif door_type == DoorType.elevator:
-        ob = CreateObject(ElevatorDoorsPath, "ElevatorLeftDoor")
         ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((radians(0), 0, radians(180))), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(ElevatorDoorsPath, "ElevatorRightDoor")
+        CreateObject(ob_bm, ob_data, ob_matrix, ElevatorDoorsPath)
         ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((radians(0), 0, radians(0))), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(DoorFramePath, "DoorFrame")
+        CreateObject(ob_bm, ob_data, ob_matrix, ElevatorDoorsPath)
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
+        CreateObject(ob_bm, ob_data, ob_matrix, DoorFramePath)
 
     else:
-        ob = CreateObject(DoorPath, "DoorLeftDoor")
-        sx = (204.0 * 0.00625) * RoomScale / ob.dimensions.x
-        sy = (16.0 * 0.00625) * RoomScale / ob.dimensions.y
-        sz = (312.0 * 0.00625) * RoomScale / ob.dimensions.z
+        sx = (204.0 * 0.00625) * RoomScale / 0.0693
+        sy = (16.0 * 0.00625) * RoomScale / 0.0066
+        sz = (312.0 * 0.00625) * RoomScale / 0.1518
         ob_matrix = Matrix.LocRotScale(Vector((-x, -0.05, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(DoorPath, "DoorRightDoor")
+        CreateObject(ob_bm, ob_data, ob_matrix, DoorPath)
         ob_matrix = Matrix.LocRotScale(Vector((x, 0.05, 0)), Euler((0, 0, radians(180))), Vector((sx, sy, sz)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(DoorFramePath, "DoorFrame")
+        CreateObject(ob_bm, ob_data, ob_matrix, DoorPath)
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
+        CreateObject(ob_bm, ob_data, ob_matrix, DoorFramePath)
 
     if door_type == DoorType.big:
-        ob = CreateObject(ButtonPath, "Button")
         ob_matrix = Matrix.LocRotScale(Vector((-2.70001, 1.2, 1.12)), Euler((0, 0, radians(-90))), Vector((7.7, 7.7, 7.7)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(ButtonPath, "Button")
+        CreateObject(ob_bm, ob_data, ob_matrix, ButtonPath)
         ob_matrix = Matrix.LocRotScale(Vector((3.1, -0.6, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
+        CreateObject(ob_bm, ob_data, ob_matrix, ButtonPath)
 
     else:
-        ob = CreateObject(ButtonPath, "Button")
         ob_matrix = Matrix.LocRotScale(Vector((-0.959999, 0.16, 1.12)), Euler((0, 0, 0)), Vector((7.7, 7.7, 7.7)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
-        ob = CreateObject(ButtonPath, "Button")
+        CreateObject(ob_bm, ob_data, ob_matrix, ButtonPath)
         ob_matrix = Matrix.LocRotScale(Vector((0.959999, -0.16, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
-        ob.matrix_world = pivot_matrix @ ob_matrix
+        CreateObject(ob_bm, ob_data, ob_matrix, ButtonPath)
 
-CreateDoor(bpy.context.scene.cursor.location, 90, DoorType.elevator, ButtonType.normal, DoorState.closed)
+    ob_bm.to_mesh(ob_data)
+    ob_bm.free()
+
+    return ob_data

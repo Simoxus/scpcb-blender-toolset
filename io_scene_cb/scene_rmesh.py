@@ -2,6 +2,7 @@ import re
 import os
 import bpy
 import bmesh
+import configparser
 
 from . import ObjectType
 from pathlib import Path
@@ -10,6 +11,7 @@ from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
 from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
+from .object_helper import create_door, DoorType, ButtonType, DoorState
 from .common_functions import (RandomColorGenerator, 
                                get_file, 
                                is_string_empty, 
@@ -598,6 +600,13 @@ def import_scene(context, filepath, file_type, report):
                 for poly in trigger_mesh.polygons:
                     poly.use_smooth = True
 
+
+    items_ini = None
+    items_ini_path = os.path.join(game_path, r"Data\items.ini")
+    if os.path.isfile(items_ini_path):
+        items_ini = configparser.ConfigParser()
+        items_ini.read(items_ini_path)
+
     entity_meshes = {}
     for entity_idx, entity_dict in enumerate(rmesh_dict["entities"]):
         if entity_dict["entity_type"] == "screen":
@@ -747,7 +756,8 @@ def import_scene(context, filepath, file_type, report):
 
             object_mesh = bpy.data.objects.new("%s model" % entity_idx, ob_data)
             object_mesh.cb.object_type = str(ObjectType.entity_model.value)
-            object_mesh.cb.model_path = model_path
+            if model_path is not None:
+                object_mesh.cb.model_path = model_path
             entity_collection.objects.link(object_mesh)
             if not file_type == ImportFileType.rmesh_uer:
                 loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
@@ -777,7 +787,8 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_mesh.value)
             entity_collection.objects.link(object_mesh)
 
-            object_mesh.cb.model_path = model_path
+            if model_path is not None:
+                object_mesh.cb.model_path = model_path
             object_mesh.cb.texture_path = texture_path
 
             loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
@@ -787,6 +798,80 @@ def import_scene(context, filepath, file_type, report):
 
             object_mesh.cb.has_collision = bool(entity_dict["has_collision"])
             object_mesh.cb.fx = entity_dict["fx"]
+
+        elif entity_dict["entity_type"] == "item":
+            ob_data = None
+            model_path = None
+            if items_ini:
+                print()
+                print("ITEM INI WAS TRUE")
+                item_entry = items_ini.get(entity_dict["model_name"], "model", fallback=None)
+                print("TEMPLATE NAME: ", entity_dict["model_name"])
+                print("ITEM NAME: ", entity_dict["item_name"])
+                print("ITEM ENTRY: ", item_entry)
+                if item_entry:
+                    print("ITEM ENTRY WAS FOUND")
+                    print(item_entry)
+                    model_path = get_file(item_entry, False)
+                    ob_data = entity_meshes.get(model_path)
+
+                    if ob_data is None and model_path:
+                        ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
+                        bm = bmesh.new()
+                        is_simple=True
+                        if model_path.lower().endswith(".b3d"):
+                            import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
+                        else:
+                            import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
+                        bm.to_mesh(ob_data)
+                        bm.free()
+
+            object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
+            object_mesh.cb.object_type = str(ObjectType.entity_item.value)
+            entity_collection.objects.link(object_mesh)
+
+            loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), get_blender_rot(entity_dict["euler_rotation"]), Vector((1,1,1)))).decompose()
+            global_transform = Matrix.LocRotScale(loc, rot, Vector((1,1,1)))
+
+            object_mesh.matrix_world =  global_transform
+            object_mesh.cb.item_name = entity_dict["item_name"]
+            if model_path is not None:
+                object_mesh.cb.model_path = model_path
+            object_mesh.cb.use_custom_rotation = bool(entity_dict["use_custom_rotation"])
+            object_mesh.cb.state_1 = entity_dict["state_1"]
+            object_mesh.cb.state_2 = entity_dict["state_2"]
+            object_mesh.cb.spawn_chance = entity_dict["spawn_chance"]
+
+        elif entity_dict["entity_type"] == "door":
+            door_type = DoorType(entity_dict["door_type"])
+            button_type = ButtonType.normal
+            if entity_dict["key_card_level"] < 0:
+                button_type = ButtonType.scanner
+            elif len(entity_dict["keypad_code"]) > 0:
+                button_type = ButtonType.code
+            elif entity_dict["key_card_level"] > 0:
+                button_type = ButtonType.keycard
+
+            door_state = DoorState(entity_dict["start_open"])
+            ob_data = create_door(door_type, button_type, door_state)
+            object_mesh = bpy.data.objects.new("%s door" % entity_idx, ob_data)
+            object_mesh.cb.object_type = str(ObjectType.entity_door.value)
+            entity_collection.objects.link(object_mesh)
+
+            loc, rot, sca = (pivot_matrix @ Matrix.LocRotScale(Vector(entity_dict["position"]), Quaternion(), Vector((1,1,1)))).decompose()
+            global_transform = Matrix.LocRotScale(loc, Euler((0, 0, radians(entity_dict["angle"]))), Vector((1,1,1)))
+
+            object_mesh.matrix_world =  global_transform
+
+            object_mesh.cb.door_type = entity_dict["door_type"]
+            object_mesh.cb.key_card_level = entity_dict["key_card_level"]
+            object_mesh.cb.keypad_code = entity_dict["keypad_code"]
+            object_mesh.cb.start_open = bool(entity_dict["start_open"])
+            object_mesh.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
+
+
 
         else:
             report({'WARNING'}, "Unknown entity type: %s" % entity_dict["entity_type"])

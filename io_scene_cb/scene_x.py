@@ -5,7 +5,14 @@ from pathlib import Path
 from math import sqrt, radians
 from mathutils import Matrix, Vector, Quaternion
 from .process_x import write_x, read_x
-from .common_functions import RandomColorGenerator, get_file, is_string_empty, flip, DX_MATRIX_IMPORT
+from .common_functions import (RandomColorGenerator, 
+                               get_file, 
+                               is_string_empty, 
+                               flip, 
+                               get_output_material_node, 
+                               get_shader_node,
+                               connect_inputs,
+                               SHADER_RESOURCES)
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
     loop_normals = []
@@ -16,9 +23,9 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         else:
             mesh_name = "mesh"
 
-    m_scl = Matrix.Scale(0.00625, 4)
+    m_scl = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
     
-    vertices = [m_scl @ Vector(flip(vertex)) for vertex in mesh_dict["vertices"]]
+    vertices = [m_scl @ Vector(vertex) for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
@@ -30,48 +37,58 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         if world_transform is not None:
             mesh.transform(world_transform)
 
-    uv_render = mesh.uv_layers.new(name="UVMap_Render")
+    uv_render = mesh.uv_layers.new(name="uvmap_render")
     for poly_idx, poly in enumerate(mesh.polygons):
         poly.use_smooth = True
 
     if not x_dict["xof_header"] == "xof 0302txt 0064":
         for material_dict in mesh_dict["materials"]:
-            mat = bpy.data.materials.new(name=material_dict["name"])
-            mat.diffuse_color = random_color_gen.next()
+            material = bpy.data.materials.new(name=material_dict["name"])
+            material.diffuse_color = random_color_gen.next()
 
-            mesh.materials.append(mat)
+            mesh.materials.append(material)
             if is_simple:
-                ob_data.materials.append(mat)
+                ob_data.materials.append(material)
 
-            mat.use_nodes = True
-            nodes = mat.node_tree.nodes
-            bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+            material.use_nodes = True
+            for node in material.node_tree.nodes:
+                material.node_tree.nodes.remove(node)
 
-            r, g, b, a = material_dict["diffuse"]
-            #mat.diffuse_color = (r, g, b, a) # Need to find another place to store this if base color doesn't do. I rather have different colors for materials in the viewport. - Gen
-            bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
-            bsdf.inputs["Alpha"].default_value = a
-            if a < 1.0:
-                mat.blend_method = 'BLEND'
-            else:
-                mat.blend_method = 'CLIP'
+            output_material_node = get_output_material_node(material)
+            output_material_node.location = Vector((0.0, 0.0))
 
-            roughness = sqrt(2 / (material_dict["power"] + 2))
-            #bsdf.inputs["Roughness"].default_value = roughness # This doesn't look like what I see ingame - Gen
+            x_node = get_shader_node(material.node_tree, SHADER_RESOURCES, "x_material")
+            x_node.name = "X Material"
+            x_node.location = (-440.0, 0.0)
+
+            connect_inputs(material.node_tree, x_node, "Shader", output_material_node, "Surface")
 
             sr, sg, sb = material_dict["specular"]
-            spec_strength = max(sr, sg, sb)
-            #bsdf.inputs["Specular IOR Level"].default_value = spec_strength # This doesn't look like what I see ingame - Gen
-
             er, eg, eb = material_dict["emissive"]
-            #bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0) # This doesn't look like what I see ingame - Gen
+            x_node.inputs["Diffuse Overlay"].default_value = material_dict["diffuse"]
+            x_node.inputs["Power"].default_value = material_dict["power"]
+            x_node.inputs["Specular"].default_value = (sr, sg, sb, 1)
+            x_node.inputs["Emission"].default_value = (er, eg, eb, 1)
 
             texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
             if texture_node:
-                texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                texture.location = (-300, 150)
+                texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+                texture.location = (-720.0, 0)
                 texture.image = texture_node
-                mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+                connect_inputs(material.node_tree, texture, "Color", x_node, "Diffuse Map")
+                connect_inputs(material.node_tree, texture, "Alpha", x_node, "Diffuse Map Alpha")
+
+                texture_bump_data = get_file("%sbump" % os.path.basename(material_dict["texture"]).rsplit(".", 1)[0], directory_path=local_asset_path)
+                if texture_bump_data:
+                    texture_bump = material.node_tree.nodes.new("ShaderNodeTexImage")
+                    texture_bump.image = texture_bump_data
+                    texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
+                    texture_bump.interpolation = 'Cubic'
+                    texture_bump.image.colorspace_settings.name = 'Non-Color'
+                    texture_bump.location = (-720.0, -380)
+                    connect_inputs(material.node_tree, texture_bump, "Color", x_node, "Normal Map")
+                    connect_inputs(material.node_tree, texture_bump, "Alpha", x_node, "Normal Map Alpha")
+
             else:
                 if material_dict["texture"] is not None:
                     error_log.add('Failed to retrive "%s"' % material_dict["texture"])
@@ -99,7 +116,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
             if not x_dict["xof_header"] == "xof 0302txt 0064":
-                loop_normals.append(Vector(flip(mesh_dict["normals"][vert_index])))
+                loop_normals.append((Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))) @ Vector(mesh_dict["normals"][vert_index]))
 
             u, v = mesh_dict["texcoords"][vert_index]
             uv_render.data[loop_index].uv = (u, 1 - v)
@@ -203,6 +220,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
+    pivot_matrix = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(160.0, 4)
 
     uv_layer = None
     uv_count = len(mesh.uv_layers)
@@ -240,11 +258,10 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            i, j, k  = loop.normal
-            loop_normal = (i, k, j)
+            i, j, k  = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ loop.normal
+            loop_normal = (i, j, k)
 
-            x, y, z = v.co
-            pos = Matrix.Scale(160.0, 4) @ Vector((x, z, y))
+            pos = pivot_matrix @ v.co
 
             uv = (0.0, 0.0)
             if uv_layer:
@@ -312,20 +329,34 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
 
         mat = slot.material
         if mat is not None:
-            mat.use_nodes = True
-            nodes = mat.node_tree.nodes
-            bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+            output_material_node = get_output_material_node(mat)
+            bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+            node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+            if node_group and node_group.node_tree.name == "b3d_material":
+                image_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                dr, dg, db, da = node_group.inputs["Diffuse Overlay"].default_value
+                sr, sg, sb, sa = node_group.inputs["Specular"].default_value
+                er, eg, eb, ea = node_group.inputs["Emission"].default_value
 
-            if bsdf:
-                dr, dg, db, da = bsdf.inputs["Base Color"].default_value
-                da = bsdf.inputs["Alpha"].default_value
-                sr = sg = sb = bsdf.inputs["Specular IOR Level"].default_value
-                er, eg, eb, ea = bsdf.inputs["Emission Color"].default_value
-                image_node = get_linked_node(bsdf, "Base Color", "TEX_IMAGE")
 
                 material_dict["name"] = mat.name
                 material_dict["diffuse"] = (dr, dg, db, da)
-                material_dict["power"] = (2 / (bsdf.inputs["Roughness"].default_value * bsdf.inputs["Roughness"].default_value)) - 2
+                material_dict["power"] = node_group.inputs["Power"].default_value
+                material_dict["specular"] = (sr, sg, sb)
+                material_dict["emissive"] = (er, eg, eb)
+                if image_node and image_node.image:
+                    material_dict["texture"] = os.path.basename(bpy.path.abspath(image_node.image.filepath))
+
+            elif bdsf_principled:
+                dr, dg, db, da = bdsf_principled.inputs["Base Color"].default_value
+                da = bdsf_principled.inputs["Alpha"].default_value
+                sr = sg = sb = bdsf_principled.inputs["Specular IOR Level"].default_value
+                er, eg, eb, ea = bdsf_principled.inputs["Emission Color"].default_value
+                image_node = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
+
+                material_dict["name"] = mat.name
+                material_dict["diffuse"] = (dr, dg, db, da)
+                material_dict["power"] = (2 / (bdsf_principled.inputs["Roughness"].default_value * bdsf_principled.inputs["Roughness"].default_value)) - 2
                 material_dict["specular"] = (sr, sg, sb)
                 material_dict["emissive"] = (er, eg, eb)
                 if image_node and image_node.image:
