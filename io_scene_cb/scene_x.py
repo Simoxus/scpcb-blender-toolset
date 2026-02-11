@@ -332,7 +332,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
             output_material_node = get_output_material_node(mat)
             bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
             node_group = get_linked_node(output_material_node, "Surface", "GROUP")
-            if node_group and node_group.node_tree.name == "b3d_material":
+            if node_group and node_group.node_tree.name == "x_material":
                 image_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
                 dr, dg, db, da = node_group.inputs["Diffuse Overlay"].default_value
                 sr, sg, sb, sa = node_group.inputs["Specular"].default_value
@@ -441,44 +441,53 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
 
         if x_dict["xof_header"] == "xof 0302txt 0064":
             for material_dict in x_dict["materials"]:
-                mat = bpy.data.materials.new(name=material_dict["name"])
-                mat.diffuse_color = random_color_gen.next()
+                material = bpy.data.materials.new(name=material_dict["name"])
+                material.diffuse_color = random_color_gen.next()
 
-                mat.use_nodes = True
-                nodes = mat.node_tree.nodes
-                bsdf = next(n for n in nodes if n.type == 'BSDF_PRINCIPLED')
+                material.use_nodes = True
+                for node in material.node_tree.nodes:
+                    material.node_tree.nodes.remove(node)
 
-                r, g, b, a = material_dict["diffuse"]
-                #mat.diffuse_color = (r, g, b, a) # Need to find another place to store this if base color doesn't do. I rather have different colors for materials in the viewport. - Gen
-                bsdf.inputs["Base Color"].default_value = (r, g, b, 1.0)
-                bsdf.inputs["Alpha"].default_value = a
-                if a < 1.0:
-                    mat.blend_method = 'BLEND'
-                else:
-                    mat.blend_method = 'CLIP'
+                output_material_node = get_output_material_node(material)
+                output_material_node.location = Vector((0.0, 0.0))
 
-                roughness = sqrt(2 / (material_dict["power"] + 2))
-                #bsdf.inputs["Roughness"].default_value = roughness # This doesn't look like what I see ingame - Gen
+                x_node = get_shader_node(material.node_tree, SHADER_RESOURCES, "x_material")
+                x_node.name = "X Material"
+                x_node.location = (-440.0, 0.0)
+
+                connect_inputs(material.node_tree, x_node, "Shader", output_material_node, "Surface")
 
                 sr, sg, sb = material_dict["specular"]
-                spec_strength = max(sr, sg, sb)
-                #bsdf.inputs["Specular IOR Level"].default_value = spec_strength # This doesn't look like what I see ingame - Gen
-
                 er, eg, eb = material_dict["emissive"]
-                #bsdf.inputs["Emission Color"].default_value = (er, eg, eb, 1.0) # This doesn't look like what I see ingame - Gen
+                x_node.inputs["Diffuse Overlay"].default_value = material_dict["diffuse"]
+                x_node.inputs["Power"].default_value = material_dict["power"]
+                x_node.inputs["Specular"].default_value = (sr, sg, sb, 1)
+                x_node.inputs["Emission"].default_value = (er, eg, eb, 1)
 
                 texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
                 if texture_node:
-                    texture = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                    texture.location = (-300, 150)
+                    texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+                    texture.location = (-720.0, 0)
                     texture.image = texture_node
-                    mat.node_tree.links.new(bsdf.inputs['Base Color'], texture.outputs['Color'])
+                    connect_inputs(material.node_tree, texture, "Color", x_node, "Diffuse Map")
+                    connect_inputs(material.node_tree, texture, "Alpha", x_node, "Diffuse Map Alpha")
+
+                    texture_bump_data = get_file("%sbump" % os.path.basename(material_dict["texture"]).rsplit(".", 1)[0], directory_path=local_asset_path)
+                    if texture_bump_data:
+                        texture_bump = material.node_tree.nodes.new("ShaderNodeTexImage")
+                        texture_bump.image = texture_bump_data
+                        texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
+                        texture_bump.interpolation = 'Cubic'
+                        texture_bump.image.colorspace_settings.name = 'Non-Color'
+                        texture_bump.location = (-720.0, -380)
+                        connect_inputs(material.node_tree, texture_bump, "Color", x_node, "Normal Map")
+                        connect_inputs(material.node_tree, texture_bump, "Alpha", x_node, "Normal Map Alpha")
 
                 else:
                     if material_dict["texture"] is not None:
                         error_log.add('Failed to retrive "%s"' % material_dict["texture"])
 
-                material_list.append(mat)
+                material_list.append(material)
 
         rigid_obs = []
         for bone in x_dict["frames"]:

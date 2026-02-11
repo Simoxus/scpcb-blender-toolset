@@ -185,7 +185,6 @@ def get_output_material_node(mat):
     return output_material_node
 
 def get_shader_node(tree, shader_resource, shader_name):
-    print(shader_resource)
     if not bpy.data.node_groups.get(shader_name):
         with bpy.data.libraries.load(shader_resource) as (data_from, data_to):
             data_to.node_groups.append(data_from.node_groups[data_from.node_groups.index(shader_name)])

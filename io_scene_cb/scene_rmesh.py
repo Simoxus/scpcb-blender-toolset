@@ -20,7 +20,10 @@ from .common_functions import (RandomColorGenerator,
                                get_linked_node, 
                                connect_inputs, 
                                get_output_material_node, 
-                               flip, 
+                               flip,
+                               get_shader_node,
+                               generate_texture_mapping,
+                               SHADER_RESOURCES,
                                RTOD)
 
 def natural_key(s):
@@ -104,6 +107,10 @@ def collect_objects():
             entity_list.append(ob)
         elif ob_type == ObjectType.entity_mesh:
             entity_list.append(ob)
+        elif ob_type == ObjectType.entity_item:
+            entity_list.append(ob)
+        elif ob_type == ObjectType.entity_door:
+            entity_list.append(ob)
 
     entity_list.sort(key=lambda obj: natural_key(obj.name)) # Doing this cause no idea if the game cares about order for entities. Probably not but better be safe. - Gen
 
@@ -160,7 +167,26 @@ def export_scene(context, filepath, file_type, report):
                 diffuse_texture_dict = {"texture_type": 0, "texture_name": ""}
 
                 mat = bpy.data.materials.get(mat_name)
-                if mat.use_nodes:
+                output_material_node = get_output_material_node(mat)
+                bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+                node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+                if node_group and node_group.node_tree.name == "rmesh_material":
+                    lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                    diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
+                    if lightmap_node is not None:
+                        img = lightmap_node.image
+                        if img and img.source == 'FILE' and img.filepath:
+                            lightmap_texture_dict["texture_type"] = node_group.inputs["Light Map Texture Type"].default_value
+                            lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+
+                    if diffuse_node is not None:
+                        img = diffuse_node.image
+                        if img and img.source == 'FILE' and img.filepath:
+                            diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
+                            diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+
+
+                elif bdsf_principled:
                     for node in mat.node_tree.nodes:
                         if node.type == 'TEX_IMAGE':
                             image = node.image
@@ -440,6 +466,41 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
             rmesh_dict["entities"].append(entity_dict)
 
+        elif object_type == ObjectType.entity_item:
+            loc, rot, inverted_scale = (pivot_matrix @ (ob.matrix_world @ Matrix.Rotation(radians(-90), 4, 'X'))).decompose()
+            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
+
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "item"
+            entity_dict["position"] = loc
+            entity_dict["item_name"] = ob.cb.item_name
+            entity_dict["model_name"] = ob.cb.model_path
+            entity_dict["use_custom_rotation"] = ob.cb.use_custom_rotation
+            entity_dict["euler_rotation"] = get_blitz_rot(rot)
+            entity_dict["state_1"] = ob.cb.state_1
+            entity_dict["state_2"] = ob.cb.state_2
+            entity_dict["spawn_chance"] = ob.cb.spawn_chance
+            rmesh_dict["entities"].append(entity_dict)
+
+        elif object_type == ObjectType.entity_door:
+            l_loc, l_rot, l_scl = ob.matrix_local.decompose()
+            loc, rot, inverted_scale = (pivot_matrix @ ob.matrix_world).decompose()
+            inverted_loc, inverted_rot, scale = ob.matrix_world.decompose()
+            x, y, z = l_rot.to_euler()
+            
+            entity_dict = {}
+
+            entity_dict["entity_type"] = "door"
+            entity_dict["position"] = loc
+            entity_dict["door_type"] = ob.cb.door_type
+            entity_dict["key_card_level"] = ob.cb.key_card_level
+            entity_dict["keypad_code"] = ob.cb.keypad_code
+            entity_dict["angle"] = degrees(z)
+            entity_dict["start_open"] = ob.cb.start_open
+            entity_dict["allow_scp_079_remote_control"] = ob.cb.allow_scp_079_remote_control
+            rmesh_dict["entities"].append(entity_dict)
+
     write_rmesh(rmesh_dict, filepath, file_type)
 
     report({'INFO'}, "Export completed successfully")
@@ -491,12 +552,11 @@ def import_scene(context, filepath, file_type, report):
         output_material_node = get_output_material_node(mat)
         output_material_node.location = Vector((0.0, 0.0))
 
-        bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
-        if bdsf_principled is None:
-            bdsf_principled = mat.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
-            connect_inputs(mat.node_tree, bdsf_principled, "BSDF", output_material_node, "Surface")
+        rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "rmesh_material")
+        rmesh_node.name = "RMESH Material"
+        rmesh_node.location = (-440.0, 0.0)
 
-        bdsf_principled.location = (-440.0, 0.0)
+        connect_inputs(mat.node_tree, rmesh_node, "Shader", output_material_node, "Surface")
 
         texture_lightmap = None
         diffuse_type = TextureType.none
@@ -510,6 +570,15 @@ def import_scene(context, filepath, file_type, report):
                     texture_lightmap.image = texture_lightmap_data
                     texture_lightmap.image.alpha_mode = 'CHANNEL_PACKED'
                     texture_lightmap.location = (-720.0, -320.0)
+
+                    rmesh_node.inputs["Light Map Texture Type"].default_value = lightmap_type.value
+
+                    connect_inputs(mat.node_tree, texture_lightmap, "Color", rmesh_node, "Light Map")
+                    connect_inputs(mat.node_tree, texture_lightmap, "Alpha", rmesh_node, "Light Map Alpha")
+                    mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_lightmap)
+                    uv_node.uv_map = "uvmap_lightmap"
+                    mapping_node.vector_type = 'TEXTURE'
+
                 elif len(texture_dict["texture_name"]) > 0:
                     error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
 
@@ -521,23 +590,29 @@ def import_scene(context, filepath, file_type, report):
                     texture_diffuse.image = texture_diffuse_data
                     texture_diffuse.image.alpha_mode = 'CHANNEL_PACKED'
                     texture_diffuse.location = (-720.0, 0.0)
-                    connect_inputs(mat.node_tree, texture_diffuse, "Color", bdsf_principled, "Base Color")
-                    if diffuse_type == TextureType.transparent:
-                        connect_inputs(mat.node_tree, texture_diffuse, "Alpha", bdsf_principled, "Alpha")
+
+                    rmesh_node.inputs["Diffuse Map Texture Type"].default_value = diffuse_type.value
+
+                    connect_inputs(mat.node_tree, texture_diffuse, "Color", rmesh_node, "Diffuse Map")
+                    connect_inputs(mat.node_tree, texture_diffuse, "Alpha", rmesh_node, "Diffuse Map Alpha")
+                    mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_diffuse)
+                    uv_node.uv_map = "uvmap_render"
+                    mapping_node.vector_type = 'TEXTURE'
 
                     texture_name = os.path.basename(texture_dict["texture_name"]).rsplit(".", 1)[0]
                     texture_bump_data = get_file("%sbump" % texture_name, directory_path=local_asset_path)
                     if texture_bump_data:
-                        normal_map = mat.node_tree.nodes.new("ShaderNodeNormalMap")
                         texture_bump = mat.node_tree.nodes.new("ShaderNodeTexImage")
                         texture_bump.image = texture_bump_data
                         texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
                         texture_bump.interpolation = 'Cubic'
                         texture_bump.image.colorspace_settings.name = 'Non-Color'
-                        normal_map.location = (-720.0, -640.0)
                         texture_bump.location = (-720.0, -640.0)
-                        connect_inputs(mat.node_tree, texture_bump, "Color", normal_map, "Color")
-                        connect_inputs(mat.node_tree, normal_map, "Normal", bdsf_principled, "Normal")
+                        connect_inputs(mat.node_tree, texture_bump, "Color", rmesh_node, "Normal Map")
+                        connect_inputs(mat.node_tree, texture_bump, "Alpha", rmesh_node, "Normal Map Alpha")
+                        mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_bump)
+                        uv_node.uv_map = "uvmap_render"
+                        mapping_node.vector_type = 'TEXTURE'
 
                 elif len(texture_dict["texture_name"]) > 0:
                     error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
@@ -804,17 +879,22 @@ def import_scene(context, filepath, file_type, report):
             model_path = None
             model_scale = 1
             if items_ini:
+                item_group = None
                 model_name = entity_dict["model_name"]
-
                 if model_name == "misc":
+                    item_group = "misc"
                     model_name = "playingcard"
                 elif model_name == "paper":
+                    item_group = "paper"
                     model_name = "doc079"
                 elif model_name == "vest":
+                    item_group = "vest"
                     model_name = "vest"
                 elif model_name == "hazmat":
+                    item_group = "hazmat"
                     model_name = "hazmatsuit"
                 elif model_name == "nav":
+                    item_group = "nav"
                     model_name = "snav"
 
                 item_entry = items_ini.get(model_name, "model", fallback=None)
@@ -834,6 +914,10 @@ def import_scene(context, filepath, file_type, report):
 
                         bm.to_mesh(ob_data)
                         bm.free()
+
+                if item_group:
+                    model_path = item_group
+
 
             object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
             object_mesh.cb.object_type = str(ObjectType.entity_item.value)
@@ -877,8 +961,6 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.keypad_code = entity_dict["keypad_code"]
             object_mesh.cb.start_open = bool(entity_dict["start_open"])
             object_mesh.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
-
-
 
         else:
             report({'WARNING'}, "Unknown entity type: %s" % entity_dict["entity_type"])
