@@ -10,19 +10,8 @@ SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "sh
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
 
-DX_MATRIX_EXPORT = Matrix((
-    (-1, 0, 0, 0),
-    ( 0, 0, 1, 0),
-    ( 0,-1, 0, 0),
-    ( 0, 0, 0, 1),
-))
-
-DX_MATRIX_IMPORT = Matrix((
-    (-1,  0,  0, 0),
-    ( 0,  0, -1, 0),
-    ( 0,  1,  0, 0),
-    ( 0,  0,  0, 1),
-))
+PM_EXPORT = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(160.0, 4)
+PM_IMPORT = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
 def pitch_quat(p):
     return Quaternion((1.0, 0.0, 0.0), p)
@@ -36,11 +25,15 @@ def roll_quat(r):
 def rotation_quat(p, y, r):
     return yaw_quat(y) @ pitch_quat(p) @ roll_quat(r)
 
-def get_blender_rot(euler_rotation):
-    p, y, r = euler_rotation
+def get_blender_rot(entity_position, entity_rotation):
+    p, y, r = entity_rotation
     y = -y
     quat = rotation_quat(p * DTOR, y * DTOR, r * DTOR)
-    return quat.normalized()
+    quat.normalized()
+
+    loc, rot, scl = (PM_IMPORT @ Matrix.LocRotScale(entity_position, quat, Vector((1,1,1)))).decompose()
+
+    return rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion()
 
 def lim32(n):
     """Simulate a 32 bit unsigned interger overflow"""

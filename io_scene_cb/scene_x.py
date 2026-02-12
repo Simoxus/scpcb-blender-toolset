@@ -12,6 +12,8 @@ from .common_functions import (RandomColorGenerator,
                                get_output_material_node, 
                                get_shader_node,
                                connect_inputs,
+                               PM_EXPORT,
+                               PM_IMPORT,
                                SHADER_RESOURCES)
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
@@ -23,9 +25,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         else:
             mesh_name = "mesh"
 
-    m_scl = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
-    
-    vertices = [m_scl @ Vector(vertex) for vertex in mesh_dict["vertices"]]
+    vertices = [PM_IMPORT @ Vector(vertex) for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
@@ -116,7 +116,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
             if not x_dict["xof_header"] == "xof 0302txt 0064":
-                loop_normals.append((Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))) @ Vector(mesh_dict["normals"][vert_index]))
+                i, j, k = mesh_dict["normals"][vert_index]
+                loop_normals.append(PM_IMPORT @ Vector((i, j, k)))
 
             u, v = mesh_dict["texcoords"][vert_index]
             uv_render.data[loop_index].uv = (u, 1 - v)
@@ -142,7 +143,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
 
 def x_matrix_to_blender(mat):
     loc, rot, scl = Matrix((mat[0:4], mat[4:8], mat[8:12], mat[12:16])).transposed().decompose()
-    return Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(loc)), Quaternion(flip(rot)), Vector(flip(scl)))
+    return Matrix.LocRotScale(PM_IMPORT @ Vector(loc), Quaternion(rot), Vector((1, 1, 1)))
 
 def blender_matrix_to_x(mat):
     loc, rot, scl = mat.decompose()
