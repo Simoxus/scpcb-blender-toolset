@@ -3,7 +3,7 @@ import bpy
 import colorsys
 
 from math import pi, radians
-from mathutils import Matrix, Quaternion, Vector
+from mathutils import Matrix, Quaternion, Vector, Euler
 
 SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "shader_resources.blend")
 
@@ -32,8 +32,9 @@ def get_blender_rot(entity_position, entity_rotation):
     quat.normalized()
 
     loc, rot, scl = (PM_IMPORT @ Matrix.LocRotScale(entity_position, quat, Vector((1,1,1)))).decompose()
+    rx, ry, rz = (rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion()).to_euler()
 
-    return rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion()
+    return Euler((-rx, -ry, rz))
 
 def lim32(n):
     """Simulate a 32 bit unsigned interger overflow"""

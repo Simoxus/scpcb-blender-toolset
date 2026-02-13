@@ -535,7 +535,7 @@ def import_scene(context, filepath, file_type, report):
     for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
         mesh = bpy.data.meshes.new("temp_mesh_%s" % mesh_idx)
 
-        vertices = [PM_IMPORT @ Vector(vertex["position"]) for vertex in mesh_dict["vertices"]]
+        vertices = [Vector(flip(vertex["position"])) * 0.00625 for vertex in mesh_dict["vertices"]]
         triangles = [list(triangle.values())[::-1] for triangle in mesh_dict["triangles"]]
         mesh.from_pydata(vertices, [], triangles)
 
@@ -651,7 +651,7 @@ def import_scene(context, filepath, file_type, report):
         coll_object_mesh.cb.object_type = str(ObjectType.collision.value)
         collision_collection.objects.link(coll_object_mesh)
 
-        coll_vertices = [PM_IMPORT @ Vector(coll_vertex["position"]) for coll_vertex in coll_mesh_dict["vertices"]]
+        coll_vertices = [Vector(flip(coll_vertex["position"])) * 0.00625 for coll_vertex in coll_mesh_dict["vertices"]]
         coll_triangles = [[coll_triangle["c"], coll_triangle["b"], coll_triangle["a"]] for coll_triangle in coll_mesh_dict["triangles"]]
         coll_mesh.from_pydata(coll_vertices, [], coll_triangles)
         for poly in coll_mesh.polygons:
@@ -668,7 +668,7 @@ def import_scene(context, filepath, file_type, report):
                 trigger_mesh_object_mesh.cb.trigger_group = trigger_box_dict["name"]
                 trigger_box_collection.objects.link(trigger_mesh_object_mesh)
 
-                trigger_vertices = [PM_IMPORT @ Vector(trigger_vertex["position"]) for trigger_vertex in trigger_dict["vertices"]]
+                trigger_vertices = [Vector(flip(trigger_vertex["position"])) * 0.00625 for trigger_vertex in trigger_dict["vertices"]]
                 trigger_triangles = [[trigger_triangle["c"], trigger_triangle["b"], trigger_triangle["a"]] for trigger_triangle in trigger_dict["triangles"]]
                 trigger_mesh.from_pydata(trigger_vertices, [], trigger_triangles)
                 for poly in trigger_mesh.polygons:
@@ -695,7 +695,7 @@ def import_scene(context, filepath, file_type, report):
 
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = Euler((radians(90), 0, radians(90)))
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -705,7 +705,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_save_screen.value)
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
             scl = Vector(entity_dict["scale"])
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -719,7 +719,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh = bpy.data.objects.new("%s waypoint" % entity_idx, None)
             object_mesh.cb.object_type = str(ObjectType.entity_waypoint.value)
             entity_collection.objects.link(object_mesh)
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = Quaternion()
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -730,7 +730,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_light.value)
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = Quaternion()
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -751,7 +751,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_light_fix.value)
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = Quaternion()
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -798,7 +798,7 @@ def import_scene(context, filepath, file_type, report):
                 p, y, r = entity_dict["euler_rotation"].split(" ")
                 rotation = [float(p), float(y), float(r)]
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = get_blender_rot(entity_dict["position"], rotation)
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -809,7 +809,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_sound_emitter.value)
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = Quaternion()
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -822,8 +822,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_player_start.value)
             entity_collection.objects.link(object_mesh)
 
-            p, y, r = entity_dict["euler_rotation"].split(" ")
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = get_blender_rot(entity_dict["position"], [float(p), float(y), float(r)])
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -850,7 +849,7 @@ def import_scene(context, filepath, file_type, report):
                 object_mesh.cb.model_path = model_path
             entity_collection.objects.link(object_mesh)
             if not file_type == ImportFileType.rmesh_uer:
-                loc = PM_IMPORT @ Vector(entity_dict["position"])
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
                 rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
                 scl = Vector(entity_dict["scale"])
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -882,7 +881,7 @@ def import_scene(context, filepath, file_type, report):
             if texture_path is not None:
                 object_mesh.cb.texture_path = texture_path
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
             scl = Vector(entity_dict["scale"])
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -939,7 +938,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_item.value)
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
             scl = Vector((model_scale, model_scale, model_scale))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
@@ -968,7 +967,7 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.cb.object_type = str(ObjectType.entity_door.value)
             entity_collection.objects.link(object_mesh)
 
-            loc = PM_IMPORT @ Vector(entity_dict["position"])
+            loc = Vector(flip(entity_dict["position"])) * 0.00625
             rot = Euler((0, 0, radians(entity_dict["angle"])))
             scl = Vector((1,1,1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)

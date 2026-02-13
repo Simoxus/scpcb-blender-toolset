@@ -172,63 +172,58 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
 
                 fcurve_map[group_name][path][index] = fcurve
 
+        keyframe_data = None
         for keyframe_section in keyframe_dict:
+            frame_data = keyframe_section[0]
+            if action.frame_start <= frame_data["frame"] <= action.frame_end:
+                keyframe_data = keyframe_section
+                break
+
+        if keyframe_data:
             for frame_data in keyframe_section:
                 frame_number = frame_data["frame"]
-                if action.frame_start <= frame_number <= action.frame_end:
-                    position_field = frame_data.get("position")
-                    rotation_field = frame_data.get("rotation")
-                    scale_field = frame_data.get("scale")
-                    if position_field is not None:
-                        last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
+                position_field = frame_data.get("position")
+                rotation_field = frame_data.get("rotation")
+                scale_field = frame_data.get("scale")
+                if position_field is not None:
+                    last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
 
-                    if rotation_field is not None:
-                        last_rotation = Quaternion(flip(rotation_field))
+                if rotation_field is not None:
+                    last_rotation = Quaternion(flip(rotation_field))
 
-                    if scale_field is not None:
-                        last_scale = Vector(flip(scale_field))
+                if scale_field is not None:
+                    last_scale = Vector(flip(scale_field))
 
-                    if is_bone:
-                        transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
-                    else:
-                        transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
-                    loc, rot_quat, scl = transform_matrix.decompose()
-                    rot_euler = rot_quat.to_euler('XYZ')
-                    for i in range(3):
-                        fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
-                        fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
-                        fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
-                        fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
-
-                    fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+                if is_bone:
+                    transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
                 else:
-                    if not is_bone:
-                        ob_frame = (action.frame_start - 1) + frame_number
-                        rotation_field = frame_data.get("rotation")
-                        scale_field = frame_data.get("scale")
-                        if position_field is not None:
-                            last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
+                    transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
 
-                        if rotation_field is not None:
-                            last_rotation = Quaternion(flip(rotation_field))
+                loc, rot_quat, scl = transform_matrix.decompose()
+                rot_euler = rot_quat.to_euler('XYZ')
+                for i in range(3):
+                    fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
+                    fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
+                    fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
+                    fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
 
-                        if scale_field is not None:
-                            last_scale = Vector(flip(scale_field))
+                fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+        else:
+            frame_number = action.frame_start
+            if is_bone:
+                transform_matrix = Matrix.LocRotScale(Vector(), Quaternion(), Vector((1, 1, 1)))
+            else:
+                transform_matrix = node_transform
 
-                        if is_bone:
-                            transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
-                        else:
-                            transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
-                        loc, rot_quat, scl = transform_matrix.decompose()
-                        rot_euler = rot_quat.to_euler('XYZ')
-                        for i in range(3):
-                            fcurve_map[group_name]['location'][i].keyframe_points.insert(ob_frame, loc[i], options={'FAST'})
-                            fcurve_map[group_name]['scale'][i].keyframe_points.insert(ob_frame, scl[i], options={'FAST'})
-                            fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(ob_frame, rot_quat[i], options={'FAST'})
-                            fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(ob_frame, rot_euler[i], options={'FAST'})
+            loc, rot_quat, scl = transform_matrix.decompose()
+            rot_euler = rot_quat.to_euler('XYZ')
+            for i in range(3):
+                fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
+                fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
+                fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
+                fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
 
-                        fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(ob_frame, rot_quat[3], options={'FAST'})
-
+            fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
 
 def parse_kv_string(s):
     if not s:
@@ -305,18 +300,9 @@ def get_bone_distance(node, parent_ob):
     return bone_distance
 
 def import_node_recursive(context, data, node, material_list, armature=None, strips=None, has_skeleton=False, parent_ob=None, last_mesh=None, is_simple=False, bm=None, ob_data=None, bm_transform=None):
-    has_skin = False
+    has_skin = bool(node.get("bones"))
     has_key = node.get("key") is not None
     has_mesh = node.get("mesh") is not None
-    if armature is None:
-        for child_node in node["nodes"]:
-            bone_dict = child_node.get("bones")
-            if bone_dict is not None and len(bone_dict) > 0 :
-                has_skin = True
-    else:
-        has_skin = node.get("bones") is not None
-
-
     generated_mesh = False
                         
     result = parse_kv_string(node["name"])
@@ -337,7 +323,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
             import_node_recursive(context, data, child_node, material_list, is_simple=is_simple, bm=bm, ob_data=ob_data, bm_transform=bm_transform)
 
     else:
-        if has_skin or armature:
+        if has_skin or has_key or armature:
             if armature is None:
                 armature_data = bpy.data.armatures.new(result["classname"])
                 armature = object_mesh =  bpy.data.objects.new(result["classname"], armature_data)
@@ -569,7 +555,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
             
             last_mesh.cb.object_type = str(ObjectType.node_object.value)
 
-        if node.get("bones") is not None and len(node["bones"]) > 0:
+        if has_skin and len(node["bones"]) > 0:
             group_name = object_mesh.name
             if not group_name in last_mesh.vertex_groups.keys():
                 last_mesh.vertex_groups.new(name = group_name)
@@ -578,7 +564,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
             for bone_element in node["bones"]:
                 last_mesh.vertex_groups[group_index].add([bone_element["vertex_idx"]], bone_element["weight"], 'ADD')
 
-        if has_key and node.get("bones") is not None:
+        if has_key:
             import_fcurve_data(armature, strips, object_mesh.name, node["key"], node_transform, isinstance(object_mesh, bpy.types.EditBone))
 
         for child_node in node["nodes"]:
@@ -1087,19 +1073,14 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
 
                         ob_node_dict["key"].append(action_entry)
 
-                if not ob.type == "ARMATURE":
-                    get_scene_objects(context, b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, armature_ob, ob)
-
-                node_dict.append(ob_node_dict)
-
             else:
                 if ob.type == "MESH":
                     skin_info, mesh_dict = get_mesh(b3d_data, ob, depsgraph)
                     ob_node_dict["mesh"] = mesh_dict
 
-                get_scene_objects(context, b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, armature_ob, ob)
+            get_scene_objects(context, b3d_data, ob_node_dict["nodes"], depsgraph, skin_info, key_info, armature_ob, ob)
 
-                node_dict.append(ob_node_dict)
+            node_dict.append(ob_node_dict)
 
 def set_image_properties(img, texture_dict):
     if img:
@@ -1352,7 +1333,7 @@ def export_scene(context, filepath, report):
 
 def find_bones(node, bone_check_list, uv_counts):
     mesh_dict = node.get("mesh")
-    bone_check_list.append(node.get("bones") is not None)
+    bone_check_list.append(bool(node.get("bones")))
     if mesh_dict is not None:
         for uv_channel in mesh_dict["uvs"]:
             uv_counts.append(len(uv_channel))

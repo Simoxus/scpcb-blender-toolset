@@ -25,7 +25,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         else:
             mesh_name = "mesh"
 
-    vertices = [PM_IMPORT @ Vector(vertex) for vertex in mesh_dict["vertices"]]
+    vertices = [Vector(flip(vertex)) * 0.00625 for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
@@ -116,8 +116,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         for loop_index in poly.loop_indices:
             vert_index = mesh.loops[loop_index].vertex_index
             if not x_dict["xof_header"] == "xof 0302txt 0064":
-                i, j, k = mesh_dict["normals"][vert_index]
-                loop_normals.append(PM_IMPORT @ Vector((i, j, k)))
+                loop_normals.append(Vector(flip(mesh_dict["normals"][vert_index])))
 
             u, v = mesh_dict["texcoords"][vert_index]
             uv_render.data[loop_index].uv = (u, 1 - v)
@@ -143,11 +142,11 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
 
 def x_matrix_to_blender(mat):
     loc, rot, scl = Matrix((mat[0:4], mat[4:8], mat[8:12], mat[12:16])).transposed().decompose()
-    return Matrix.LocRotScale(PM_IMPORT @ Vector(loc), Quaternion(rot), Vector((1, 1, 1)))
+    return Matrix.LocRotScale(Vector(flip(loc)) * 0.00625, Quaternion(flip(rot)), Vector(flip(scl)))
 
 def blender_matrix_to_x(mat):
     loc, rot, scl = mat.decompose()
-    b_matrix = Matrix.LocRotScale(Matrix.Scale(160, 4) @ Vector(flip(loc)), Quaternion(flip(rot)), Vector(flip(scl))).transposed()
+    b_matrix = Matrix.LocRotScale(Vector(flip(loc)) * 160, Quaternion(flip(rot)), Vector(flip(scl))).transposed()
     matrix_array = []
     for row in b_matrix:
         for element in row:
@@ -221,7 +220,6 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
-    pivot_matrix = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(160.0, 4)
 
     uv_layer = None
     uv_count = len(mesh.uv_layers)
@@ -259,10 +257,11 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            i, j, k  = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ loop.normal
-            loop_normal = (i, j, k)
+            i, j, k = loop.normal
+            loop_normal = (i, k, j)
 
-            pos = pivot_matrix @ v.co
+            x, y, z = v.co * 160
+            pos = (x, z, y) 
 
             uv = (0.0, 0.0)
             if uv_layer:
