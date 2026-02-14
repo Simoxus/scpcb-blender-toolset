@@ -858,7 +858,6 @@ def read_x(file_path):
                 output = bytearray()
 
                 while offset < len(data):
-                    # Read block header
                     uncompressed_size, block_size = struct.unpack_from("<HH", data, offset)
                     offset += 4
 
@@ -871,18 +870,16 @@ def read_x(file_path):
                     if magic != MSZIP_MAGIC:
                         raise ValueError("Unexpected compressed block magic")
 
-                    # block_size includes the 2-byte magic
                     compressed_data = data[offset:offset + (block_size - 2)]
                     offset += (block_size - 2)
 
-                    # Raw DEFLATE stream, 32k window
                     decompressed = zlib.decompress(compressed_data,wbits=-zlib.MAX_WBITS,bufsize=MSZIP_BLOCK)
 
                     output.extend(decompressed)
 
-                output_path = os.path.expanduser("~/Desktop/output.bin")
-                with open(output_path, "wb") as f:
-                    f.write(output)
+                #output_path = os.path.expanduser("~/Desktop/output.bin")
+                #with open(output_path, "wb") as f:
+                    #f.write(output)
         else:
             print()
     else:
