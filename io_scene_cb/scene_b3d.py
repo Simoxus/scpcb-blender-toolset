@@ -1348,15 +1348,6 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
 
     data = B3DTree().parse(filepath)
 
-    import json
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-    file_path = os.path.join(desktop_path, "output.json")
-
-    # Write JSON file
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
-
     if error_log is None:
         error_log = set()
     if random_color_gen is None:
