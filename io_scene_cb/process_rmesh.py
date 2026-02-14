@@ -8,12 +8,14 @@ class ImportFileType(Enum):
     rmesh_tb = auto()
     rmesh_uer = auto()
     rmesh_uer2 = auto()
+    rmesh_salvage = auto()
 
 class ExportFileType(Enum):
     rmesh = 0
     rmesh_tb = auto()
     rmesh_uer = auto()
     rmesh_uer2 = auto()
+    rmesh_salvage = auto()
 
 class TextureType(Enum):
     none = 0
@@ -81,8 +83,8 @@ def read_rmesh(file_path, file_type):
     }
     with file_path.open("rb") as rmesh_stream:
         rmesh_dict["rmesh_file_type"] = read_string(rmesh_stream)
-        if rmesh_dict["rmesh_file_type"] != "RoomMesh" and rmesh_dict["rmesh_file_type"] != "RoomMesh.HasTriggerBox" and rmesh_dict["rmesh_file_type"] != "RoomMesh2":
-            raise ValueError('Input file was "%s" instead of "RoomMesh", "RoomMesh.HasTriggerBox", or "RoomMesh2" and therefore is not an RMESH file' % rmesh_dict["rmesh_file_type"])
+        if rmesh_dict["rmesh_file_type"] != "RoomMesh" and rmesh_dict["rmesh_file_type"] != "RoomMesh.HasTriggerBox" and rmesh_dict["rmesh_file_type"] != "RoomMesh2"and rmesh_dict["rmesh_file_type"] != "RM":
+            raise ValueError('Input file was "%s" instead of "RoomMesh", "RoomMesh.HasTriggerBox", "RoomMesh2", or RM and therefore is not an RMESH file' % rmesh_dict["rmesh_file_type"])
 
         if file_type == ImportFileType.rmesh_auto:
             if rmesh_dict["rmesh_file_type"] == "RoomMesh":
@@ -94,6 +96,9 @@ def read_rmesh(file_path, file_type):
 
             elif rmesh_dict["rmesh_file_type"] == "RoomMesh2":
                 file_type = ImportFileType.rmesh_uer2
+
+            elif rmesh_dict["rmesh_file_type"] == "RM":
+                file_type = ImportFileType.rmesh_salvage
 
         mesh_count = read_unsigned_int(rmesh_stream)
         for mesh_idx in range(mesh_count):

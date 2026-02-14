@@ -10,7 +10,6 @@ SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "sh
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
 
-PM_EXPORT = Matrix.Rotation(radians(-90), 4, 'X') @  Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(160.0, 4)
 PM_IMPORT = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
 def pitch_quat(p):

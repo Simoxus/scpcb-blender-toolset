@@ -12,8 +12,6 @@ from .common_functions import (RandomColorGenerator,
                                get_output_material_node, 
                                get_shader_node,
                                connect_inputs,
-                               PM_EXPORT,
-                               PM_IMPORT,
                                SHADER_RESOURCES)
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):

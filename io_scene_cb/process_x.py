@@ -885,11 +885,6 @@ def read_x(file_path):
     else:
         if version == 0:
             x_dict = parse_x_a_txt(file_path)
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            file_path = os.path.join(desktop_path, "data.json")
-
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(x_dict, f, indent=4)
 
         elif version == 1:
             x_dict = parse_x_b_txt(file_path)
