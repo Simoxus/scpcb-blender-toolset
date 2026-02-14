@@ -1,7 +1,6 @@
 import os
 import re
 import zlib
-import json
 import struct
 
 from enum import Enum, auto
