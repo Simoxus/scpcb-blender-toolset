@@ -558,16 +558,6 @@ class ExportX(Operator, ExportHelper):
     bl_label = 'Export X'
     filename_ext = '.x'
 
-    file_version: EnumProperty(
-        name="File Version:",
-        description="What version to use for the X file",
-        items=[ ('0', "xof 0302txt 0064", "xof 0302txt 0064"),
-                ('1', "xof 0303txt 0032", "xof 0303txt 0032"),
-                ('2', "xof 0303bin 0032", "xof 0303bin 0032"),
-                ('3', "xof 0303bzip0032", "xof 0303bzip0032"),
-            ]
-        )
-
     filter_glob: StringProperty(
         default="*.x",
         options={'HIDDEN'},
@@ -576,7 +566,7 @@ class ExportX(Operator, ExportHelper):
     def execute(self, context):
         from . import scene_x
 
-        return scene_x.export_scene(context, Path(self.filepath), self.file_version, self.report)
+        return scene_x.export_scene(context, Path(self.filepath), self.report)
 
 class ImportX(Operator, ImportHelper):
     """Import an X file"""

@@ -366,7 +366,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
 
     ob_dict.append(mesh_dict)
 
-def export_scene(context, output_path, file_version, report):
+def export_scene(context, output_path, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
