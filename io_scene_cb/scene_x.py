@@ -29,6 +29,8 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
+    mesh.validate(clean_customdata=True)
+
     if not is_simple:
         object_mesh = bpy.data.objects.new(mesh_name, mesh)
         bpy.context.collection.objects.link(object_mesh)
@@ -257,11 +259,9 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            i, j, k = loop.normal
-            loop_normal = (i, k, j)
+            loop_normal = flip(loop.normal)
 
-            x, y, z = v.co * 160
-            pos = (x, z, y) 
+            pos = Vector(flip(v.co)) * 160
 
             uv = (0.0, 0.0)
             if uv_layer:
@@ -333,7 +333,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
             bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
             node_group = get_linked_node(output_material_node, "Surface", "GROUP")
             if node_group and node_group.node_tree.name == "x_material":
-                image_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                image_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
                 dr, dg, db, da = node_group.inputs["Diffuse Overlay"].default_value
                 sr, sg, sb, sa = node_group.inputs["Specular"].default_value
                 er, eg, eb, ea = node_group.inputs["Emission"].default_value
