@@ -386,6 +386,8 @@ def export_scene(context, output_path, report):
 
         skinned_ob_list = []
         rigid_ob_dict = {}
+
+        active_ob.data.pose_position = 'REST'
         depsgraph = context.evaluated_depsgraph_get()
         for ob in bpy.data.objects:
             if ob.type == "MESH":
