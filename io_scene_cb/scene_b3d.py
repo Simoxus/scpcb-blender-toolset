@@ -203,6 +203,7 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
                         fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
 
                     fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+
     if not section_found:
         frame_number = action.frame_start
         if is_bone:
@@ -219,8 +220,6 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
             fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
 
         fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
-
-
 
 def parse_kv_string(s):
     if not s:
