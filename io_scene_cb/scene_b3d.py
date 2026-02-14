@@ -172,58 +172,55 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
 
                 fcurve_map[group_name][path][index] = fcurve
 
-        keyframe_data = None
+        section_found = False
         for keyframe_section in keyframe_dict:
-            frame_data = keyframe_section[0]
-            if action.frame_start <= frame_data["frame"] <= action.frame_end:
-                keyframe_data = keyframe_section
-                break
-
-        if keyframe_data:
             for frame_data in keyframe_section:
                 frame_number = frame_data["frame"]
-                position_field = frame_data.get("position")
-                rotation_field = frame_data.get("rotation")
-                scale_field = frame_data.get("scale")
-                if position_field is not None:
-                    last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
+                if action.frame_start <= frame_number <= action.frame_end:
+                    section_found = True
+                    position_field = frame_data.get("position")
+                    rotation_field = frame_data.get("rotation")
+                    scale_field = frame_data.get("scale")
+                    if position_field is not None:
+                        last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
 
-                if rotation_field is not None:
-                    last_rotation = Quaternion(flip(rotation_field))
+                    if rotation_field is not None:
+                        last_rotation = Quaternion(flip(rotation_field))
 
-                if scale_field is not None:
-                    last_scale = Vector(flip(scale_field))
+                    if scale_field is not None:
+                        last_scale = Vector(flip(scale_field))
 
-                if is_bone:
-                    transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
-                else:
-                    transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
+                    if is_bone:
+                        transform_matrix = node_transform.inverted() @ Matrix.LocRotScale(last_position, last_rotation, last_scale)
+                    else:
+                        transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
+                    loc, rot_quat, scl = transform_matrix.decompose()
+                    rot_euler = rot_quat.to_euler('XYZ')
+                    for i in range(3):
+                        fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
+                        fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
+                        fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
+                        fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
 
-                loc, rot_quat, scl = transform_matrix.decompose()
-                rot_euler = rot_quat.to_euler('XYZ')
-                for i in range(3):
-                    fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
-                    fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
-                    fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
-                    fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
-
-                fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+                    fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+    if not section_found:
+        frame_number = action.frame_start
+        if is_bone:
+            transform_matrix = Matrix.LocRotScale(Vector(), Quaternion(), Vector((1, 1, 1)))
         else:
-            frame_number = action.frame_start
-            if is_bone:
-                transform_matrix = Matrix.LocRotScale(Vector(), Quaternion(), Vector((1, 1, 1)))
-            else:
-                transform_matrix = node_transform
+            transform_matrix = node_transform
 
-            loc, rot_quat, scl = transform_matrix.decompose()
-            rot_euler = rot_quat.to_euler('XYZ')
-            for i in range(3):
-                fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
-                fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
-                fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
-                fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
+        loc, rot_quat, scl = transform_matrix.decompose()
+        rot_euler = rot_quat.to_euler('XYZ')
+        for i in range(3):
+            fcurve_map[group_name]['location'][i].keyframe_points.insert(frame_number, loc[i], options={'FAST'})
+            fcurve_map[group_name]['scale'][i].keyframe_points.insert(frame_number, scl[i], options={'FAST'})
+            fcurve_map[group_name]['rotation_quaternion'][i].keyframe_points.insert(frame_number, rot_quat[i], options={'FAST'})
+            fcurve_map[group_name]['rotation_euler'][i].keyframe_points.insert(frame_number, rot_euler[i], options={'FAST'})
 
-            fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+        fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
+
+
 
 def parse_kv_string(s):
     if not s:
