@@ -39,6 +39,7 @@ if (4, 1, 0) <= bpy.app.version:
 class ObjectType(Enum):
     exclude = 0
     mesh = auto()
+    render = auto()
     collision = auto()
     trigger_box = auto()
     entity_screen = auto()
@@ -491,7 +492,7 @@ class ExportRMESH(Operator, ExportHelper):
     """Write an RMESH file"""
     bl_idname = 'export_scene.ermesh'
     bl_label = 'Export RMESH'
-    filename_ext = '.rmesh'
+    filename_ext = ''
 
     file_type: EnumProperty(
         name="File Type:",
@@ -500,11 +501,12 @@ class ExportRMESH(Operator, ExportHelper):
                 ('1', "RMESH Trigger Box", "Import an RMESH intended for the original SCP CB"),
                 ('2', "RMESH UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
                 ('3', "RMESH UER 2", "Import an RMESH intended for SCP CB UER 2.0"),
+                ('4', "RM", "Import an RMESH intended for the Salvage SCP CB fork")
             ]
         )
 
     filter_glob: StringProperty(
-        default="*.rmesh",
+        default="*.rmesh;*.rm",
         options={'HIDDEN'},
         )
 
@@ -517,7 +519,7 @@ class ImportRMESH(Operator, ImportHelper):
     """Import an RMESH file"""
     bl_idname = "import_scene.irmesh"
     bl_label = "Import RMESH"
-    filename_ext = '.rmesh'
+    filename_ext = ''
 
     file_type: EnumProperty(
         name="File Type:",
@@ -527,12 +529,12 @@ class ImportRMESH(Operator, ImportHelper):
                 ('2', "RMESH Trigger Box", "Import an RMESH intended for the original SCP CB"),
                 ('3', "RMESH UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
                 ('4', "RMESH UER 2", "Import an RMESH intended for SCP CB UER 2.0"),
-                ('5', "RMESH Salvage", "Import an RMESH intended for Salvage Steam release of SCP CB"),
+                ('5', "RM", "Import an RMESH intended for Salvage Steam release of SCP CB"),
             ]
         )
 
     filter_glob: StringProperty(
-        default="*.rmesh",
+        default="*.rmesh;*.rm",
         options={'HIDDEN'},
         )
 
@@ -611,7 +613,7 @@ class ExportB3D(Operator, ExportHelper):
     def execute(self, context):
         from . import scene_b3d
 
-        return scene_b3d.export_scene(context, self.filepath, self.report)
+        return scene_b3d.export_scene(context, Path(self.filepath), self.report)
 
 class ImportB3D(Operator, ImportHelper):
     """Import a B3D file"""

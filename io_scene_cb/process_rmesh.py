@@ -73,6 +73,52 @@ def read_color(rmesh_stream):
 def write_color(rmesh_stream, value):
     rmesh_stream.write(struct.pack('<3B', *value))
 
+def read_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
+    mesh_count = read_unsigned_int(rmesh_stream)
+    for mesh_idx in range(mesh_count):
+        mesh_dict = {
+            "vertices": [],
+            "triangles": []
+        }
+        if not is_coll:
+            mesh_dict["textures"] = []
+
+            for texture_idx in range(2):
+                texture_dict = {}
+
+                texture_dict["texture_type"] = read_byte(rmesh_stream)
+                texture_dict["texture_name"] = ""
+                if TextureType(texture_dict["texture_type"]) is not TextureType.none:
+                    texture_dict["texture_name"] = read_string(rmesh_stream)
+
+                mesh_dict["textures"].append(texture_dict)
+
+        vertex_count = read_unsigned_int(rmesh_stream)
+        for vertex_idx in range(vertex_count):
+            vertex_dict = {}
+
+            vertex_dict["position"] = read_vector(rmesh_stream)
+            if not is_coll:
+                vertex_dict["uv_render"] = read_uv(rmesh_stream)
+                vertex_dict["uv_lightmap"] = read_uv(rmesh_stream)
+                vertex_dict["color"] = read_color(rmesh_stream)
+                if file_type == ImportFileType.rmesh_uer2:
+                    vertex_dict["normal"] = read_vector(rmesh_stream)
+
+            mesh_dict["vertices"].append(vertex_dict)
+
+        triangle_count = read_unsigned_int(rmesh_stream)
+        for triangle_idx in range(triangle_count):
+            triangle_dict = {}
+
+            triangle_dict["a"] = read_unsigned_int(rmesh_stream)
+            triangle_dict["b"] = read_unsigned_int(rmesh_stream)
+            triangle_dict["c"] = read_unsigned_int(rmesh_stream)
+
+            mesh_dict["triangles"].append(triangle_dict)
+
+        section_dict.append(mesh_dict)
+
 def read_rmesh(file_path, file_type):
     rmesh_dict = {
         "rmesh_file_type": "",
@@ -85,7 +131,7 @@ def read_rmesh(file_path, file_type):
     }
     with file_path.open("rb") as rmesh_stream:
         rmesh_dict["rmesh_file_type"] = read_string(rmesh_stream)
-        if rmesh_dict["rmesh_file_type"] != "RoomMesh" and rmesh_dict["rmesh_file_type"] != "RoomMesh.HasTriggerBox" and rmesh_dict["rmesh_file_type"] != "RoomMesh2"and rmesh_dict["rmesh_file_type"] != "RM":
+        if rmesh_dict["rmesh_file_type"] != "RoomMesh" and rmesh_dict["rmesh_file_type"] != "RoomMesh.HasTriggerBox" and rmesh_dict["rmesh_file_type"] != "RoomMesh2" and rmesh_dict["rmesh_file_type"] != "RM":
             raise ValueError('Input file was "%s" instead of "RoomMesh", "RoomMesh.HasTriggerBox", "RoomMesh2", or RM and therefore is not an RMESH file' % rmesh_dict["rmesh_file_type"])
 
         if file_type == ImportFileType.rmesh_auto:
@@ -105,153 +151,21 @@ def read_rmesh(file_path, file_type):
         if file_type == ImportFileType.rmesh_salvage:
             rmesh_dict["rmesh_version"] = read_byte(rmesh_stream)
 
-        mesh_count = read_unsigned_int(rmesh_stream)
-        for mesh_idx in range(mesh_count):
-            mesh_dict = {
-                "textures": [],
-                "vertices": [],
-                "triangles": []
-            }
-
-            for texture_idx in range(2):
-                texture_dict = {}
-
-                texture_dict["texture_type"] = read_byte(rmesh_stream)
-                texture_dict["texture_name"] = ""
-                if TextureType(texture_dict["texture_type"]) is not TextureType.none:
-                    texture_dict["texture_name"] = read_string(rmesh_stream)
-
-                mesh_dict["textures"].append(texture_dict)
-
-            vertex_count = read_unsigned_int(rmesh_stream)
-            for vertex_idx in range(vertex_count):
-                vertex_dict = {}
-
-                vertex_dict["position"] = read_vector(rmesh_stream)
-                vertex_dict["uv_render"] = read_uv(rmesh_stream)
-                vertex_dict["uv_lightmap"] = read_uv(rmesh_stream)
-                vertex_dict["color"] = read_color(rmesh_stream)
-                if file_type == ImportFileType.rmesh_uer2:
-                    vertex_dict["normal"] = read_vector(rmesh_stream)
-
-                mesh_dict["vertices"].append(vertex_dict)
-
-            triangle_count = read_unsigned_int(rmesh_stream)
-            for triangle_idx in range(triangle_count):
-                triangle_dict = {}
-
-                triangle_dict["a"] = read_unsigned_int(rmesh_stream)
-                triangle_dict["b"] = read_unsigned_int(rmesh_stream)
-                triangle_dict["c"] = read_unsigned_int(rmesh_stream)
-
-                mesh_dict["triangles"].append(triangle_dict)
-
-            rmesh_dict["meshes"].append(mesh_dict)
-
+        read_mesh_data(rmesh_stream, file_type, rmesh_dict["meshes"])
         if file_type == ImportFileType.rmesh_salvage:
-            mesh_count = read_unsigned_int(rmesh_stream)
-            for mesh_idx in range(mesh_count):
-                mesh_dict = {
-                    "textures": [],
-                    "vertices": [],
-                    "triangles": []
-                }
+            read_mesh_data(rmesh_stream, file_type, rmesh_dict["render_meshes"])
 
-                for texture_idx in range(2):
-                    texture_dict = {}
-
-                    texture_dict["texture_type"] = read_byte(rmesh_stream)
-                    texture_dict["texture_name"] = ""
-                    if TextureType(texture_dict["texture_type"]) is not TextureType.none:
-                        texture_dict["texture_name"] = read_string(rmesh_stream)
-
-                    mesh_dict["textures"].append(texture_dict)
-
-                vertex_count = read_unsigned_int(rmesh_stream)
-                for vertex_idx in range(vertex_count):
-                    vertex_dict = {}
-
-                    vertex_dict["position"] = read_vector(rmesh_stream)
-                    vertex_dict["uv_render"] = read_uv(rmesh_stream)
-                    vertex_dict["uv_lightmap"] = read_uv(rmesh_stream)
-                    vertex_dict["color"] = read_color(rmesh_stream)
-                    if file_type == ImportFileType.rmesh_uer2:
-                        vertex_dict["normal"] = read_vector(rmesh_stream)
-
-                    mesh_dict["vertices"].append(vertex_dict)
-
-                triangle_count = read_unsigned_int(rmesh_stream)
-                for triangle_idx in range(triangle_count):
-                    triangle_dict = {}
-
-                    triangle_dict["a"] = read_unsigned_int(rmesh_stream)
-                    triangle_dict["b"] = read_unsigned_int(rmesh_stream)
-                    triangle_dict["c"] = read_unsigned_int(rmesh_stream)
-
-                    mesh_dict["triangles"].append(triangle_dict)
-
-                rmesh_dict["render_meshes"].append(mesh_dict)
-
-        collision_count = read_unsigned_int(rmesh_stream)
-        for collision_idx in range(collision_count):
-            mesh_dict = {
-                "vertices": [],
-                "triangles": []
-            }
-
-            vertex_count = read_unsigned_int(rmesh_stream)
-            for vertex_idx in range(vertex_count):
-                vertex_dict = {}
-
-                vertex_dict["position"] = read_vector(rmesh_stream)
-
-                mesh_dict["vertices"].append(vertex_dict)
-
-            triangle_count = read_unsigned_int(rmesh_stream)
-            for triangle_idx in range(triangle_count):
-                triangle_dict = {}
-
-                triangle_dict["a"] = read_unsigned_int(rmesh_stream)
-                triangle_dict["b"] = read_unsigned_int(rmesh_stream)
-                triangle_dict["c"] = read_unsigned_int(rmesh_stream)
-
-                mesh_dict["triangles"].append(triangle_dict)
-
-            rmesh_dict["collision_meshes"].append(mesh_dict)
+        read_mesh_data(rmesh_stream, file_type, rmesh_dict["collision_meshes"], True)
 
         if file_type == ImportFileType.rmesh_tb or file_type == ImportFileType.rmesh_salvage:
             trigger_box_count = read_unsigned_int(rmesh_stream)
             for trigger_box_idx in range(trigger_box_count):
-                collision_count = read_unsigned_int(rmesh_stream)
                 trigger = {
                     "meshes": [],
                     "name": ""
                 }
-                for collision_idx in range(collision_count):
-                    mesh_dict = {
-                        "vertices": [],
-                        "triangles": []
-                    }
 
-                    vertex_count = read_unsigned_int(rmesh_stream)
-                    for vertex_idx in range(vertex_count):
-                        vertex_dict = {}
-
-                        vertex_dict["position"] = read_vector(rmesh_stream)
-
-                        mesh_dict["vertices"].append(vertex_dict)
-
-                    triangle_count = read_unsigned_int(rmesh_stream)
-                    for triangle_idx in range(triangle_count):
-                        triangle_dict = {}
-
-                        triangle_dict["a"] = read_unsigned_int(rmesh_stream)
-                        triangle_dict["b"] = read_unsigned_int(rmesh_stream)
-                        triangle_dict["c"] = read_unsigned_int(rmesh_stream)
-
-                        mesh_dict["triangles"].append(triangle_dict)
-
-                    trigger["meshes"].append(mesh_dict)
+                read_mesh_data(rmesh_stream, file_type, trigger["meshes"], True)
 
                 trigger["name"] = read_string(rmesh_stream)
                 rmesh_dict["trigger_boxes"].append(trigger)
@@ -303,6 +217,7 @@ def read_rmesh(file_path, file_type):
                     for ff in range(31):
                         ff_element = read_unsigned_int(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
+
                 else:
                     entity_dict["position"] = read_vector(rmesh_stream)
                     entity_dict["color"] = read_string(rmesh_stream)
@@ -325,6 +240,7 @@ def read_rmesh(file_path, file_type):
                     for ff in range(31):
                         ff_element = read_unsigned_int(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
+                    
                 else:
                     entity_dict["euler_rotation"] = read_string(rmesh_stream)
                     entity_dict["inner_cone_angle"] = read_unsigned_int(rmesh_stream)
@@ -407,85 +323,49 @@ def read_rmesh(file_path, file_type):
 
     return file_type, rmesh_dict
 
-def write_rmesh(rmesh_dict, output_path, file_type):
-    with output_path.open("wb") as rmesh_stream:
-        if rmesh_dict["rmesh_file_type"] != "RoomMesh" and rmesh_dict["rmesh_file_type"] != "RoomMesh.HasTriggerBox" and rmesh_dict["rmesh_file_type"] != "RoomMesh2":
-            raise ValueError('Input file was "%s" instead of "RoomMesh", "RoomMesh.HasTriggerBox", or "RoomMesh2" and therefore is not an RMESH file' % rmesh_dict["rmesh_file_type"])
-
-        write_string(rmesh_stream, rmesh_dict["rmesh_file_type"])
-        if file_type == ExportFileType.rmesh_salvage:
-            write_unsigned_int(rmesh_stream, rmesh_dict["rmesh_version"])
-
-        write_unsigned_int(rmesh_stream, len(rmesh_dict["meshes"]))
-        for mesh_dict in rmesh_dict["meshes"]:
+def write_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
+    write_unsigned_int(rmesh_stream, len(section_dict))
+    for mesh_dict in section_dict:
+        if not is_coll:
             for texture_dict in mesh_dict["textures"]:
                 write_byte(rmesh_stream, texture_dict["texture_type"])
                 if TextureType(texture_dict["texture_type"]) is not TextureType.none:
                     write_string(rmesh_stream, texture_dict["texture_name"])
 
-            write_unsigned_int(rmesh_stream, len(mesh_dict["vertices"]))
-            for vertex_dict in mesh_dict["vertices"]:
-                write_vector(rmesh_stream, vertex_dict["position"])
+        write_unsigned_int(rmesh_stream, len(mesh_dict["vertices"]))
+        for vertex_dict in mesh_dict["vertices"]:
+            write_vector(rmesh_stream, vertex_dict["position"])
+            if not is_coll:
                 write_uv(rmesh_stream, vertex_dict["uv_render"])
                 write_uv(rmesh_stream, vertex_dict["uv_lightmap"])
                 write_color(rmesh_stream, vertex_dict["color"])
                 if file_type == ExportFileType.rmesh_uer2:
                     write_vector(rmesh_stream, vertex_dict["normal"])
 
-            write_unsigned_int(rmesh_stream, len(mesh_dict["triangles"]))
-            for triangle_dict in mesh_dict["triangles"]:
-                write_unsigned_int(rmesh_stream, triangle_dict["a"])
-                write_unsigned_int(rmesh_stream, triangle_dict["b"])
-                write_unsigned_int(rmesh_stream, triangle_dict["c"])
+        write_unsigned_int(rmesh_stream, len(mesh_dict["triangles"]))
+        for triangle_dict in mesh_dict["triangles"]:
+            write_unsigned_int(rmesh_stream, triangle_dict["a"])
+            write_unsigned_int(rmesh_stream, triangle_dict["b"])
+            write_unsigned_int(rmesh_stream, triangle_dict["c"])
 
+def write_rmesh(rmesh_dict, output_path, file_type):
+    with output_path.open("wb") as rmesh_stream:
+        if rmesh_dict["rmesh_file_type"] != "RoomMesh" and rmesh_dict["rmesh_file_type"] != "RoomMesh.HasTriggerBox" and rmesh_dict["rmesh_file_type"] != "RoomMesh2" and rmesh_dict["rmesh_file_type"] != "RM":
+            raise ValueError('Input file was "%s" instead of "RoomMesh", "RoomMesh.HasTriggerBox", "RoomMesh2", or RM and therefore is not an RMESH file' % rmesh_dict["rmesh_file_type"])
+
+        write_string(rmesh_stream, rmesh_dict["rmesh_file_type"])
         if file_type == ExportFileType.rmesh_salvage:
-            write_unsigned_int(rmesh_stream, len(rmesh_dict["render_meshes"]))
-            for mesh_dict in rmesh_dict["render_meshes"]:
-                for texture_dict in mesh_dict["textures"]:
-                    write_byte(rmesh_stream, texture_dict["texture_type"])
-                    if TextureType(texture_dict["texture_type"]) is not TextureType.none:
-                        write_string(rmesh_stream, texture_dict["texture_name"])
+            write_byte(rmesh_stream, rmesh_dict["rmesh_version"])
 
-                write_unsigned_int(rmesh_stream, len(mesh_dict["vertices"]))
-                for vertex_dict in mesh_dict["vertices"]:
-                    write_vector(rmesh_stream, vertex_dict["position"])
-                    write_uv(rmesh_stream, vertex_dict["uv_render"])
-                    write_uv(rmesh_stream, vertex_dict["uv_lightmap"])
-                    write_color(rmesh_stream, vertex_dict["color"])
+        write_mesh_data(rmesh_stream, file_type, rmesh_dict["meshes"])
+        if file_type == ExportFileType.rmesh_salvage:
+            write_mesh_data(rmesh_stream, file_type, rmesh_dict["render_meshes"])
 
-                write_unsigned_int(rmesh_stream, len(mesh_dict["triangles"]))
-                for triangle_dict in mesh_dict["triangles"]:
-                    write_unsigned_int(rmesh_stream, triangle_dict["a"])
-                    write_unsigned_int(rmesh_stream, triangle_dict["b"])
-                    write_unsigned_int(rmesh_stream, triangle_dict["c"])
-
-        write_unsigned_int(rmesh_stream, len(rmesh_dict["collision_meshes"]))
-        for collision_dict in rmesh_dict["collision_meshes"]:
-            write_unsigned_int(rmesh_stream, len(collision_dict["vertices"]))
-            for vertex_dict in collision_dict["vertices"]:
-                write_vector(rmesh_stream, vertex_dict["position"])
-
-            write_unsigned_int(rmesh_stream, len(collision_dict["triangles"]))
-            for triangle_dict in collision_dict["triangles"]:
-                write_unsigned_int(rmesh_stream, triangle_dict["a"])
-                write_unsigned_int(rmesh_stream, triangle_dict["b"])
-                write_unsigned_int(rmesh_stream, triangle_dict["c"])
-
+        write_mesh_data(rmesh_stream, file_type, rmesh_dict["collision_meshes"], True)
         if file_type == ExportFileType.rmesh_tb or file_type == ExportFileType.rmesh_salvage:
             write_unsigned_int(rmesh_stream, len(rmesh_dict["trigger_boxes"]))
             for trigger_box_dict in rmesh_dict["trigger_boxes"]:
-                write_unsigned_int(rmesh_stream, len(trigger_box_dict["meshes"]))
-                for trigger_dict in trigger_box_dict["meshes"]:
-                    write_unsigned_int(rmesh_stream, len(trigger_dict["vertices"]))
-                    for vertex_dict in trigger_dict["vertices"]:
-                        write_vector(rmesh_stream, vertex_dict["position"])
-
-                    write_unsigned_int(rmesh_stream, len(trigger_dict["triangles"]))
-                    for triangle_dict in trigger_dict["triangles"]:
-                        write_unsigned_int(rmesh_stream, triangle_dict["a"])
-                        write_unsigned_int(rmesh_stream, triangle_dict["b"])
-                        write_unsigned_int(rmesh_stream, triangle_dict["c"])
-
+                write_mesh_data(rmesh_stream, file_type, trigger_box_dict["meshes"], True)
                 write_string(rmesh_stream, trigger_box_dict["name"])
 
         write_unsigned_int(rmesh_stream, len(rmesh_dict["entities"]))
@@ -578,33 +458,25 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_string(rmesh_stream, entity_dict["texture_name"])
 
             elif entity_dict["entity_type"] == "item":
-                if file_type == ExportFileType.rmesh_salvage:
-                    write_vector(rmesh_stream, entity_dict["position"])
-                    write_string(rmesh_stream, entity_dict["model_name"])
-                    write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
-                    write_vector(rmesh_stream, entity_dict["euler_rotation"])
-                    write_float(rmesh_stream, entity_dict["state_1"])
-                    write_float(rmesh_stream, entity_dict["state_2"])
-                    write_float(rmesh_stream, entity_dict["spawn_chance"])
-
-                else:
-                    write_vector(rmesh_stream, entity_dict["position"])
+                write_vector(rmesh_stream, entity_dict["position"])
+                if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_tb:
                     write_string(rmesh_stream, entity_dict["item_name"])
-                    write_string(rmesh_stream, entity_dict["model_name"])
-                    write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
-                    write_vector(rmesh_stream, entity_dict["euler_rotation"])
-                    write_float(rmesh_stream, entity_dict["state_1"])
-                    write_float(rmesh_stream, entity_dict["state_2"])
-                    write_float(rmesh_stream, entity_dict["spawn_chance"])
+                
+                write_string(rmesh_stream, entity_dict["model_name"])
+                write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
+                write_vector(rmesh_stream, entity_dict["euler_rotation"])
+                write_float(rmesh_stream, entity_dict["state_1"])
+                write_float(rmesh_stream, entity_dict["state_2"])
+                write_float(rmesh_stream, entity_dict["spawn_chance"])
 
             elif entity_dict["entity_type"] == "door":
+                write_vector(rmesh_stream, entity_dict["position"])
+                write_unsigned_int(rmesh_stream, entity_dict["door_type"])
+                write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
+                write_string(rmesh_stream, entity_dict["keypad_code"])
+                write_float(rmesh_stream, entity_dict["angle"])
+                write_byte(rmesh_stream, entity_dict["start_open"])
                 if file_type == ExportFileType.rmesh_salvage:
-                    write_vector(rmesh_stream, entity_dict["position"])
-                    write_unsigned_int(rmesh_stream, entity_dict["door_type"])
-                    write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
-                    write_string(rmesh_stream, entity_dict["keypad_code"])
-                    write_float(rmesh_stream, entity_dict["angle"])
-                    write_byte(rmesh_stream, entity_dict["start_open"])
                     write_byte(rmesh_stream, entity_dict["locked"])
                     write_byte(rmesh_stream, entity_dict["delete_half"])
                     write_byte(rmesh_stream, entity_dict["allow_scp_079_remote_control"])
@@ -614,12 +486,6 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                     write_vector(rmesh_stream, entity_dict["button_2_angle"])
 
                 else:
-                    write_vector(rmesh_stream, entity_dict["position"])
-                    write_unsigned_int(rmesh_stream, entity_dict["door_type"])
-                    write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
-                    write_string(rmesh_stream, entity_dict["keypad_code"])
-                    write_float(rmesh_stream, entity_dict["angle"])
-                    write_byte(rmesh_stream, entity_dict["start_open"])
                     write_byte(rmesh_stream, entity_dict["allow_scp_079_remote_control"])
 
             else:

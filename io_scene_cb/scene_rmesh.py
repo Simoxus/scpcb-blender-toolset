@@ -63,6 +63,7 @@ def get_blitz_rot(blender_euler):
 
 def collect_objects():
     mesh_list = []
+    render_list = []
     collision_list = []
     trigger_box_list = []
     entity_list = []
@@ -72,6 +73,9 @@ def collect_objects():
         if ob_type == ObjectType.mesh:
             if ob.type == 'MESH':
                 mesh_list.append(ob)
+        elif ob_type == ObjectType.render:
+            if ob.type == 'MESH':
+                render_list.append(ob)
         elif ob_type == ObjectType.collision:
             if ob.type == 'MESH':
                 collision_list.append(ob)
@@ -109,29 +113,40 @@ def collect_objects():
 
     entity_list.sort(key=lambda obj: natural_key(obj.name)) # Doing this cause no idea if the game cares about order for entities. Probably not but better be safe. - Gen
 
-    return mesh_list, collision_list, trigger_box_list, entity_list
+    return mesh_list, render_list, collision_list, trigger_box_list, entity_list
 
 def export_scene(context, filepath, file_type, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
     file_type = ExportFileType(int(file_type))
+    rmesh_version = 0
     if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_uer:
         rmesh_file_type = "RoomMesh"
     elif file_type == ExportFileType.rmesh_tb:
         rmesh_file_type = "RoomMesh.HasTriggerBox"
     elif file_type == ExportFileType.rmesh_uer2:
         rmesh_file_type = "RoomMesh2"
+    elif file_type == ExportFileType.rmesh_salvage:
+        rmesh_file_type = "RM"
+
+    file_extension = ".rmesh"
+    if file_type == ExportFileType.rmesh_salvage:
+        file_extension = ".rm" 
+
+    filepath = filepath.parent / f"{filepath.stem}{file_extension}"
 
     rmesh_dict = {
         "rmesh_file_type": rmesh_file_type,
+        "rmesh_version": rmesh_version,
         "meshes": [],
+        "render_meshes": [],
         "collision_meshes": [],
         "trigger_boxes": [],
         "entities": []
     }
 
-    mesh_list, collision_list, trigger_box_list, entity_list = collect_objects()
+    mesh_list, render_list, collision_list, trigger_box_list, entity_list = collect_objects()
 
     depsgraph = context.evaluated_depsgraph_get()
 
@@ -179,7 +194,6 @@ def export_scene(context, filepath, file_type, report):
                             if img and img.source == 'FILE' and img.filepath:
                                 diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
                                 diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
-
 
                     elif bdsf_principled:
                         for node in mat.node_tree.nodes:

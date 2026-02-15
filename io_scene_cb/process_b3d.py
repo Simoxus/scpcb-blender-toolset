@@ -381,7 +381,7 @@ def write_b3d(path, data, version=1):
     for node in data['nodes']:
         payload += make_NODE(node)
 
-    with open(path, "wb") as f:
+    with path.open("wb") as f:
         f.write(b"BB3D")
         f.write(struct.pack("i", 4 + len(payload)))
         f.write(struct.pack("i", version))
