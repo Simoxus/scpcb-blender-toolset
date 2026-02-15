@@ -76,7 +76,9 @@ def write_color(rmesh_stream, value):
 def read_rmesh(file_path, file_type):
     rmesh_dict = {
         "rmesh_file_type": "",
+        "rmesh_version": 0,
         "meshes": [],
+        "render_meshes": [],
         "collision_meshes": [],
         "trigger_boxes": [],
         "entities": []
@@ -99,6 +101,9 @@ def read_rmesh(file_path, file_type):
 
             elif rmesh_dict["rmesh_file_type"] == "RM":
                 file_type = ImportFileType.rmesh_salvage
+
+        if file_type == ImportFileType.rmesh_salvage:
+            rmesh_dict["rmesh_version"] = read_byte(rmesh_stream)
 
         mesh_count = read_unsigned_int(rmesh_stream)
         for mesh_idx in range(mesh_count):
@@ -143,6 +148,50 @@ def read_rmesh(file_path, file_type):
 
             rmesh_dict["meshes"].append(mesh_dict)
 
+        if file_type == ImportFileType.rmesh_salvage:
+            mesh_count = read_unsigned_int(rmesh_stream)
+            for mesh_idx in range(mesh_count):
+                mesh_dict = {
+                    "textures": [],
+                    "vertices": [],
+                    "triangles": []
+                }
+
+                for texture_idx in range(2):
+                    texture_dict = {}
+
+                    texture_dict["texture_type"] = read_byte(rmesh_stream)
+                    texture_dict["texture_name"] = ""
+                    if TextureType(texture_dict["texture_type"]) is not TextureType.none:
+                        texture_dict["texture_name"] = read_string(rmesh_stream)
+
+                    mesh_dict["textures"].append(texture_dict)
+
+                vertex_count = read_unsigned_int(rmesh_stream)
+                for vertex_idx in range(vertex_count):
+                    vertex_dict = {}
+
+                    vertex_dict["position"] = read_vector(rmesh_stream)
+                    vertex_dict["uv_render"] = read_uv(rmesh_stream)
+                    vertex_dict["uv_lightmap"] = read_uv(rmesh_stream)
+                    vertex_dict["color"] = read_color(rmesh_stream)
+                    if file_type == ImportFileType.rmesh_uer2:
+                        vertex_dict["normal"] = read_vector(rmesh_stream)
+
+                    mesh_dict["vertices"].append(vertex_dict)
+
+                triangle_count = read_unsigned_int(rmesh_stream)
+                for triangle_idx in range(triangle_count):
+                    triangle_dict = {}
+
+                    triangle_dict["a"] = read_unsigned_int(rmesh_stream)
+                    triangle_dict["b"] = read_unsigned_int(rmesh_stream)
+                    triangle_dict["c"] = read_unsigned_int(rmesh_stream)
+
+                    mesh_dict["triangles"].append(triangle_dict)
+
+                rmesh_dict["render_meshes"].append(mesh_dict)
+
         collision_count = read_unsigned_int(rmesh_stream)
         for collision_idx in range(collision_count):
             mesh_dict = {
@@ -170,7 +219,7 @@ def read_rmesh(file_path, file_type):
 
             rmesh_dict["collision_meshes"].append(mesh_dict)
 
-        if file_type == ImportFileType.rmesh_tb:
+        if file_type == ImportFileType.rmesh_tb or file_type == ImportFileType.rmesh_salvage:
             trigger_box_count = read_unsigned_int(rmesh_stream)
             for trigger_box_idx in range(trigger_box_count):
                 collision_count = read_unsigned_int(rmesh_stream)
@@ -307,23 +356,49 @@ def read_rmesh(file_path, file_type):
                 entity_dict["texture_name"] = read_string(rmesh_stream)
 
             elif entity_dict["entity_type"] == "item":
-                entity_dict["position"] = read_vector(rmesh_stream)
-                entity_dict["item_name"] = read_string(rmesh_stream)
-                entity_dict["model_name"] = read_string(rmesh_stream)
-                entity_dict["use_custom_rotation"] = read_byte(rmesh_stream)
-                entity_dict["euler_rotation"] = read_vector(rmesh_stream)
-                entity_dict["state_1"] = read_float(rmesh_stream)
-                entity_dict["state_2"] = read_float(rmesh_stream)
-                entity_dict["spawn_chance"] = read_float(rmesh_stream)
+                if file_type == ImportFileType.rmesh_salvage:
+                    entity_dict["position"] = read_vector(rmesh_stream)
+                    entity_dict["model_name"] = read_string(rmesh_stream)
+                    entity_dict["use_custom_rotation"] = read_byte(rmesh_stream)
+                    entity_dict["euler_rotation"] = read_vector(rmesh_stream)
+                    entity_dict["state_1"] = read_float(rmesh_stream)
+                    entity_dict["state_2"] = read_float(rmesh_stream)
+                    entity_dict["spawn_chance"] = read_float(rmesh_stream)
+
+                else:
+                    entity_dict["position"] = read_vector(rmesh_stream)
+                    entity_dict["item_name"] = read_string(rmesh_stream)
+                    entity_dict["model_name"] = read_string(rmesh_stream)
+                    entity_dict["use_custom_rotation"] = read_byte(rmesh_stream)
+                    entity_dict["euler_rotation"] = read_vector(rmesh_stream)
+                    entity_dict["state_1"] = read_float(rmesh_stream)
+                    entity_dict["state_2"] = read_float(rmesh_stream)
+                    entity_dict["spawn_chance"] = read_float(rmesh_stream)
 
             elif entity_dict["entity_type"] == "door":
-                entity_dict["position"] = read_vector(rmesh_stream)
-                entity_dict["door_type"] = read_unsigned_int(rmesh_stream)
-                entity_dict["key_card_level"] = read_unsigned_int(rmesh_stream)
-                entity_dict["keypad_code"] = read_string(rmesh_stream)
-                entity_dict["angle"] = read_float(rmesh_stream)
-                entity_dict["start_open"] = read_byte(rmesh_stream)
-                entity_dict["allow_scp_079_remote_control"] = read_byte(rmesh_stream)
+                if file_type == ImportFileType.rmesh_salvage:
+                    entity_dict["position"] = read_vector(rmesh_stream)
+                    entity_dict["door_type"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["key_card_level"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["keypad_code"] = read_string(rmesh_stream)
+                    entity_dict["angle"] = read_float(rmesh_stream)
+                    entity_dict["start_open"] = read_byte(rmesh_stream)
+                    entity_dict["locked"] = read_byte(rmesh_stream)
+                    entity_dict["delete_half"] = read_byte(rmesh_stream)
+                    entity_dict["allow_scp_079_remote_control"] = read_byte(rmesh_stream)
+                    entity_dict["button_1_position"] = read_vector(rmesh_stream)
+                    entity_dict["button_1_angle"] = read_vector(rmesh_stream)
+                    entity_dict["button_2_position"] = read_vector(rmesh_stream)
+                    entity_dict["button_2_angle"] = read_vector(rmesh_stream)
+
+                else:
+                    entity_dict["position"] = read_vector(rmesh_stream)
+                    entity_dict["door_type"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["key_card_level"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["keypad_code"] = read_string(rmesh_stream)
+                    entity_dict["angle"] = read_float(rmesh_stream)
+                    entity_dict["start_open"] = read_byte(rmesh_stream)
+                    entity_dict["allow_scp_079_remote_control"] = read_byte(rmesh_stream)
 
             else:
                 print("Unknown entity type: %s" % entity_dict["entity_type"])
@@ -338,6 +413,9 @@ def write_rmesh(rmesh_dict, output_path, file_type):
             raise ValueError('Input file was "%s" instead of "RoomMesh", "RoomMesh.HasTriggerBox", or "RoomMesh2" and therefore is not an RMESH file' % rmesh_dict["rmesh_file_type"])
 
         write_string(rmesh_stream, rmesh_dict["rmesh_file_type"])
+        if file_type == ExportFileType.rmesh_salvage:
+            write_unsigned_int(rmesh_stream, rmesh_dict["rmesh_version"])
+
         write_unsigned_int(rmesh_stream, len(rmesh_dict["meshes"]))
         for mesh_dict in rmesh_dict["meshes"]:
             for texture_dict in mesh_dict["textures"]:
@@ -360,6 +438,27 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_unsigned_int(rmesh_stream, triangle_dict["b"])
                 write_unsigned_int(rmesh_stream, triangle_dict["c"])
 
+        if file_type == ExportFileType.rmesh_salvage:
+            write_unsigned_int(rmesh_stream, len(rmesh_dict["render_meshes"]))
+            for mesh_dict in rmesh_dict["render_meshes"]:
+                for texture_dict in mesh_dict["textures"]:
+                    write_byte(rmesh_stream, texture_dict["texture_type"])
+                    if TextureType(texture_dict["texture_type"]) is not TextureType.none:
+                        write_string(rmesh_stream, texture_dict["texture_name"])
+
+                write_unsigned_int(rmesh_stream, len(mesh_dict["vertices"]))
+                for vertex_dict in mesh_dict["vertices"]:
+                    write_vector(rmesh_stream, vertex_dict["position"])
+                    write_uv(rmesh_stream, vertex_dict["uv_render"])
+                    write_uv(rmesh_stream, vertex_dict["uv_lightmap"])
+                    write_color(rmesh_stream, vertex_dict["color"])
+
+                write_unsigned_int(rmesh_stream, len(mesh_dict["triangles"]))
+                for triangle_dict in mesh_dict["triangles"]:
+                    write_unsigned_int(rmesh_stream, triangle_dict["a"])
+                    write_unsigned_int(rmesh_stream, triangle_dict["b"])
+                    write_unsigned_int(rmesh_stream, triangle_dict["c"])
+
         write_unsigned_int(rmesh_stream, len(rmesh_dict["collision_meshes"]))
         for collision_dict in rmesh_dict["collision_meshes"]:
             write_unsigned_int(rmesh_stream, len(collision_dict["vertices"]))
@@ -372,7 +471,7 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_unsigned_int(rmesh_stream, triangle_dict["b"])
                 write_unsigned_int(rmesh_stream, triangle_dict["c"])
 
-        if file_type == ExportFileType.rmesh_tb:
+        if file_type == ExportFileType.rmesh_tb or file_type == ExportFileType.rmesh_salvage:
             write_unsigned_int(rmesh_stream, len(rmesh_dict["trigger_boxes"]))
             for trigger_box_dict in rmesh_dict["trigger_boxes"]:
                 write_unsigned_int(rmesh_stream, len(trigger_box_dict["meshes"]))
@@ -479,23 +578,49 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_string(rmesh_stream, entity_dict["texture_name"])
 
             elif entity_dict["entity_type"] == "item":
-                write_vector(rmesh_stream, entity_dict["position"])
-                write_string(rmesh_stream, entity_dict["item_name"])
-                write_string(rmesh_stream, entity_dict["model_name"])
-                write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
-                write_vector(rmesh_stream, entity_dict["euler_rotation"])
-                write_float(rmesh_stream, entity_dict["state_1"])
-                write_float(rmesh_stream, entity_dict["state_2"])
-                write_float(rmesh_stream, entity_dict["spawn_chance"])
+                if file_type == ExportFileType.rmesh_salvage:
+                    write_vector(rmesh_stream, entity_dict["position"])
+                    write_string(rmesh_stream, entity_dict["model_name"])
+                    write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
+                    write_vector(rmesh_stream, entity_dict["euler_rotation"])
+                    write_float(rmesh_stream, entity_dict["state_1"])
+                    write_float(rmesh_stream, entity_dict["state_2"])
+                    write_float(rmesh_stream, entity_dict["spawn_chance"])
+
+                else:
+                    write_vector(rmesh_stream, entity_dict["position"])
+                    write_string(rmesh_stream, entity_dict["item_name"])
+                    write_string(rmesh_stream, entity_dict["model_name"])
+                    write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
+                    write_vector(rmesh_stream, entity_dict["euler_rotation"])
+                    write_float(rmesh_stream, entity_dict["state_1"])
+                    write_float(rmesh_stream, entity_dict["state_2"])
+                    write_float(rmesh_stream, entity_dict["spawn_chance"])
 
             elif entity_dict["entity_type"] == "door":
-                write_vector(rmesh_stream, entity_dict["position"])
-                write_unsigned_int(rmesh_stream, entity_dict["door_type"])
-                write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
-                write_string(rmesh_stream, entity_dict["keypad_code"])
-                write_float(rmesh_stream, entity_dict["angle"])
-                write_byte(rmesh_stream, entity_dict["start_open"])
-                write_byte(rmesh_stream, entity_dict["allow_scp_079_remote_control"])
+                if file_type == ExportFileType.rmesh_salvage:
+                    write_vector(rmesh_stream, entity_dict["position"])
+                    write_unsigned_int(rmesh_stream, entity_dict["door_type"])
+                    write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
+                    write_string(rmesh_stream, entity_dict["keypad_code"])
+                    write_float(rmesh_stream, entity_dict["angle"])
+                    write_byte(rmesh_stream, entity_dict["start_open"])
+                    write_byte(rmesh_stream, entity_dict["locked"])
+                    write_byte(rmesh_stream, entity_dict["delete_half"])
+                    write_byte(rmesh_stream, entity_dict["allow_scp_079_remote_control"])
+                    write_vector(rmesh_stream, entity_dict["button_1_position"])
+                    write_vector(rmesh_stream, entity_dict["button_1_angle"])
+                    write_vector(rmesh_stream, entity_dict["button_2_position"])
+                    write_vector(rmesh_stream, entity_dict["button_2_angle"])
+
+                else:
+                    write_vector(rmesh_stream, entity_dict["position"])
+                    write_unsigned_int(rmesh_stream, entity_dict["door_type"])
+                    write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
+                    write_string(rmesh_stream, entity_dict["keypad_code"])
+                    write_float(rmesh_stream, entity_dict["angle"])
+                    write_byte(rmesh_stream, entity_dict["start_open"])
+                    write_byte(rmesh_stream, entity_dict["allow_scp_079_remote_control"])
 
             else:
                 print("Unknown entity type: %s" % entity_dict["entity_type"])
