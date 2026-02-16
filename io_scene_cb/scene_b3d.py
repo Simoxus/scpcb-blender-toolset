@@ -766,6 +766,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                                 texture_dict = {
                                     "name": img.name,
                                     "flags": fx,
+                                    "texture_type": 0,
                                     "blend": img.cb.blend_type,
                                     "position": [
                                         0.0,
@@ -812,7 +813,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            x, y, z = Matrix.Scale(160.0, 4) @ v.co
+            x, y, z = Matrix.Scale(160.0, 4) @ (ob.matrix_world @ v.co)
             i, j, k = loop.normal
             pos = (x, z, y)
             loop_normal = (i, k, j)
@@ -1011,6 +1012,8 @@ def get_node_name(ob):
 def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_info, armature_ob, parent_ob=None):
     for ob in bpy.data.objects:
         if ob.parent == parent_ob:
+            if ob.type == "MESH" and ob.parent == armature_ob:
+                continue
             transform_matrix = ob.matrix_local
             loc, rot_quat, scl = transform_matrix.decompose()
 
@@ -1360,15 +1363,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
         local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
 
     data = B3DTree().parse(filepath)
-
-    import json
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-    file_path = os.path.join(desktop_path, "output.json")
-
-    # Write JSON file
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
+    
     if error_log is None:
         error_log = set()
     if random_color_gen is None:
