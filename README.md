@@ -1,5 +1,7 @@
 # SCP-CB-Toolset
 
+[Discord for my tools](https://discord.gg/UDBMbK5z)
+
 ## Toolset Description
 A Blender addon for 4.1+ that allows for the following
 * Import and export RMESH files for the original release of SCP Containment Breach and UER 1.5.6
