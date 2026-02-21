@@ -690,10 +690,11 @@ def import_scene(context, filepath, file_type, report):
             object_mesh.empty_display_type = 'IMAGE'
 
             file_path = get_file(entity_dict["texture_name"], True, False, local_screen_path)
-            object_mesh.cb.texture_path = file_path
-            if os.path.isfile(file_path):
-                file_asset = bpy.data.images.load(file_path, check_existing=True)
-                object_mesh.data = file_asset
+            if file_path is not None:
+                object_mesh.cb.texture_path = file_path
+                if os.path.isfile(file_path):
+                    file_asset = bpy.data.images.load(file_path, check_existing=True)
+                    object_mesh.data = file_asset
 
             entity_collection.objects.link(object_mesh)
 
@@ -714,8 +715,10 @@ def import_scene(context, filepath, file_type, report):
 
             model_path = get_file(entity_dict["model_name"], False)
             texture_path = get_file(entity_dict["texture_name"], True, False)
-            object_mesh.cb.model_path = model_path
-            object_mesh.cb.texture_path = texture_path
+            if model_path is not None:
+                object_mesh.cb.model_path = model_path
+            if texture_path is not None:
+                object_mesh.cb.texture_path = texture_path
 
         elif entity_dict["entity_type"] == "waypoint":
             object_mesh = bpy.data.objects.new("%s waypoint" % entity_idx, None)
@@ -934,7 +937,6 @@ def import_scene(context, filepath, file_type, report):
 
                 if item_group:
                     model_path = item_group
-
 
             object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
             object_mesh.cb.object_type = str(ObjectType.entity_item.value)
