@@ -24,14 +24,17 @@ def roll_quat(r):
 def rotation_quat(p, y, r):
     return yaw_quat(y) @ pitch_quat(p) @ roll_quat(r)
 
-def get_blender_rot(entity_position, entity_rotation):
+def get_blender_rot(entity_position, entity_rotation, is_spotlight=False):
     p, y, r = entity_rotation
     y = -y
     quat = rotation_quat(p * DTOR, y * DTOR, r * DTOR)
     quat.normalized()
 
     loc, rot, scl = (PM_IMPORT @ Matrix.LocRotScale(entity_position, quat, Vector((1,1,1)))).decompose()
-    rx, ry, rz = (rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion()).to_euler()
+    if not is_spotlight:
+        rx, ry, rz = (rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion()).to_euler()
+    else:
+        rx, ry, rz = rot.to_euler()
 
     return Euler((-rx, -ry, rz))
 

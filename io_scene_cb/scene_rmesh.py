@@ -46,13 +46,15 @@ def get_referenced_collection(collection_name, parent_collection, hide_render=Fa
 def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
-def get_blitz_rot(blender_euler):
+def get_blitz_rot(blender_euler, is_spotlight=False):
     rx, ry, rz = blender_euler
     rx = -rx
     ry = -ry
 
     rot = Euler((rx, ry, rz)).to_quaternion()
-    rot = rot @ Matrix.Rotation(radians(-90), 4, 'X').to_quaternion()
+    if not is_spotlight:
+        rot = rot @ Matrix.Rotation(radians(-90), 4, 'X').to_quaternion()
+
     m = Matrix.LocRotScale(Vector((0,0,0)), rot, Vector((1,1,1)))
     m = PM_IMPORT.inverted() @ m
     b_loc, b_rot, b_scl = m.decompose()
@@ -415,7 +417,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
             entity_dict["intensity"] = ob.data.energy / 50
             if file_type == ExportFileType.rmesh_uer2:
-                p, y, r = get_blitz_rot(rot.to_euler())
+                p, y, r = get_blitz_rot(rot.to_euler(), True)
                 entity_dict["has_sprite"] = ob.cb.has_sprite
                 entity_dict["sprite_scale"] = ob.cb.sprite_scale
                 entity_dict["casts_shadows"] = ob.data.use_shadow
@@ -428,7 +430,7 @@ def export_scene(context, filepath, file_type, report):
 
             else:
                 outer_deg = degrees(ob.data.spot_size)
-                p, y, r = get_blitz_rot(rot.to_euler())
+                p, y, r = get_blitz_rot(rot.to_euler(), True)
                 entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
                 entity_dict["inner_cone_angle"] = int(ob.data.spot_blend * outer_deg)
                 entity_dict["outer_cone_angle"] = int(outer_deg)
@@ -799,7 +801,7 @@ def import_scene(context, filepath, file_type, report):
                 rotation = [float(p), float(y), float(r)]
 
             loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = get_blender_rot(entity_dict["position"], rotation)
+            rot = get_blender_rot(entity_dict["position"], rotation, True)
             scl = Vector((1, 1, 1))
             object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
