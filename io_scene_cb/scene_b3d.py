@@ -204,7 +204,8 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
 
                     fcurve_map[group_name]['rotation_quaternion'][3].keyframe_points.insert(frame_number, rot_quat[3], options={'FAST'})
 
-        if not section_found:
+        if not section_found and not is_bone:
+            # This is specifically for objects since objects with no keys on a frame will have their transform reset instead of stick like bones - Gen
             frame_number = action.frame_start
             if is_bone:
                 transform_matrix = Matrix.LocRotScale(last_position, last_rotation, last_scale)
