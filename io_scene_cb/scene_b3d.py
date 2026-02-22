@@ -3,7 +3,7 @@ import bpy
 
 from . import ObjectType
 from pathlib import Path
-from math import radians, degrees
+from math import radians, degrees, floor
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
@@ -364,6 +364,10 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                             action.frame_end = sequence_element["end"]
 
                             strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
+                            if sequence_element["start"] == sequence_element["end"]:
+                                strip.frame_end = sequence_element["start"] + 0.1
+                                #strip.action_frame_end = sequence_element["start"] - 0.9
+
                             strips.append(strip)
 
                     elif child_has_anim:
@@ -382,6 +386,10 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                         context.scene.render.fps = int(anim_dict["fps"])
 
                         strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
+                        if sequence_element["start"] == sequence_element["end"]:
+                            strip.frame_end = sequence_element["start"] + 0.1
+                            #strip.action_frame_end = sequence_element["start"] - 0.9
+
                         strips.append(strip)
                     break
 
@@ -1201,7 +1209,7 @@ def gather_keyframe_data(armature, node_data, bake_action=False):
             armature.animation_data.action = temp_action
             bpy.ops.nla.bake(
                 frame_start=int(strip.frame_start),
-                frame_end=int(strip.frame_end),
+                frame_end=int(strip.frame_end) + 1,
                 only_selected=False,
                 visual_keying=True,
                 clear_constraints=False,
@@ -1234,8 +1242,6 @@ def gather_keyframe_data(armature, node_data, bake_action=False):
             node_data.setdefault(node_name, [])
 
         for node_name, node_fcs in node_fcurves.items():
-            frames = sorted({int(kp.co.x) for fc in node_fcs for kp in fc.keyframe_points})
-
             is_bone = node_name != armature.name
             if is_bone and armature.pose and node_name in armature.pose.bones:
                 rot_mode = armature.pose.bones[node_name].rotation_mode
@@ -1244,7 +1250,7 @@ def gather_keyframe_data(armature, node_data, bake_action=False):
                 rot_mode = armature.rotation_mode
 
             strip_keyframes = []
-            for frame in frames:
+            for frame_idx in range(int(action.frame_start), int(action.frame_end) + 1):
                 loc = [0.0, 0.0, 0.0]
                 scale = [1.0, 1.0, 1.0]
                 if rot_mode == 'QUATERNION':
@@ -1254,7 +1260,7 @@ def gather_keyframe_data(armature, node_data, bake_action=False):
                     rot = [0.0, 0.0, 0.0]
 
                 for fc in node_fcs:
-                    val = fc.evaluate(frame)
+                    val = fc.evaluate(frame_idx)
                     idx = fc.array_index
 
                     if fc.data_path.endswith("location"):
@@ -1274,7 +1280,7 @@ def gather_keyframe_data(armature, node_data, bake_action=False):
                 else:
                     mat = Matrix.LocRotScale(Vector(loc), Euler(rot, rot_mode).to_quaternion(), Vector(scale))
 
-                strip_keyframes.append((frame, mat))
+                strip_keyframes.append((frame_idx, mat))
 
             node_data[node_name].append(strip_keyframes)
 
@@ -1337,8 +1343,8 @@ def export_scene(context, filepath, report):
                 root_node["sequences"] = []
                 for strip in nla_track.strips:
                     strip_name = strip.action.name.replace("%s_" % armature_ob.name, "")
-                    start_frame = int(strip.action_frame_start)
-                    end_frame = int(strip.action_frame_end)
+                    start_frame = floor(strip.frame_start)
+                    end_frame = floor(strip.frame_end)
                     flags = 0
                     strip_dict = {"name": strip_name, "start": start_frame, "end": end_frame, "flags": flags}
                     root_node["sequences"].append(strip_dict)
