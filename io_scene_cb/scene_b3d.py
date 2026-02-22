@@ -348,6 +348,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                     if child_has_sequence:
                         anim_dict = child_node["anim"]
                         context.scene.frame_end = anim_dict["frames"]
+                        context.scene.render.fps = int(anim_dict["fps"])
 
                         anim_data = armature.animation_data_create()
                         anim_data.action = None 
@@ -377,6 +378,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                         action.use_frame_range = True
                         action.frame_start = 1
                         action.frame_end = child_node["anim"]["frames"]
+                        context.scene.render.fps = int(anim_dict["fps"])
 
                         strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
                         strips.append(strip)
