@@ -529,6 +529,10 @@ def import_scene(context, filepath, file_type, report):
     local_asset_path = ""
     local_prop_path = r"GFX\map\Props"
     local_screen_path = r"GFX\screens"
+    if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
+        local_prop_path = r"GFX\Map\Props"
+        local_screen_path = r"GFX\Map\Screens"
+
     if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
         local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
 

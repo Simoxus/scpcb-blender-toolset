@@ -373,7 +373,6 @@ def write_b3d(path, data, version=1):
             w.s(m['blend'], 0)
             w.s(m['fx'], 0)
 
-
             w.i(*m['tids'])
 
         payload += make_chunk("BRUS", w.bytes())

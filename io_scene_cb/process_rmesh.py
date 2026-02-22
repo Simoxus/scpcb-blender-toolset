@@ -136,8 +136,7 @@ def read_rmesh(file_path, file_type):
 
         if file_type == ImportFileType.rmesh_auto:
             if rmesh_dict["rmesh_file_type"] == "RoomMesh":
-                raise ValueError('Auto is not supported for "RoomMesh" since it can either apply to SCP Containment Breach or Ultimate Reborn 1.5.6.')
-                #file_type = ImportFileType.rmesh
+                file_type = ImportFileType.rmesh
 
             elif rmesh_dict["rmesh_file_type"] == "RoomMesh.HasTriggerBox":
                 file_type = ImportFileType.rmesh_tb
