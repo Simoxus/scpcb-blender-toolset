@@ -52,6 +52,9 @@ class B3DParser:
                 self.cb_data(chunk, {'version': self.i(1)[0]})
                 continue
 
+            elif chunk == 'PIVO':
+                self.cb_data(chunk, {'pivo': {}})
+
             elif chunk == 'ANIM':
                 flags, frames = self.i(2)
                 fps = self.f(1)[0]
@@ -158,6 +161,9 @@ class B3DParser:
                     })
                 self.cb_data(chunk, {'bones': bones})
 
+            else:
+                print(chunk)
+
             self.fp.seek(next_pos)
 
         return self.cb_result()
@@ -193,6 +199,9 @@ class B3DList(B3DParser):
 
         elif chunk == 'BONE':
             node['bones'] = data['bones']
+
+        elif chunk == 'PIVO':
+            node['pivo'] = data['pivo']
 
         elif chunk == 'KEYS':
             node.setdefault('key', []).append(data['keys'])

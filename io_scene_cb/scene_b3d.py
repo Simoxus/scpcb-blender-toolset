@@ -931,11 +931,7 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=Non
                     for frame_data in action_group:
                         frame_index, frame_transform = frame_data
 
-                        node_transform = bone.matrix_local @ frame_transform
-                        if parent_ob is not None:
-                            node_transform = parent_ob.matrix_local.inverted() @ (bone.matrix_local @ frame_transform)
-
-                        f_loc, f_rot_quat, f_scl = node_transform.decompose()
+                        f_loc, f_rot_quat, f_scl = frame_transform.decompose()
 
                         f_tx, f_ty, f_tz = Matrix.Scale(160, 4) @ f_loc
                         f_sx, f_sy, f_sz = f_scl
@@ -1183,117 +1179,66 @@ def get_image_properties(img, texture_dict):
     texture_dict["flags"] = tex_flags
     texture_dict["blend"] = int(img_b3d.blend_type)
 
-def gather_keyframe_data(armature, node_data, bake_action=False):
+def gather_keyframe_data(context, armature, node_data):
     if not armature.animation_data:
         return
 
-    tracks = armature.animation_data.nla_tracks
-    if not tracks:
-        return
-
+    scene = context.scene
+    original_frame = scene.frame_current
     original_action = armature.animation_data.action
-    temp_action = None
 
-    nla_strips = []
-    for track in tracks:
-        if track.mute:
+    nla_track = next(
+        (t for t in armature.animation_data.nla_tracks if t.name == armature.name and not t.mute),
+        None
+    )
+    if not nla_track:
+        return
+    
+    node_names = {armature.name}
+    if armature.pose:
+        node_names.update(b.name for b in armature.pose.bones)
+    for n in node_names:
+        node_data.setdefault(n, [])
+
+    for strip in nla_track.strips:
+        if not strip.action:
             continue
 
-        nla_strips.extend([s for s in track.strips if s.action])
+        frame_start = int(strip.frame_start)
+        frame_end = int(strip.frame_end)
+        strip_results = {name: [] for name in node_names}
 
-    for strip in nla_strips:
-        action = strip.action
-        if bake_action:
-            temp_action = action.copy()
-            temp_action.name = action.name + "_TEMP"
-            armature.animation_data.action = temp_action
-            bpy.ops.nla.bake(
-                frame_start=int(strip.frame_start),
-                frame_end=int(strip.frame_end) + 1,
-                only_selected=False,
-                visual_keying=True,
-                clear_constraints=False,
-                clear_parents=False,
-                use_current_action=True,
-                bake_types={'POSE'}
-            )
-            action = temp_action
+        for frame in range(frame_start, frame_end + 1):
+            scene.frame_set(frame)
+            depsgraph = context.evaluated_depsgraph_get()
+            eval_arm = armature.evaluated_get(depsgraph)
 
-        if (5, 0, 0) <= bpy.app.version:
-            if action.slots:
-                slot = action.slots[0]
-            else:
-                slot = action.slots.new(id_type='OBJECT', name=armature.name)
-            channelbag = anim_utils.action_ensure_channelbag_for_slot(action, slot)
-            fcurves = channelbag.fcurves
-        else:
-            fcurves = action.fcurves
-
-        node_fcurves = defaultdict(list)
-        for fc in fcurves:
-            dp = fc.data_path
-            if dp.startswith('pose.bones["'):
-                node_name = dp.split('"', 2)[1]
-
-            else:
-                node_name = armature.name
-
-            node_fcurves[node_name].append(fc)
-            node_data.setdefault(node_name, [])
-
-        for node_name, node_fcs in node_fcurves.items():
-            is_bone = node_name != armature.name
-            if is_bone and armature.pose and node_name in armature.pose.bones:
-                rot_mode = armature.pose.bones[node_name].rotation_mode
-
-            else:
-                rot_mode = armature.rotation_mode
-
-            strip_keyframes = []
-            for frame_idx in range(int(action.frame_start), int(action.frame_end) + 1):
-                loc = [0.0, 0.0, 0.0]
-                scale = [1.0, 1.0, 1.0]
-                if rot_mode == 'QUATERNION':
-                    rot = [1.0, 0.0, 0.0, 0.0]
-
+            for node_name in node_names:
+                if node_name == armature.name:
+                    loc = eval_arm.location.copy()
+                    rot = (
+                        eval_arm.rotation_quaternion.copy()
+                        if eval_arm.rotation_mode == 'QUATERNION'
+                        else eval_arm.rotation_euler.to_quaternion()
+                    )
+                    scale = eval_arm.scale.copy()
+                    mat = Matrix.LocRotScale(loc, rot, scale)
                 else:
-                    rot = [0.0, 0.0, 0.0]
+                    pose_bone = eval_arm.pose.bones.get(node_name)
+                    if not pose_bone:
+                        continue
+                    if pose_bone.parent:
+                        mat = pose_bone.parent.matrix.inverted() @ pose_bone.matrix
+                    else:
+                        mat = pose_bone.matrix.copy()
 
-                for fc in node_fcs:
-                    val = fc.evaluate(frame_idx)
-                    idx = fc.array_index
+                strip_results[node_name].append((frame, mat))
 
-                    if fc.data_path.endswith("location"):
-                        loc[idx] = val
-
-                    elif fc.data_path.endswith("scale"):
-                        scale[idx] = val
-
-                    elif fc.data_path.endswith("rotation_quaternion") and rot_mode == 'QUATERNION':
-                        rot[idx] = val
-
-                    elif fc.data_path.endswith("rotation_euler") and rot_mode != 'QUATERNION':
-                        rot[idx] = val
-
-                if rot_mode == 'QUATERNION':
-                    mat = Matrix.LocRotScale(Vector(loc), Quaternion(rot), Vector(scale))
-                else:
-                    mat = Matrix.LocRotScale(Vector(loc), Euler(rot, rot_mode).to_quaternion(), Vector(scale))
-
-                strip_keyframes.append((frame_idx, mat))
-
-            node_data[node_name].append(strip_keyframes)
-
-        nodes_without_fc = set(node_data.keys()) - set(node_fcurves.keys())
-        for node_name in nodes_without_fc:
-            node_data[node_name].append([])
-
-        if bake_action and temp_action:
-            armature.animation_data.action = None
-            bpy.data.actions.remove(temp_action)
-            temp_action = None
+        for node_name in node_names:
+            node_data[node_name].append(strip_results[node_name])
 
     armature.animation_data.action = original_action
+    scene.frame_set(original_frame)
 
 def export_scene(context, filepath, report):
     active_ob = context.view_layer.objects.active
@@ -1326,7 +1271,7 @@ def export_scene(context, filepath, report):
                 armature_ob.data.pose_position = 'POSE'
                 depsgraph.update()
             elif node_ob.type == "ARMATURE":
-                gather_keyframe_data(node_ob, key_dict)
+                gather_keyframe_data(context, node_ob, key_dict)
 
     get_scene_objects(context, b3d_data, b3d_data["nodes"], depsgraph, skin_info, key_dict, armature_ob)
 
