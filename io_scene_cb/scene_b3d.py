@@ -590,6 +590,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
+    mesh.transform(ob.matrix_world)
 
     uv_layer_count = len(mesh.uv_layers)
     color_layer_count = len(mesh.color_attributes)
@@ -642,6 +643,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                     specular_node = get_linked_node(node_group, "Specular Map", "TEX_IMAGE")
                     texture_entries = [lightmap_node, diffuse_node, specular_node]
                     for texture_entry_idx, texture_entry in enumerate(texture_entries):
+                        image_name = ""
                         texture_dict_idx = -1 
                         if not texture_entry:
                             # Limiting it to 2 because honestly I think the max inputs on this game is 2. Everything else is derived from the diffuse name
@@ -665,7 +667,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
 
                         img = texture_entry.image
                         if img and img.source == 'FILE' and img.filepath:
-                            image_name = img.name
+                            image_name = os.path.basename(img.filepath)
                             for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
                                 txd, tyd = texture_dict["position"]
                                 sxd, syd = texture_dict["scale"]
@@ -706,7 +708,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                                 fx += TextureFXFlags.force_high_color_textures.value
 
                             texture_dict = {
-                                "name": img.name,
+                                "name": image_name,
                                 "flags": fx,
                                 "texture_type": texture_type_val,
                                 "blend": img.cb.blend_type,
@@ -1253,31 +1255,45 @@ def export_scene(context, filepath, report):
     skin_info = None
     mesh_dict = None
     key_dict = defaultdict(list)
-    if active_ob is not None and active_ob.type == "ARMATURE" and active_ob.animation_data is not None and active_ob.animation_data.nla_tracks is not None:
-        armature_ob = active_ob
+    for node_ob in bpy.data.objects:
+        if node_ob.type == "MESH" and node_ob.parent.type == "ARMATURE" and node_ob.parent.animation_data is not None and node_ob.parent.animation_data.nla_tracks is not None:
+            armature_ob = node_ob.parent
 
-    if armature_ob is None:
-        for ob in bpy.data.objects:
-            if ob.type == "ARMATURE" and ob.animation_data is not None and ob.animation_data.nla_tracks is not None:
-                armature_ob = ob
-                break
+            armature_ob.data.pose_position = 'REST'
+            depsgraph.update()
 
-    if armature_ob:
-        for node_ob in bpy.data.objects:
-            if node_ob.type == "MESH" and node_ob.parent == armature_ob:
-                armature_ob.data.pose_position = 'REST'
-                depsgraph.update()
-                skin_info, mesh_dict = get_mesh(b3d_data, node_ob, depsgraph, armature_ob)
-                armature_ob.data.pose_position = 'POSE'
-                depsgraph.update()
-            elif node_ob.type == "ARMATURE":
-                gather_keyframe_data(context, node_ob, key_dict)
+            skin_info, mesh_dict = get_mesh(b3d_data, node_ob, depsgraph, armature_ob)
+
+            armature_ob.data.pose_position = 'POSE'
+            depsgraph.update()
+
+        elif node_ob.type == "ARMATURE":
+            gather_keyframe_data(context, node_ob, key_dict)
 
     get_scene_objects(context, b3d_data, b3d_data["nodes"], depsgraph, skin_info, key_dict, armature_ob)
 
     if armature_ob and len(b3d_data["nodes"]) > 0:
         root_node = b3d_data["nodes"][0]
         if mesh_dict is not None:
+            tx, tz, ty = root_node["position"]
+            sx, sz, sy = root_node["scale"]
+            rw, ri, rk, rj = root_node["rotation"]
+            root_transform = Matrix.LocRotScale(Vector((tx, ty, tz)),  Quaternion((rw, ri, rj, rk)), Vector((sx, sy, sz))).inverted()
+            for v_idx, vertex in enumerate(mesh_dict["vertices"]):
+                mtx, mtz, mty = vertex
+                mtx, mty, mtz = root_transform @ Vector((mtx, mty, mtz))
+
+                mesh_dict["vertices"][v_idx] = (mtx, mtz, mty)
+
+            for n_idx, normal in enumerate(mesh_dict["normals"]):
+                mni, mnk, mnj = normal
+                normal_matrix = root_transform.to_3x3().transposed()
+                world_normal = normal_matrix @ Vector((mni, mnj, mnk))
+                world_normal.normalize()
+                mni, mnj, mnk = world_normal
+
+                mesh_dict["normals"][n_idx] = (mni, mnk, mnj)
+            
             root_node["mesh"] = mesh_dict
 
         for nla_track in armature_ob.animation_data.nla_tracks:
