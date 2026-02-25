@@ -824,7 +824,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            x, y, z = Matrix.Scale(160.0, 4) @ (ob.matrix_world @ v.co)
+            x, y, z = Matrix.Scale(160.0, 4) @ v.co
             i, j, k = loop.normal
             pos = (x, z, y)
             loop_normal = (i, k, j)
