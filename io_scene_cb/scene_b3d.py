@@ -746,9 +746,10 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
 
                     texture_dict_idx = -1 
                     if diffuse_node is not None:
+                        image_name = ""
                         img = diffuse_node.image
                         if img and img.source == 'FILE' and img.filepath:
-                            image_name = img.name
+                            image_name = os.path.basename(img.filepath)
                             for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
                                 if image_name == texture_dict["name"]:
                                     texture_dict_idx = tex_idx
@@ -777,7 +778,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                                     fx += TextureFXFlags.force_high_color_textures.value
 
                                 texture_dict = {
-                                    "name": img.name,
+                                    "name": image_name,
                                     "flags": fx,
                                     "texture_type": 0,
                                     "blend": img.cb.blend_type,
