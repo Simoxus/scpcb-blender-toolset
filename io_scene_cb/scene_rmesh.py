@@ -274,6 +274,128 @@ def export_scene(context, filepath, file_type, report):
     for mesh_dict in section_data.values():
         rmesh_dict["meshes"].append(mesh_dict)
 
+    section_data = {}
+    for ob in render_list:
+        ob_eval = ob.evaluated_get(depsgraph)
+        mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+        mesh.calc_loop_triangles()
+
+        uv_layer_count = len(mesh.uv_layers)
+        color_layer_count = len(mesh.color_attributes)
+        layer_uv_0 = mesh.uv_layers.get("uvmap_render")
+        layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
+        layer_color = mesh.color_attributes.get("color")
+        if uv_layer_count > 0 and not layer_uv_0:
+            layer_uv_0 = mesh.uv_layers[0]
+        if uv_layer_count > 1 and not layer_uv_1:
+            layer_uv_1 = mesh.uv_layers[1]
+        if color_layer_count > 0 and not layer_color:
+            layer_color = mesh.color_attributes[0]
+
+        for tri in mesh.loop_triangles:
+            mat_name = get_material_name(ob, tri)
+            if mat_name not in section_data:
+                section_data[mat_name] = {"textures": [], "vertices": [], "triangles": [], "vertex_map": {}}
+                lightmap_texture_dict = {"texture_type": 0, "texture_name": ""}
+                diffuse_texture_dict = {"texture_type": 0, "texture_name": ""}
+
+                mat = bpy.data.materials.get(mat_name)
+                if mat and mat.use_nodes:
+                    output_material_node = get_output_material_node(mat)
+                    bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+                    node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+                    if node_group and node_group.node_tree.name == "rmesh_material":
+                        lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                        diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
+                        if lightmap_node is not None:
+                            img = lightmap_node.image
+                            if img and img.source == 'FILE' and img.filepath:
+                                lightmap_texture_dict["texture_type"] = node_group.inputs["Light Map Texture Type"].default_value
+                                lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+
+                        if diffuse_node is not None:
+                            img = diffuse_node.image
+                            if img and img.source == 'FILE' and img.filepath:
+                                diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
+                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+
+                    elif bdsf_principled:
+                        for node in mat.node_tree.nodes:
+                            if node.type == 'TEX_IMAGE':
+                                image = node.image
+                                if not image:
+                                    continue
+
+                                if image.filepath:
+                                    filename = os.path.basename(bpy.path.abspath(image.filepath))
+                                    name_no_ext = os.path.splitext(filename)[0]
+                                    if "_lm" in name_no_ext.lower():
+                                        lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
+                                        lightmap_texture_dict["texture_name"] = filename
+                                        break
+
+                        output_material_node = get_output_material_node(mat)
+                        bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+                        image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
+                        image_node_b = get_linked_node(bdsf_principled, "Alpha", "TEX_IMAGE")
+
+                        if image_node_a is not None:
+                            diffuse_texture_dict["texture_type"] = TextureType.opaque.value
+                            if image_node_a.image.filepath:
+                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(image_node_a.image.filepath))
+
+                            if image_node_a == image_node_b:
+                                diffuse_texture_dict["texture_type"] = TextureType.transparent.value
+
+                section_data[mat_name]["textures"].append(lightmap_texture_dict)
+                section_data[mat_name]["textures"].append(diffuse_texture_dict)
+
+            mesh_section = section_data[mat_name]
+            vertex_map = mesh_section["vertex_map"]
+            tri_indices = []
+            for loop_index in tri.loops:
+                loop = mesh.loops[loop_index]
+                v = mesh.vertices[loop.vertex_index]
+                loop_normal = flip(loop.normal)
+
+                pos = Vector(flip((ob_eval.matrix_world @ v.co))) * 160
+
+                uv_render = (0.0, 0.0)
+                uv_lightmap = (0.0, 0.0)
+                if layer_uv_0:
+                    u0, v0 = layer_uv_0.data[loop_index].uv
+                    uv_render = (u0, 1 - v0)
+
+                if layer_uv_1:
+                    u1, v1 = layer_uv_1.data[loop_index].uv
+                    uv_lightmap = (u1, 1 - v1)
+
+                color = (0, 0, 0)
+                if layer_color:
+                    r, g, b, a = layer_color.data[loop_index].color
+                    color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
+
+                if file_type == ExportFileType.rmesh_uer2:
+                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal)
+                else:
+                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color)
+                if key not in vertex_map:
+                    vertex_map[key] = len(mesh_section["vertices"])
+                    vert_dict = {"position": pos, "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}
+                    if file_type == ExportFileType.rmesh_uer2:
+                        vert_dict["normal"] = loop_normal
+
+                    mesh_section["vertices"].append(vert_dict)
+
+                tri_indices.append(vertex_map[key])
+
+            mesh_section["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
+
+        ob_eval.to_mesh_clear()
+
+    for mesh_dict in section_data.values():
+        rmesh_dict["render_meshes"].append(mesh_dict)
+
     for ob in collision_list:
         if ob.type == 'MESH':
             ob_eval = ob.evaluated_get(depsgraph)
@@ -519,11 +641,6 @@ def import_scene(context, filepath, file_type, report):
 
     random_color_gen = RandomColorGenerator() # generates a random sequence of colors
 
-    full_mesh = bpy.data.meshes.new("room_mesh")
-    object_mesh = bpy.data.objects.new("room_mesh", full_mesh)
-    object_mesh.cb.object_type = str(ObjectType.mesh.value)
-    mesh_collection.objects.link(object_mesh)
-
     error_log = set()
 
     local_asset_path = ""
@@ -535,6 +652,11 @@ def import_scene(context, filepath, file_type, report):
 
     if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
         local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
+
+    full_mesh = bpy.data.meshes.new("room_mesh")
+    object_mesh = bpy.data.objects.new("room_mesh", full_mesh)
+    object_mesh.cb.object_type = str(ObjectType.mesh.value)
+    mesh_collection.objects.link(object_mesh)
 
     bm = bmesh.new()
     for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
@@ -649,6 +771,133 @@ def import_scene(context, filepath, file_type, report):
 
     bm.to_mesh(full_mesh)
     bm.free()
+
+    if file_type == ImportFileType.rmesh_salvage:
+        has_mesh_data = False
+        for mesh_dict in rmesh_dict["render_meshes"]:
+            if len(mesh_dict["vertices"]) > 0:
+                has_mesh_data = True
+                break
+        if has_mesh_data:
+            render_collection = get_referenced_collection("render", context.scene.collection, False)
+            render_mesh = bpy.data.meshes.new("room_mesh_render")
+            object_render = bpy.data.objects.new("room_mesh_render", render_mesh)
+            object_render.cb.object_type = str(ObjectType.render.value)
+            render_collection.objects.link(object_render)
+
+            bm = bmesh.new()
+            for mesh_idx, mesh_dict in enumerate(rmesh_dict["render_meshes"]):
+                mesh = bpy.data.meshes.new("temp_mesh_%s" % mesh_idx)
+
+                vertices = [Vector(flip(vertex["position"])) * 0.00625 for vertex in mesh_dict["vertices"]]
+                triangles = [list(triangle.values())[::-1] for triangle in mesh_dict["triangles"]]
+                mesh.from_pydata(vertices, [], triangles)
+                mesh.validate(clean_customdata=True)
+
+                mat = bpy.data.materials.new(name="texture_%s" % mesh_idx)
+                mat.diffuse_color = random_color_gen.next()
+                mesh.materials.append(mat)
+                render_mesh.materials.append(mat)
+
+                mat.use_nodes = True
+                for node in mat.node_tree.nodes:
+                    mat.node_tree.nodes.remove(node)
+
+                output_material_node = get_output_material_node(mat)
+                output_material_node.location = Vector((0.0, 0.0))
+
+                rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "rmesh_material")
+                rmesh_node.name = "RMESH Material"
+                rmesh_node.location = (-440.0, 0.0)
+
+                connect_inputs(mat.node_tree, rmesh_node, "Shader", output_material_node, "Surface")
+
+                texture_lightmap = None
+                diffuse_type = TextureType.none
+                texture_diffuse = None
+                for texture_idx, texture_dict in enumerate(mesh_dict["textures"]):
+                    if texture_idx == 0:
+                        lightmap_type = TextureType(texture_dict["texture_type"])
+                        texture_lightmap_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
+                        if texture_lightmap_data:
+                            texture_lightmap = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                            texture_lightmap.image = texture_lightmap_data
+                            texture_lightmap.image.alpha_mode = 'CHANNEL_PACKED'
+                            texture_lightmap.location = (-720.0, -320.0)
+
+                            rmesh_node.inputs["Light Map Texture Type"].default_value = lightmap_type.value
+
+                            connect_inputs(mat.node_tree, texture_lightmap, "Color", rmesh_node, "Light Map")
+                            connect_inputs(mat.node_tree, texture_lightmap, "Alpha", rmesh_node, "Light Map Alpha")
+                            mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_lightmap)
+                            uv_node.uv_map = "uvmap_lightmap"
+                            mapping_node.vector_type = 'TEXTURE'
+
+                        elif len(texture_dict["texture_name"]) > 0:
+                            error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
+
+                    elif texture_idx == 1:
+                        diffuse_type = TextureType(texture_dict["texture_type"])
+                        texture_diffuse_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
+                        if texture_diffuse_data:
+                            texture_diffuse = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                            texture_diffuse.image = texture_diffuse_data
+                            texture_diffuse.image.alpha_mode = 'CHANNEL_PACKED'
+                            texture_diffuse.location = (-720.0, 0.0)
+
+                            rmesh_node.inputs["Diffuse Map Texture Type"].default_value = diffuse_type.value
+
+                            connect_inputs(mat.node_tree, texture_diffuse, "Color", rmesh_node, "Diffuse Map")
+                            connect_inputs(mat.node_tree, texture_diffuse, "Alpha", rmesh_node, "Diffuse Map Alpha")
+                            mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_diffuse)
+                            uv_node.uv_map = "uvmap_render"
+                            mapping_node.vector_type = 'TEXTURE'
+
+                            texture_name = os.path.basename(texture_dict["texture_name"]).rsplit(".", 1)[0]
+                            texture_bump_data = get_file("%sbump" % texture_name, directory_path=local_asset_path)
+                            if texture_bump_data:
+                                texture_bump = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                                texture_bump.image = texture_bump_data
+                                texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
+                                texture_bump.interpolation = 'Cubic'
+                                texture_bump.image.colorspace_settings.name = 'Non-Color'
+                                texture_bump.location = (-720.0, -640.0)
+                                connect_inputs(mat.node_tree, texture_bump, "Color", rmesh_node, "Normal Map")
+                                connect_inputs(mat.node_tree, texture_bump, "Alpha", rmesh_node, "Normal Map Alpha")
+                                mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_bump)
+                                uv_node.uv_map = "uvmap_render"
+                                mapping_node.vector_type = 'TEXTURE'
+
+                        elif len(texture_dict["texture_name"]) > 0:
+                            error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
+                            report({'WARNING'}, 'Failed to retrive "%s"' % texture_dict["texture_name"])
+                    else:
+                        report({'WARNING'}, 'Texture index out of range: %s' % texture_idx)
+
+                loop_normals = []
+                layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+                layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
+                layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
+                for poly in mesh.polygons:
+                    poly.use_smooth = True
+                    poly.material_index = mesh_idx
+                    for loop_index in poly.loop_indices:
+                        vert_index = mesh.loops[loop_index].vertex_index
+                        vertex = mesh_dict["vertices"][vert_index]
+                        layer_uv_0.data[loop_index].uv = (vertex["uv_render"][0], 1 - vertex["uv_render"][1])
+                        layer_uv_1.data[loop_index].uv = (vertex["uv_lightmap"][0], 1 - vertex["uv_lightmap"][1])
+                        layer_color.data[loop_index].color = (vertex["color"][0] / 255, vertex["color"][1] / 255, vertex["color"][2] / 255, 1.0)
+                        if file_type == ImportFileType.rmesh_uer2:
+                            loop_normals.append(Vector(flip(vertex["normal"])))
+
+                if file_type == ImportFileType.rmesh_uer2:
+                    mesh.normals_split_custom_set(loop_normals)
+
+                bm.from_mesh(mesh)
+                bpy.data.meshes.remove(mesh)
+
+            bm.to_mesh(render_mesh)
+            bm.free()
 
     for coll_mesh_idx, coll_mesh_dict in enumerate(rmesh_dict["collision_meshes"]):
         collision_name = "coll_mesh_%s" % coll_mesh_idx
