@@ -805,6 +805,9 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
 
                     texture_id_list.append(texture_dict_idx)
 
+            if len(texture_id_list) == 0:
+                texture_id_list.append(-1)
+
             material_dict = {
                 "name": mat_name,
                 "rgba": [
@@ -816,10 +819,9 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                 "shine": material_shine,
                 "blend": blend_type,
                 "fx": fx,
-                "tids": []
+                "tids": texture_id_list
             }
 
-            material_dict["tids"] = texture_id_list
             b3d_data["materials"].append(material_dict)
             material_dict_idx = len(b3d_data["materials"]) - 1
 
