@@ -543,11 +543,11 @@ class ExportRMESH(Operator, ExportHelper):
     file_type: EnumProperty(
         name="File Type:",
         description="What game was the model file made for",
-        items=[ ('0', "RMESH", "Import an RMESH intended for the original SCP CB"),
-                ('1', "RMESH Trigger Box", "Import an RMESH intended for the original SCP CB"),
-                ('2', "RMESH UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
-                ('3', "RMESH UER 2", "Import an RMESH intended for SCP CB UER 2.0"),
-                ('4', "RM", "Import an RMESH intended for the Salvage SCP CB fork")
+        items=[ ('0', "RMESH", "Export an RMESH intended for the original SCP CB"),
+                ('1', "RMESH Trigger Box", "Export an RMESH intended for the original SCP CB"),
+                ('2', "RMESH UER", "Export an RMESH intended for SCP CB UER 1.5.6"),
+                ('3', "RMESH UER 2", "Export an RMESH intended for SCP CB UER 2.0"),
+                ('4', "RM", "Export an RMESH intended for the Salvage SCP CB fork")
             ]
         )
 
@@ -579,6 +579,12 @@ class ImportRMESH(Operator, ImportHelper):
             ]
         )
 
+    fullbright_materials: BoolProperty(
+        name ="Enable Fullbright Materials",
+        description = "Materials will include the lightmap images but not use them in the display",
+        default = False,
+        )
+
     filter_glob: StringProperty(
         default="*.rmesh;*.rm",
         options={'HIDDEN'},
@@ -592,7 +598,7 @@ class ImportRMESH(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.report)
+        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.fullbright_materials, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):

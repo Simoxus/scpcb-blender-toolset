@@ -506,7 +506,7 @@ def export_scene(context, filepath, file_type, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
-def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, is_collision=False):
+def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, is_collision=False):
     mesh_name = "temp_mesh"
     if mesh_data is None:
         mesh_name = "mesh"
@@ -536,6 +536,9 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         rmesh_node.location = (-440.0, 0.0)
 
         connect_inputs(mat.node_tree, rmesh_node, "Shader", output_material_node, "Surface")
+
+        if fullbright_materials:
+            rmesh_node.inputs["Is Fullbright"].default_value = True
 
         texture_lightmap = None
         diffuse_type = TextureType.none
@@ -622,7 +625,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
 
     return mesh
 
-def import_scene(context, filepath, file_type, report):
+def import_scene(context, filepath, file_type, fullbright_materials, report):
     file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
@@ -667,7 +670,7 @@ def import_scene(context, filepath, file_type, report):
 
         bm = bmesh.new()
         for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
-            temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report)
+            temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
 
             bm.from_mesh(temp_mesh)
             bpy.data.meshes.remove(temp_mesh)
@@ -691,7 +694,7 @@ def import_scene(context, filepath, file_type, report):
 
             bm = bmesh.new()
             for render_idx, render_dict in enumerate(rmesh_dict["render_meshes"]):
-                temp_render = generate_mesh_data(render_dict, render_mesh, render_idx, local_asset_path, random_color_gen, error_log, file_type, report)
+                temp_render = generate_mesh_data(render_dict, render_mesh, render_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
 
                 bm.from_mesh(temp_render)
                 bpy.data.meshes.remove(temp_render)
@@ -702,7 +705,7 @@ def import_scene(context, filepath, file_type, report):
     if has_collision_data:
         collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
         for collision_idx, collision_dict in enumerate(rmesh_dict["collision_meshes"]):
-            collision_mesh = generate_mesh_data(collision_dict, None, collision_idx, local_asset_path, random_color_gen, error_log, file_type, report, True)
+            collision_mesh = generate_mesh_data(collision_dict, None, collision_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, True)
             collision_ob = bpy.data.objects.new("collision_%s" % collision_idx, collision_mesh)
             collision_ob.cb.object_type = str(ObjectType.collision.value)
             collision_collection.objects.link(collision_ob)
@@ -720,7 +723,7 @@ def import_scene(context, filepath, file_type, report):
             for trigger_box_idx, trigger_box_dict in enumerate(rmesh_dict["trigger_boxes"]):
                 for trigger_idx, trigger_dict in enumerate(trigger_box_dict["meshes"]):
                     trigger_name = "trigger_g%st%s" % (trigger_box_idx, trigger_idx)
-                    trigger_mesh = generate_mesh_data(trigger_dict, None, trigger_idx, local_asset_path, random_color_gen, error_log, file_type, report, True)
+                    trigger_mesh = generate_mesh_data(trigger_dict, None, trigger_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, True)
                     trigger_mesh_object_mesh = bpy.data.objects.new(trigger_name, trigger_mesh)
                     trigger_mesh_object_mesh.cb.object_type = str(ObjectType.trigger_box.value)
                     trigger_mesh_object_mesh.cb.trigger_group = trigger_box_dict["name"]
