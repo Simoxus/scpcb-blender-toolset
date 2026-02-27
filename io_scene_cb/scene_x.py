@@ -42,8 +42,14 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         poly.use_smooth = True
 
     if not x_dict["xof_header"] == "xof 0302txt 0064":
-        for material_dict in mesh_dict["materials"]:
-            material = bpy.data.materials.new(name=material_dict["name"])
+        for material_idx, material_dict in enumerate(mesh_dict["materials"]):
+            material_name = ""
+            if material_dict["name"] is None:
+                material_name = "materIal_%s" % material_idx
+            else:
+                material_name = material_dict["name"]
+
+            material = bpy.data.materials.new(name=material_name)
             material.diffuse_color = random_color_gen.next()
 
             mesh.materials.append(material)
