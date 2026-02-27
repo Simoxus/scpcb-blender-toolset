@@ -575,7 +575,7 @@ class ImportRMESH(Operator, ImportHelper):
                 ('2', "RMESH Trigger Box", "Import an RMESH intended for the original SCP CB"),
                 ('3', "RMESH UER", "Import an RMESH intended for SCP CB UER 1.5.6"),
                 ('4', "RMESH UER 2", "Import an RMESH intended for SCP CB UER 2.0"),
-                ('5', "RM", "Import an RMESH intended for Salvage Steam release of SCP CB"),
+                ('5', "RM", "Import an RMESH intended for the Salvage SCP CB fork"),
             ]
         )
 
