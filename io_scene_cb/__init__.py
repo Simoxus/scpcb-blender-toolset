@@ -673,6 +673,12 @@ class ImportB3D(Operator, ImportHelper):
     bl_label = "Import B3D"
     filename_ext = '.b3d'
 
+    fullbright_materials: BoolProperty(
+        name ="Enable Fullbright Materials",
+        description = "Materials will include the lightmap images but not use them in the display",
+        default = False,
+        )
+
     filter_glob: StringProperty(
         default="*.b3d",
         options={'HIDDEN'},
@@ -686,7 +692,7 @@ class ImportB3D(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_b3d
 
-        return scene_b3d.import_scene(context, Path(self.filepath), self.report)
+        return scene_b3d.import_scene(context, Path(self.filepath), self.fullbright_materials, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):

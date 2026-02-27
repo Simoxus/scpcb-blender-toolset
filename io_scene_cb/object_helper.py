@@ -52,7 +52,7 @@ def CreateObject(ob_bm, ob_data, ob_transform, model_path):
         temp_data = bpy.data.meshes.new("door_entity")
         bm = bmesh.new()
         is_simple=True
-        import_b3d(bpy.context, model_path, print, bm, ob_data, is_simple)
+        import_b3d(bpy.context, model_path, False, print, bm, ob_data, is_simple)
         for f in bm.faces:
             f.material_index = material_count + f.material_index
 

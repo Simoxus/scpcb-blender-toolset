@@ -1330,7 +1330,7 @@ def find_bones(node, bone_check_list, uv_counts):
     for child_node in node["nodes"]:
         find_bones(child_node, bone_check_list, uv_counts)
     
-def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
+def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
 
     local_asset_path = ""
@@ -1381,6 +1381,9 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
             set_material_properties(b3d_node, material_dict)
 
             connect_inputs(material.node_tree, b3d_node, "Shader", output_material_node, "Surface")
+
+            if fullbright_materials:
+                b3d_node.inputs["Is Fullbright"].default_value = True
 
             valid_texture_id_count = 0
             for tid_element in material_dict["tids"]:
