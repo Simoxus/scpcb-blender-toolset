@@ -117,6 +117,133 @@ def collect_objects():
 
     return mesh_list, render_list, collision_list, trigger_box_list, entity_list
 
+def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False):
+    ob_eval = ob.evaluated_get(depsgraph)
+    mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+    mesh.calc_loop_triangles()
+
+    layer_uv_0 = None
+    layer_uv_1 = None
+    layer_color = None
+    if not is_collision:
+        uv_layer_count = len(mesh.uv_layers)
+        color_layer_count = len(mesh.color_attributes)
+        layer_uv_0 = mesh.uv_layers.get("uvmap_render")
+        layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
+        layer_color = mesh.color_attributes.get("color")
+        if uv_layer_count > 0 and not layer_uv_0:
+            layer_uv_0 = mesh.uv_layers[0]
+        if uv_layer_count > 1 and not layer_uv_1:
+            layer_uv_1 = mesh.uv_layers[1]
+        if color_layer_count > 0 and not layer_color:
+            layer_color = mesh.color_attributes[0]
+
+    for tri in mesh.loop_triangles:
+        if not is_collision:
+            mat_name = get_material_name(ob, tri)
+            if mat_name not in section_data:
+                section_data[mat_name] = {"textures": [], "vertices": [], "triangles": [], "vertex_map": {}}
+                lightmap_texture_dict = {"texture_type": 0, "texture_name": ""}
+                diffuse_texture_dict = {"texture_type": 0, "texture_name": ""}
+
+                mat = bpy.data.materials.get(mat_name)
+                if mat and mat.use_nodes:
+                    output_material_node = get_output_material_node(mat)
+                    bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+                    node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+                    if node_group and node_group.node_tree.name == "rmesh_material":
+                        lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                        diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
+                        if lightmap_node is not None:
+                            img = lightmap_node.image
+                            if img and img.source == 'FILE' and img.filepath:
+                                lightmap_texture_dict["texture_type"] = node_group.inputs["Light Map Texture Type"].default_value
+                                lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+
+                        if diffuse_node is not None:
+                            img = diffuse_node.image
+                            if img and img.source == 'FILE' and img.filepath:
+                                diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
+                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+
+                    elif bdsf_principled:
+                        for node in mat.node_tree.nodes:
+                            if node.type == 'TEX_IMAGE':
+                                image = node.image
+                                if not image:
+                                    continue
+
+                                if image.filepath:
+                                    filename = os.path.basename(bpy.path.abspath(image.filepath))
+                                    name_no_ext = os.path.splitext(filename)[0]
+                                    if "_lm" in name_no_ext.lower():
+                                        lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
+                                        lightmap_texture_dict["texture_name"] = filename
+                                        break
+
+                        output_material_node = get_output_material_node(mat)
+                        bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
+                        image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
+                        image_node_b = get_linked_node(bdsf_principled, "Alpha", "TEX_IMAGE")
+
+                        if image_node_a is not None:
+                            diffuse_texture_dict["texture_type"] = TextureType.opaque.value
+                            if image_node_a.image.filepath:
+                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(image_node_a.image.filepath))
+
+                            if image_node_a == image_node_b:
+                                diffuse_texture_dict["texture_type"] = TextureType.transparent.value
+
+                section_data[mat_name]["textures"].append(lightmap_texture_dict)
+                section_data[mat_name]["textures"].append(diffuse_texture_dict)
+        else:
+            mat_name = ob.name
+            if mat_name not in section_data:
+                section_data[mat_name] = {"textures": [], "vertices": [], "triangles": [], "vertex_map": {}}
+
+        mesh_section = section_data[mat_name]
+        vertex_map = mesh_section["vertex_map"]
+        tri_indices = []
+        for loop_index in tri.loops:
+            loop = mesh.loops[loop_index]
+            v = mesh.vertices[loop.vertex_index]
+            loop_normal = flip(loop.normal)
+
+            pos = Vector(flip((ob_eval.matrix_world @ v.co))) * 160
+
+            uv_render = (0.0, 0.0)
+            uv_lightmap = (0.0, 0.0)
+            if layer_uv_0:
+                u0, v0 = layer_uv_0.data[loop_index].uv
+                uv_render = (u0, 1 - v0)
+
+            if layer_uv_1:
+                u1, v1 = layer_uv_1.data[loop_index].uv
+                uv_lightmap = (u1, 1 - v1)
+
+            color = (0, 0, 0)
+            if layer_color:
+                r, g, b, a = layer_color.data[loop_index].color
+                color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
+
+            if file_type == ExportFileType.rmesh_uer2:
+                key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal)
+            else:
+                key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color)
+            if key not in vertex_map:
+                vertex_map[key] = len(mesh_section["vertices"])
+                vert_dict = {"position": pos, "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}
+                if file_type == ExportFileType.rmesh_uer2:
+                    vert_dict["normal"] = loop_normal
+
+                mesh_section["vertices"].append(vert_dict)
+
+            tri_indices.append(vertex_map[key])
+
+        mesh_section["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
+
+    ob_eval.to_mesh_clear()
+
 def export_scene(context, filepath, file_type, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -152,306 +279,48 @@ def export_scene(context, filepath, file_type, report):
 
     depsgraph = context.evaluated_depsgraph_get()
 
-    section_data = {}
-    for ob in mesh_list:
-        ob_eval = ob.evaluated_get(depsgraph)
-        mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-        mesh.calc_loop_triangles()
+    mesh_section_data = {}
+    for mesh_ob in mesh_list:
+        gather_mesh_data(mesh_ob, depsgraph, mesh_section_data, file_type)
 
-        uv_layer_count = len(mesh.uv_layers)
-        color_layer_count = len(mesh.color_attributes)
-        layer_uv_0 = mesh.uv_layers.get("uvmap_render")
-        layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
-        layer_color = mesh.color_attributes.get("color")
-        if uv_layer_count > 0 and not layer_uv_0:
-            layer_uv_0 = mesh.uv_layers[0]
-        if uv_layer_count > 1 and not layer_uv_1:
-            layer_uv_1 = mesh.uv_layers[1]
-        if color_layer_count > 0 and not layer_color:
-            layer_color = mesh.color_attributes[0]
-
-        for tri in mesh.loop_triangles:
-            mat_name = get_material_name(ob, tri)
-            if mat_name not in section_data:
-                section_data[mat_name] = {"textures": [], "vertices": [], "triangles": [], "vertex_map": {}}
-                lightmap_texture_dict = {"texture_type": 0, "texture_name": ""}
-                diffuse_texture_dict = {"texture_type": 0, "texture_name": ""}
-
-                mat = bpy.data.materials.get(mat_name)
-                if mat and mat.use_nodes:
-                    output_material_node = get_output_material_node(mat)
-                    bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
-                    node_group = get_linked_node(output_material_node, "Surface", "GROUP")
-                    if node_group and node_group.node_tree.name == "rmesh_material":
-                        lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
-                        diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
-                        if lightmap_node is not None:
-                            img = lightmap_node.image
-                            if img and img.source == 'FILE' and img.filepath:
-                                lightmap_texture_dict["texture_type"] = node_group.inputs["Light Map Texture Type"].default_value
-                                lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
-
-                        if diffuse_node is not None:
-                            img = diffuse_node.image
-                            if img and img.source == 'FILE' and img.filepath:
-                                diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
-                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
-
-                    elif bdsf_principled:
-                        for node in mat.node_tree.nodes:
-                            if node.type == 'TEX_IMAGE':
-                                image = node.image
-                                if not image:
-                                    continue
-
-                                if image.filepath:
-                                    filename = os.path.basename(bpy.path.abspath(image.filepath))
-                                    name_no_ext = os.path.splitext(filename)[0]
-                                    if "_lm" in name_no_ext.lower():
-                                        lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
-                                        lightmap_texture_dict["texture_name"] = filename
-                                        break
-
-                        output_material_node = get_output_material_node(mat)
-                        bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
-                        image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
-                        image_node_b = get_linked_node(bdsf_principled, "Alpha", "TEX_IMAGE")
-
-                        if image_node_a is not None:
-                            diffuse_texture_dict["texture_type"] = TextureType.opaque.value
-                            if image_node_a.image.filepath:
-                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(image_node_a.image.filepath))
-
-                            if image_node_a == image_node_b:
-                                diffuse_texture_dict["texture_type"] = TextureType.transparent.value
-
-                section_data[mat_name]["textures"].append(lightmap_texture_dict)
-                section_data[mat_name]["textures"].append(diffuse_texture_dict)
-
-            mesh_section = section_data[mat_name]
-            vertex_map = mesh_section["vertex_map"]
-            tri_indices = []
-            for loop_index in tri.loops:
-                loop = mesh.loops[loop_index]
-                v = mesh.vertices[loop.vertex_index]
-                loop_normal = flip(loop.normal)
-
-                pos = Vector(flip((ob_eval.matrix_world @ v.co))) * 160
-
-                uv_render = (0.0, 0.0)
-                uv_lightmap = (0.0, 0.0)
-                if layer_uv_0:
-                    u0, v0 = layer_uv_0.data[loop_index].uv
-                    uv_render = (u0, 1 - v0)
-
-                if layer_uv_1:
-                    u1, v1 = layer_uv_1.data[loop_index].uv
-                    uv_lightmap = (u1, 1 - v1)
-
-                color = (0, 0, 0)
-                if layer_color:
-                    r, g, b, a = layer_color.data[loop_index].color
-                    color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
-
-                if file_type == ExportFileType.rmesh_uer2:
-                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal)
-                else:
-                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color)
-                if key not in vertex_map:
-                    vertex_map[key] = len(mesh_section["vertices"])
-                    vert_dict = {"position": pos, "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}
-                    if file_type == ExportFileType.rmesh_uer2:
-                        vert_dict["normal"] = loop_normal
-
-                    mesh_section["vertices"].append(vert_dict)
-
-                tri_indices.append(vertex_map[key])
-
-            mesh_section["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
-
-        ob_eval.to_mesh_clear()
-
-    for mesh_dict in section_data.values():
+    for mesh_dict in mesh_section_data.values():
         rmesh_dict["meshes"].append(mesh_dict)
 
-    section_data = {}
-    for ob in render_list:
-        ob_eval = ob.evaluated_get(depsgraph)
-        mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-        mesh.calc_loop_triangles()
+    render_section_data = {}
+    for render_ob in render_list:
+        gather_mesh_data(render_ob, depsgraph, render_section_data, file_type)
 
-        uv_layer_count = len(mesh.uv_layers)
-        color_layer_count = len(mesh.color_attributes)
-        layer_uv_0 = mesh.uv_layers.get("uvmap_render")
-        layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
-        layer_color = mesh.color_attributes.get("color")
-        if uv_layer_count > 0 and not layer_uv_0:
-            layer_uv_0 = mesh.uv_layers[0]
-        if uv_layer_count > 1 and not layer_uv_1:
-            layer_uv_1 = mesh.uv_layers[1]
-        if color_layer_count > 0 and not layer_color:
-            layer_color = mesh.color_attributes[0]
+    for render_dict in render_section_data.values():
+        rmesh_dict["render_meshes"].append(render_dict)
 
-        for tri in mesh.loop_triangles:
-            mat_name = get_material_name(ob, tri)
-            if mat_name not in section_data:
-                section_data[mat_name] = {"textures": [], "vertices": [], "triangles": [], "vertex_map": {}}
-                lightmap_texture_dict = {"texture_type": 0, "texture_name": ""}
-                diffuse_texture_dict = {"texture_type": 0, "texture_name": ""}
-
-                mat = bpy.data.materials.get(mat_name)
-                if mat and mat.use_nodes:
-                    output_material_node = get_output_material_node(mat)
-                    bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
-                    node_group = get_linked_node(output_material_node, "Surface", "GROUP")
-                    if node_group and node_group.node_tree.name == "rmesh_material":
-                        lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
-                        diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
-                        if lightmap_node is not None:
-                            img = lightmap_node.image
-                            if img and img.source == 'FILE' and img.filepath:
-                                lightmap_texture_dict["texture_type"] = node_group.inputs["Light Map Texture Type"].default_value
-                                lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
-
-                        if diffuse_node is not None:
-                            img = diffuse_node.image
-                            if img and img.source == 'FILE' and img.filepath:
-                                diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
-                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
-
-                    elif bdsf_principled:
-                        for node in mat.node_tree.nodes:
-                            if node.type == 'TEX_IMAGE':
-                                image = node.image
-                                if not image:
-                                    continue
-
-                                if image.filepath:
-                                    filename = os.path.basename(bpy.path.abspath(image.filepath))
-                                    name_no_ext = os.path.splitext(filename)[0]
-                                    if "_lm" in name_no_ext.lower():
-                                        lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
-                                        lightmap_texture_dict["texture_name"] = filename
-                                        break
-
-                        output_material_node = get_output_material_node(mat)
-                        bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
-                        image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
-                        image_node_b = get_linked_node(bdsf_principled, "Alpha", "TEX_IMAGE")
-
-                        if image_node_a is not None:
-                            diffuse_texture_dict["texture_type"] = TextureType.opaque.value
-                            if image_node_a.image.filepath:
-                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(image_node_a.image.filepath))
-
-                            if image_node_a == image_node_b:
-                                diffuse_texture_dict["texture_type"] = TextureType.transparent.value
-
-                section_data[mat_name]["textures"].append(lightmap_texture_dict)
-                section_data[mat_name]["textures"].append(diffuse_texture_dict)
-
-            mesh_section = section_data[mat_name]
-            vertex_map = mesh_section["vertex_map"]
-            tri_indices = []
-            for loop_index in tri.loops:
-                loop = mesh.loops[loop_index]
-                v = mesh.vertices[loop.vertex_index]
-                loop_normal = flip(loop.normal)
-
-                pos = Vector(flip((ob_eval.matrix_world @ v.co))) * 160
-
-                uv_render = (0.0, 0.0)
-                uv_lightmap = (0.0, 0.0)
-                if layer_uv_0:
-                    u0, v0 = layer_uv_0.data[loop_index].uv
-                    uv_render = (u0, 1 - v0)
-
-                if layer_uv_1:
-                    u1, v1 = layer_uv_1.data[loop_index].uv
-                    uv_lightmap = (u1, 1 - v1)
-
-                color = (0, 0, 0)
-                if layer_color:
-                    r, g, b, a = layer_color.data[loop_index].color
-                    color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
-
-                if file_type == ExportFileType.rmesh_uer2:
-                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal)
-                else:
-                    key = (round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color)
-                if key not in vertex_map:
-                    vertex_map[key] = len(mesh_section["vertices"])
-                    vert_dict = {"position": pos, "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}
-                    if file_type == ExportFileType.rmesh_uer2:
-                        vert_dict["normal"] = loop_normal
-
-                    mesh_section["vertices"].append(vert_dict)
-
-                tri_indices.append(vertex_map[key])
-
-            mesh_section["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
-
-        ob_eval.to_mesh_clear()
-
-    for mesh_dict in section_data.values():
-        rmesh_dict["render_meshes"].append(mesh_dict)
-
+    collision_section_data = {}
     for ob in collision_list:
-        if ob.type == 'MESH':
-            ob_eval = ob.evaluated_get(depsgraph)
-            mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-            mesh.calc_loop_triangles()
+        gather_mesh_data(ob, depsgraph, collision_section_data, file_type, True)
 
-            mesh_dict = {
-                "vertices": [],
-                "triangles": []
-            }
-            for v in mesh.vertices:
-                pos = Vector(flip(ob_eval.matrix_world @ v.co)) * 160
-                mesh_dict["vertices"].append({"position": pos})
+    for collision_dict in collision_section_data.values():
+        rmesh_dict["collision_meshes"].append(collision_dict)
 
-            for tri in mesh.loop_triangles:
-                tri_indices = [mesh.loops[loop_index].vertex_index for loop_index in tri.loops]
-                mesh_dict["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
-
-            ob_eval.to_mesh_clear()
-            rmesh_dict["collision_meshes"].append(mesh_dict)
-
-    if file_type == ExportFileType.rmesh_tb:
+    if file_type == ExportFileType.rmesh_tb or file_type == ExportFileType.rmesh_salvage:
         for ob in trigger_box_list:
-            if ob.type == 'MESH':
-                trigger_group = ob.cb.trigger_group
-                if is_string_empty(trigger_group):
-                    trigger_group = "unnamed"
+            trigger_group = ob.cb.trigger_group
+            if is_string_empty(trigger_group):
+                trigger_group = "unnamed"
 
-                trigger_entry = None
-                for trigger_dict in rmesh_dict["trigger_boxes"]:
-                    if trigger_dict["name"] == trigger_group:
-                        trigger_entry = trigger_dict
-                        break
+            trigger_entry = None
+            for trigger_dict in rmesh_dict["trigger_boxes"]:
+                if trigger_dict["name"] == trigger_group:
+                    trigger_entry = trigger_dict
+                    break
 
-                if trigger_entry is None:
-                    trigger_entry = {"meshes": [], "name": trigger_group}
-                    rmesh_dict["trigger_boxes"].append(trigger_entry)
+            if trigger_entry is None:
+                trigger_entry = {"meshes": [], "name": trigger_group}
+                rmesh_dict["trigger_boxes"].append(trigger_entry)
 
-                ob_eval = ob.evaluated_get(depsgraph)
-                mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-                mesh.calc_loop_triangles()
+            tb_section_data = {}
+            gather_mesh_data(ob, depsgraph, tb_section_data, file_type, True)
 
-                mesh_dict = {
-                    "vertices": [],
-                    "triangles": []
-                }
-                for v in mesh.vertices:
-                    pos = Vector(flip(ob_eval.matrix_world @ v.co)) * 160
-                    mesh_dict["vertices"].append({"position": pos})
-
-                for tri in mesh.loop_triangles:
-                    tri_indices = [mesh.loops[loop_index].vertex_index for loop_index in tri.loops]
-                    mesh_dict["triangles"].append({"a": tri_indices[2], "b": tri_indices[1], "c": tri_indices[0]})
-
-                trigger_entry["meshes"].append(mesh_dict)
-                ob_eval.to_mesh_clear()
+            for tb_dict in tb_section_data.values():
+                trigger_entry["meshes"].append(tb_dict)
 
     for ob in entity_list:
         object_type = ObjectType(int(ob.cb.object_type))
@@ -838,7 +707,7 @@ def import_scene(context, filepath, file_type, report):
             collision_ob.cb.object_type = str(ObjectType.collision.value)
             collision_collection.objects.link(collision_ob)
 
-    if file_type == ImportFileType.rmesh_tb:
+    if file_type == ImportFileType.rmesh_tb or file_type == ImportFileType.rmesh_salvage:
         has_tb_data = False
         for tb_group_dict in rmesh_dict["trigger_boxes"]:
             for tb_dict in tb_group_dict["meshes"]:
@@ -1149,7 +1018,7 @@ def import_scene(context, filepath, file_type, report):
                     button_type = ButtonType.keycard
 
                 door_state = DoorState(entity_dict["start_open"])
-                ob_data = create_door(door_type, button_type, door_state)
+                ob_data = create_door(door_type, button_type, door_state, file_type)
                 object_mesh = bpy.data.objects.new("%s door" % entity_idx, ob_data)
                 object_mesh.cb.object_type = str(ObjectType.entity_door.value)
                 entity_collection.objects.link(object_mesh)
@@ -1163,8 +1032,10 @@ def import_scene(context, filepath, file_type, report):
                 object_mesh.cb.key_card_level = entity_dict["key_card_level"]
                 object_mesh.cb.keypad_code = entity_dict["keypad_code"]
                 object_mesh.cb.start_open = bool(entity_dict["start_open"])
-                object_mesh.cb.locked = bool(entity_dict["locked"])
-                object_mesh.cb.delete_half = bool(entity_dict["delete_half"])
+                if file_type == ImportFileType.rmesh_salvage:
+                    object_mesh.cb.locked = bool(entity_dict["locked"])
+                    object_mesh.cb.delete_half = bool(entity_dict["delete_half"])
+
                 object_mesh.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
 
             else:

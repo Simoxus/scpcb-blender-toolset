@@ -465,8 +465,23 @@ def render_entity_door(context, layout, active_property):
     row.label(text='Start Open:')
     row.prop(active_property, "start_open", text='')
     row = col.row()
+    row.label(text='Locked:')
+    row.prop(active_property, "locked", text='')
+    row = col.row()
+    row.label(text='Delete Half:')
+    row.prop(active_property, "delete_half", text='')
+    row = col.row()
     row.label(text='Allow SCP-079 Remote Control:')
     row.prop(active_property, "allow_scp_079_remote_control", text='')
+    row = col.row()
+    row.label(text='Door Object:')
+    row.prop(active_property, "door_ob", text='')
+    row = col.row()
+    row.label(text='Button A:')
+    row.prop(active_property, "button_a_ob", text='')
+    row = col.row()
+    row.label(text='Button B:')
+    row.prop(active_property, "button_b_ob", text='')
 
 class CB_ObjectProps(Panel):
     bl_label = "CB Object Properties"

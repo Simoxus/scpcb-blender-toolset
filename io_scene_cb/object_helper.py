@@ -5,6 +5,7 @@ import bmesh
 from math import radians
 from pathlib import Path
 from enum import Enum, auto
+from .process_rmesh import ImportFileType
 from mathutils import Matrix, Vector, Euler
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
@@ -61,7 +62,7 @@ def CreateObject(ob_bm, ob_data, ob_transform, model_path):
         bm.free()
         bpy.data.meshes.remove(temp_data)
 
-def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed):
+def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed, file_type=ImportFileType.rmesh):
     ob_data = bpy.data.meshes.new("door_entity")
     ob_bm = bmesh.new()
 
@@ -133,10 +134,16 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         CreateObject(ob_bm, ob_data, ob_matrix, DoorFramePath)
 
     if door_type == DoorType.big:
-        ob_matrix = Matrix.LocRotScale(Vector((2.7, -1.2, 1.12)), Euler((0, 0, radians(-90))), Vector((7.7, 7.7, 7.7)))
-        CreateObject(ob_bm, ob_data, ob_matrix, ButtonPath)
-        ob_matrix = Matrix.LocRotScale(Vector((-2.7, 1.2, 1.12)), Euler((0, 0, radians(90))), Vector((7.7, 7.7, 7.7)))
-        CreateObject(ob_bm, ob_data, ob_matrix, ButtonPath)
+        if file_type == ImportFileType.rmesh_salvage:
+            ob_a_matrix = Matrix.LocRotScale(Vector((2.7, -1.2, 1.12)), Euler((0, 0, radians(-90))), Vector((7.7, 7.7, 7.7)))
+            ob_b_matrix = Matrix.LocRotScale(Vector((-2.7, 1.2, 1.12)), Euler((0, 0, radians(90))), Vector((7.7, 7.7, 7.7)))
+        else:
+            ob_a_matrix = Matrix.LocRotScale(Euler((0, 0, radians(180))).to_matrix() @ Vector((-2.70001, 1.2, 1.12)), Euler((0, 0, radians(-90))), Vector((7.7, 7.7, 7.7)))
+            ob_b_matrix = Matrix.LocRotScale(Euler((0, 0, radians(180))).to_matrix() @ Vector((3.1, -0.6, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
+
+        CreateObject(ob_bm, ob_data, ob_a_matrix, ButtonPath)
+
+        CreateObject(ob_bm, ob_data, ob_b_matrix, ButtonPath)
 
     else:
         ob_matrix = Matrix.LocRotScale(Vector((0.959999, -0.16, 1.12)), Euler((0, 0, 0)), Vector((7.7, 7.7, 7.7)))
