@@ -622,7 +622,14 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["keypad_code"] = ob.cb.keypad_code
             entity_dict["angle"] = degrees(z)
             entity_dict["start_open"] = ob.cb.start_open
+            entity_dict["locked"] = ob.cb.locked
+            entity_dict["delete_half"] = ob.cb.delete_half
             entity_dict["allow_scp_079_remote_control"] = ob.cb.allow_scp_079_remote_control
+            entity_dict["button_1_position"] = Vector()
+            entity_dict["button_1_angle"] = Vector()
+            entity_dict["button_2_position"] = Vector()
+            entity_dict["button_2_angle"] = Vector()
+
             rmesh_dict["entities"].append(entity_dict)
 
     write_rmesh(rmesh_dict, filepath, file_type)
@@ -630,47 +637,23 @@ def export_scene(context, filepath, file_type, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
-def import_scene(context, filepath, file_type, report):
-    file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
+def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, is_collision=False):
+    mesh_name = "temp_mesh"
+    if mesh_data is None:
+        mesh_name = "mesh"
 
-    game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
+    mesh = bpy.data.meshes.new("%s_%s" % (mesh_name, mesh_idx))
 
-    mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
-    collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
-    entity_collection = get_referenced_collection("entities", context.scene.collection, False)
+    vertices = [Vector(flip(vertex["position"])) * 0.00625 for vertex in mesh_dict["vertices"]]
+    triangles = [list(triangle.values())[::-1] for triangle in mesh_dict["triangles"]]
+    mesh.from_pydata(vertices, [], triangles)
+    mesh.validate(clean_customdata=True)
 
-    random_color_gen = RandomColorGenerator() # generates a random sequence of colors
-
-    error_log = set()
-
-    local_asset_path = ""
-    local_prop_path = r"GFX\map\Props"
-    local_screen_path = r"GFX\screens"
-    if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
-        local_prop_path = r"GFX\Map\Props"
-        local_screen_path = r"GFX\Map\Screens"
-
-    if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
-        local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
-
-    full_mesh = bpy.data.meshes.new("room_mesh")
-    object_mesh = bpy.data.objects.new("room_mesh", full_mesh)
-    object_mesh.cb.object_type = str(ObjectType.mesh.value)
-    mesh_collection.objects.link(object_mesh)
-
-    bm = bmesh.new()
-    for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
-        mesh = bpy.data.meshes.new("temp_mesh_%s" % mesh_idx)
-
-        vertices = [Vector(flip(vertex["position"])) * 0.00625 for vertex in mesh_dict["vertices"]]
-        triangles = [list(triangle.values())[::-1] for triangle in mesh_dict["triangles"]]
-        mesh.from_pydata(vertices, [], triangles)
-        mesh.validate(clean_customdata=True)
-
+    if not is_collision:
         mat = bpy.data.materials.new(name="texture_%s" % mesh_idx)
         mat.diffuse_color = random_color_gen.next()
         mesh.materials.append(mat)
-        full_mesh.materials.append(mat)
+        mesh_data.materials.append(mat)
 
         mat.use_nodes = True
         for node in mat.node_tree.nodes:
@@ -751,8 +734,10 @@ def import_scene(context, filepath, file_type, report):
         layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
         layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
         layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
-        for poly in mesh.polygons:
-            poly.use_smooth = True
+
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+        if not is_collision:
             poly.material_index = mesh_idx
             for loop_index in poly.loop_indices:
                 vert_index = mesh.loops[loop_index].vertex_index
@@ -763,22 +748,72 @@ def import_scene(context, filepath, file_type, report):
                 if file_type == ImportFileType.rmesh_uer2:
                     loop_normals.append(Vector(flip(vertex["normal"])))
 
-        if file_type == ImportFileType.rmesh_uer2:
-            mesh.normals_split_custom_set(loop_normals)
+    if file_type == ImportFileType.rmesh_uer2 and not is_collision:
+        mesh.normals_split_custom_set(loop_normals)
 
-        bm.from_mesh(mesh)
-        bpy.data.meshes.remove(mesh)
+    return mesh
 
-    bm.to_mesh(full_mesh)
-    bm.free()
+def import_scene(context, filepath, file_type, report):
+    file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
+
+    game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
+
+    random_color_gen = RandomColorGenerator() # generates a random sequence of colors
+
+    error_log = set()
+
+    local_asset_path = ""
+    local_prop_path = r"GFX\map\Props"
+    local_screen_path = r"GFX\screens"
+    if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
+        local_prop_path = r"GFX\Map\Props"
+        local_screen_path = r"GFX\Map\Screens"
+
+    if not is_string_empty(str(game_path)) and str(filepath).startswith(str(game_path)):
+        local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
+
+    has_mesh_data = False
+    has_collision_data = False
+    has_entity_data = False
+    for mesh_dict in rmesh_dict["meshes"]:
+        if len(mesh_dict["vertices"]) > 0:
+            has_mesh_data = True
+            break
+
+    for collision_dict in rmesh_dict["collision_meshes"]:
+        if len(collision_dict["vertices"]) > 0:
+            has_collision_data = True
+            break
+
+    if len(rmesh_dict["entities"]) > 0:
+        has_entity_data = True
+
+    if has_mesh_data:
+        mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
+
+        full_mesh = bpy.data.meshes.new("room_mesh")
+        object_mesh = bpy.data.objects.new("room_mesh", full_mesh)
+        object_mesh.cb.object_type = str(ObjectType.mesh.value)
+        mesh_collection.objects.link(object_mesh)
+
+        bm = bmesh.new()
+        for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
+            temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report)
+
+            bm.from_mesh(temp_mesh)
+            bpy.data.meshes.remove(temp_mesh)
+
+        bm.to_mesh(full_mesh)
+        bm.free()
 
     if file_type == ImportFileType.rmesh_salvage:
-        has_mesh_data = False
-        for mesh_dict in rmesh_dict["render_meshes"]:
-            if len(mesh_dict["vertices"]) > 0:
-                has_mesh_data = True
+        has_render_data = False
+        for render_dict in rmesh_dict["render_meshes"]:
+            if len(render_dict["vertices"]) > 0:
+                has_render_data = True
                 break
-        if has_mesh_data:
+
+        if has_render_data:
             render_collection = get_referenced_collection("render", context.scene.collection, False)
             render_mesh = bpy.data.meshes.new("room_mesh_render")
             object_render = bpy.data.objects.new("room_mesh_render", render_mesh)
@@ -786,148 +821,41 @@ def import_scene(context, filepath, file_type, report):
             render_collection.objects.link(object_render)
 
             bm = bmesh.new()
-            for mesh_idx, mesh_dict in enumerate(rmesh_dict["render_meshes"]):
-                mesh = bpy.data.meshes.new("temp_mesh_%s" % mesh_idx)
+            for render_idx, render_dict in enumerate(rmesh_dict["render_meshes"]):
+                temp_render = generate_mesh_data(render_dict, render_mesh, render_idx, local_asset_path, random_color_gen, error_log, file_type, report)
 
-                vertices = [Vector(flip(vertex["position"])) * 0.00625 for vertex in mesh_dict["vertices"]]
-                triangles = [list(triangle.values())[::-1] for triangle in mesh_dict["triangles"]]
-                mesh.from_pydata(vertices, [], triangles)
-                mesh.validate(clean_customdata=True)
-
-                mat = bpy.data.materials.new(name="texture_%s" % mesh_idx)
-                mat.diffuse_color = random_color_gen.next()
-                mesh.materials.append(mat)
-                render_mesh.materials.append(mat)
-
-                mat.use_nodes = True
-                for node in mat.node_tree.nodes:
-                    mat.node_tree.nodes.remove(node)
-
-                output_material_node = get_output_material_node(mat)
-                output_material_node.location = Vector((0.0, 0.0))
-
-                rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "rmesh_material")
-                rmesh_node.name = "RMESH Material"
-                rmesh_node.location = (-440.0, 0.0)
-
-                connect_inputs(mat.node_tree, rmesh_node, "Shader", output_material_node, "Surface")
-
-                texture_lightmap = None
-                diffuse_type = TextureType.none
-                texture_diffuse = None
-                for texture_idx, texture_dict in enumerate(mesh_dict["textures"]):
-                    if texture_idx == 0:
-                        lightmap_type = TextureType(texture_dict["texture_type"])
-                        texture_lightmap_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
-                        if texture_lightmap_data:
-                            texture_lightmap = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                            texture_lightmap.image = texture_lightmap_data
-                            texture_lightmap.image.alpha_mode = 'CHANNEL_PACKED'
-                            texture_lightmap.location = (-720.0, -320.0)
-
-                            rmesh_node.inputs["Light Map Texture Type"].default_value = lightmap_type.value
-
-                            connect_inputs(mat.node_tree, texture_lightmap, "Color", rmesh_node, "Light Map")
-                            connect_inputs(mat.node_tree, texture_lightmap, "Alpha", rmesh_node, "Light Map Alpha")
-                            mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_lightmap)
-                            uv_node.uv_map = "uvmap_lightmap"
-                            mapping_node.vector_type = 'TEXTURE'
-
-                        elif len(texture_dict["texture_name"]) > 0:
-                            error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
-
-                    elif texture_idx == 1:
-                        diffuse_type = TextureType(texture_dict["texture_type"])
-                        texture_diffuse_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
-                        if texture_diffuse_data:
-                            texture_diffuse = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                            texture_diffuse.image = texture_diffuse_data
-                            texture_diffuse.image.alpha_mode = 'CHANNEL_PACKED'
-                            texture_diffuse.location = (-720.0, 0.0)
-
-                            rmesh_node.inputs["Diffuse Map Texture Type"].default_value = diffuse_type.value
-
-                            connect_inputs(mat.node_tree, texture_diffuse, "Color", rmesh_node, "Diffuse Map")
-                            connect_inputs(mat.node_tree, texture_diffuse, "Alpha", rmesh_node, "Diffuse Map Alpha")
-                            mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_diffuse)
-                            uv_node.uv_map = "uvmap_render"
-                            mapping_node.vector_type = 'TEXTURE'
-
-                            texture_name = os.path.basename(texture_dict["texture_name"]).rsplit(".", 1)[0]
-                            texture_bump_data = get_file("%sbump" % texture_name, directory_path=local_asset_path)
-                            if texture_bump_data:
-                                texture_bump = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                                texture_bump.image = texture_bump_data
-                                texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
-                                texture_bump.interpolation = 'Cubic'
-                                texture_bump.image.colorspace_settings.name = 'Non-Color'
-                                texture_bump.location = (-720.0, -640.0)
-                                connect_inputs(mat.node_tree, texture_bump, "Color", rmesh_node, "Normal Map")
-                                connect_inputs(mat.node_tree, texture_bump, "Alpha", rmesh_node, "Normal Map Alpha")
-                                mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_bump)
-                                uv_node.uv_map = "uvmap_render"
-                                mapping_node.vector_type = 'TEXTURE'
-
-                        elif len(texture_dict["texture_name"]) > 0:
-                            error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
-                            report({'WARNING'}, 'Failed to retrive "%s"' % texture_dict["texture_name"])
-                    else:
-                        report({'WARNING'}, 'Texture index out of range: %s' % texture_idx)
-
-                loop_normals = []
-                layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
-                layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
-                layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
-                for poly in mesh.polygons:
-                    poly.use_smooth = True
-                    poly.material_index = mesh_idx
-                    for loop_index in poly.loop_indices:
-                        vert_index = mesh.loops[loop_index].vertex_index
-                        vertex = mesh_dict["vertices"][vert_index]
-                        layer_uv_0.data[loop_index].uv = (vertex["uv_render"][0], 1 - vertex["uv_render"][1])
-                        layer_uv_1.data[loop_index].uv = (vertex["uv_lightmap"][0], 1 - vertex["uv_lightmap"][1])
-                        layer_color.data[loop_index].color = (vertex["color"][0] / 255, vertex["color"][1] / 255, vertex["color"][2] / 255, 1.0)
-                        if file_type == ImportFileType.rmesh_uer2:
-                            loop_normals.append(Vector(flip(vertex["normal"])))
-
-                if file_type == ImportFileType.rmesh_uer2:
-                    mesh.normals_split_custom_set(loop_normals)
-
-                bm.from_mesh(mesh)
-                bpy.data.meshes.remove(mesh)
+                bm.from_mesh(temp_render)
+                bpy.data.meshes.remove(temp_render)
 
             bm.to_mesh(render_mesh)
             bm.free()
 
-    for coll_mesh_idx, coll_mesh_dict in enumerate(rmesh_dict["collision_meshes"]):
-        collision_name = "coll_mesh_%s" % coll_mesh_idx
-        coll_mesh = bpy.data.meshes.new(collision_name)
-        coll_object_mesh = bpy.data.objects.new(collision_name, coll_mesh)
-        coll_object_mesh.cb.object_type = str(ObjectType.collision.value)
-        collision_collection.objects.link(coll_object_mesh)
-
-        coll_vertices = [Vector(flip(coll_vertex["position"])) * 0.00625 for coll_vertex in coll_mesh_dict["vertices"]]
-        coll_triangles = [[coll_triangle["c"], coll_triangle["b"], coll_triangle["a"]] for coll_triangle in coll_mesh_dict["triangles"]]
-        coll_mesh.from_pydata(coll_vertices, [], coll_triangles)
-        for poly in coll_mesh.polygons:
-            poly.use_smooth = True
+    if has_collision_data:
+        collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
+        for collision_idx, collision_dict in enumerate(rmesh_dict["collision_meshes"]):
+            collision_mesh = generate_mesh_data(collision_dict, None, collision_idx, local_asset_path, random_color_gen, error_log, file_type, report, True)
+            collision_ob = bpy.data.objects.new("collision_%s" % collision_idx, collision_mesh)
+            collision_ob.cb.object_type = str(ObjectType.collision.value)
+            collision_collection.objects.link(collision_ob)
 
     if file_type == ImportFileType.rmesh_tb:
-        trigger_box_collection = get_referenced_collection("trigger_boxes", context.scene.collection, True)
-        for trigger_box_idx, trigger_box_dict in enumerate(rmesh_dict["trigger_boxes"]):
-            for trigger_idx, trigger_dict in enumerate(trigger_box_dict["meshes"]):
-                trigger_name = "trigger_g%st%s" % (trigger_box_idx, trigger_idx)
-                trigger_mesh = bpy.data.meshes.new(trigger_name)
-                trigger_mesh_object_mesh = bpy.data.objects.new(trigger_name, trigger_mesh)
-                trigger_mesh_object_mesh.cb.object_type = str(ObjectType.trigger_box.value)
-                trigger_mesh_object_mesh.cb.trigger_group = trigger_box_dict["name"]
-                trigger_box_collection.objects.link(trigger_mesh_object_mesh)
+        has_tb_data = False
+        for tb_group_dict in rmesh_dict["trigger_boxes"]:
+            for tb_dict in tb_group_dict["meshes"]:
+                if len(tb_dict["vertices"]) > 0:
+                    has_tb_data = True
+                    break
 
-                trigger_vertices = [Vector(flip(trigger_vertex["position"])) * 0.00625 for trigger_vertex in trigger_dict["vertices"]]
-                trigger_triangles = [[trigger_triangle["c"], trigger_triangle["b"], trigger_triangle["a"]] for trigger_triangle in trigger_dict["triangles"]]
-                trigger_mesh.from_pydata(trigger_vertices, [], trigger_triangles)
-                for poly in trigger_mesh.polygons:
-                    poly.use_smooth = True
+        if has_tb_data:
+            trigger_box_collection = get_referenced_collection("trigger_boxes", context.scene.collection, True)
+            for trigger_box_idx, trigger_box_dict in enumerate(rmesh_dict["trigger_boxes"]):
+                for trigger_idx, trigger_dict in enumerate(trigger_box_dict["meshes"]):
+                    trigger_name = "trigger_g%st%s" % (trigger_box_idx, trigger_idx)
+                    trigger_mesh = generate_mesh_data(trigger_dict, None, trigger_idx, local_asset_path, random_color_gen, error_log, file_type, report, True)
+                    trigger_mesh_object_mesh = bpy.data.objects.new(trigger_name, trigger_mesh)
+                    trigger_mesh_object_mesh.cb.object_type = str(ObjectType.trigger_box.value)
+                    trigger_mesh_object_mesh.cb.trigger_group = trigger_box_dict["name"]
+                    trigger_box_collection.objects.link(trigger_mesh_object_mesh)
 
     items_ini = None
     items_ini_path = os.path.join(game_path, r"Data\items.ini")
@@ -935,308 +863,312 @@ def import_scene(context, filepath, file_type, report):
         items_ini = configparser.ConfigParser()
         items_ini.read(items_ini_path)
 
-    entity_meshes = {}
-    for entity_idx, entity_dict in enumerate(rmesh_dict["entities"]):
-        if entity_dict["entity_type"] == "screen":
-            object_mesh = bpy.data.objects.new("%s screen" % entity_idx, None)
-            object_mesh.cb.object_type = str(ObjectType.entity_screen.value)
-            object_mesh.empty_display_type = 'IMAGE'
+    if has_entity_data:
+        entity_collection = get_referenced_collection("entities", context.scene.collection, False)
+        entity_meshes = {}
+        for entity_idx, entity_dict in enumerate(rmesh_dict["entities"]):
+            if entity_dict["entity_type"] == "screen":
+                object_mesh = bpy.data.objects.new("%s screen" % entity_idx, None)
+                object_mesh.cb.object_type = str(ObjectType.entity_screen.value)
+                object_mesh.empty_display_type = 'IMAGE'
 
-            file_path = get_file(entity_dict["texture_name"], True, False, local_screen_path)
-            if file_path is not None:
-                object_mesh.cb.texture_path = file_path
-                if os.path.isfile(file_path):
-                    file_asset = bpy.data.images.load(file_path, check_existing=True)
-                    object_mesh.data = file_asset
+                file_path = get_file(entity_dict["texture_name"], True, False, local_screen_path)
+                if file_path is not None:
+                    object_mesh.cb.texture_path = file_path
+                    if os.path.isfile(file_path):
+                        file_asset = bpy.data.images.load(file_path, check_existing=True)
+                        object_mesh.data = file_asset
 
-            entity_collection.objects.link(object_mesh)
+                entity_collection.objects.link(object_mesh)
 
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = Euler((radians(90), 0, radians(90)))
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = Euler((radians(90), 0, radians(90)))
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-        elif entity_dict["entity_type"] == "save_screen":
-            object_mesh = bpy.data.objects.new("%s save_screen" % entity_idx, None)
-            object_mesh.cb.object_type = str(ObjectType.entity_save_screen.value)
-            entity_collection.objects.link(object_mesh)
+            elif entity_dict["entity_type"] == "save_screen":
+                object_mesh = bpy.data.objects.new("%s save_screen" % entity_idx, None)
+                object_mesh.cb.object_type = str(ObjectType.entity_save_screen.value)
+                entity_collection.objects.link(object_mesh)
 
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
-            scl = Vector(entity_dict["scale"])
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-            model_path = get_file(entity_dict["model_name"], False)
-            texture_path = get_file(entity_dict["texture_name"], True, False)
-            if model_path is not None:
-                object_mesh.cb.model_path = model_path
-            if texture_path is not None:
-                object_mesh.cb.texture_path = texture_path
-
-        elif entity_dict["entity_type"] == "waypoint":
-            object_mesh = bpy.data.objects.new("%s waypoint" % entity_idx, None)
-            object_mesh.cb.object_type = str(ObjectType.entity_waypoint.value)
-            entity_collection.objects.link(object_mesh)
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = Quaternion()
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-        elif entity_dict["entity_type"] == "light":
-            object_data = bpy.data.lights.new("%s light" % entity_idx, "POINT")
-            object_mesh = bpy.data.objects.new("%s light" % entity_idx, object_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_light.value)
-            entity_collection.objects.link(object_mesh)
-
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = Quaternion()
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-            object_data.energy = entity_dict["intensity"] * 50
-            object_data.shadow_soft_size = entity_dict["range"] / 1000
-            r, g, b = entity_dict["color"].split(" ")
-            object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
-            if file_type == ImportFileType.rmesh_uer2:
-                object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
-                object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
-                object_data.use_shadow = bool(entity_dict["casts_shadows"])
-                object_mesh.cb.scattering = entity_dict["scattering"]
-
-        elif entity_dict["entity_type"] == "light_fix":
-            object_data = bpy.data.lights.new("%s light_fix" % entity_idx, "POINT")
-            object_mesh = bpy.data.objects.new("%s light_fix" % entity_idx, object_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_light_fix.value)
-            entity_collection.objects.link(object_mesh)
-
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = Quaternion()
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-            object_data.energy = entity_dict["intensity"] * 50
-            object_data.shadow_soft_size = entity_dict["range"] / 1000
-            r, g, b = entity_dict["color"].split(" ")
-            object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
-            if file_type == ImportFileType.rmesh_uer2:
-                object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
-                object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
-                object_data.use_shadow = bool(entity_dict["casts_shadows"])
-                object_mesh.cb.scattering = entity_dict["scattering"]
-
-        elif entity_dict["entity_type"] == "spotlight":
-            object_data = bpy.data.lights.new("%s spotlight" % entity_idx, "SPOT")
-            object_mesh = bpy.data.objects.new("%s spotlight" % entity_idx, object_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_spotlight.value)
-            entity_collection.objects.link(object_mesh)
-
-            object_data.energy = entity_dict["intensity"] * 50
-            object_data.shadow_soft_size = entity_dict["range"] / 1000
-            r, g, b = entity_dict["color"].split(" ")
-            object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
-
-            if file_type == ImportFileType.rmesh_uer2:
-                object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
-                object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
-                object_data.use_shadow = bool(entity_dict["casts_shadows"])
-                x, y = entity_dict["direction"]
-
-                rotation = [x, y, 0]
-                object_data.spot_size = radians(entity_dict["inner_cosine"])
-                object_data.spot_blend = entity_dict["scattering"]
-
-            else:
-                outer_deg: float = max(1.0, min(180.0, entity_dict["outer_cone_angle"]))
-                inner_deg: float = max(1.0, min(180.0, entity_dict["inner_cone_angle"]))
-                ratio = inner_deg / outer_deg if outer_deg > 0.0 else 1.0
-
-                object_data.spot_size = radians(outer_deg)
-                object_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
-
-                p, y, r = entity_dict["euler_rotation"].split(" ")
-                rotation = [float(p), float(y), float(r)]
-
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = get_blender_rot(entity_dict["position"], rotation, True)
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-        elif entity_dict["entity_type"] == "soundemitter":
-            speaker_data = bpy.data.speakers.new("%s soundemitter" % entity_idx)
-            object_mesh = bpy.data.objects.new("%s soundemitter" % entity_idx, speaker_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_sound_emitter.value)
-            entity_collection.objects.link(object_mesh)
-
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = Quaternion()
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-            object_mesh.cb.sound_emitter_id = entity_dict["id"]
-            object_mesh.data.distance_max = entity_dict["range"]
-
-        elif entity_dict["entity_type"] == "playerstart":
-            object_mesh = bpy.data.objects.new("%s playerstart" % entity_idx, None)
-            object_mesh.cb.object_type = str(ObjectType.entity_player_start.value)
-            entity_collection.objects.link(object_mesh)
-
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = get_blender_rot(entity_dict["position"], [float(p), float(y), float(r)])
-            scl = Vector((1, 1, 1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-        elif entity_dict["entity_type"] == "model":
-            model_path = get_file(entity_dict["model_name"], False, directory_path=local_prop_path)
-            ob_data = entity_meshes.get(model_path)
-            if ob_data is None and model_path:
-                ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
-                bm = bmesh.new()
-                is_simple=True
-                if model_path.lower().endswith(".b3d"):
-                    import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
-
-                else:
-                    import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
-
-                bm.to_mesh(ob_data)
-                bm.free()
-
-            object_mesh = bpy.data.objects.new("%s model" % entity_idx, ob_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_model.value)
-            if model_path is not None:
-                object_mesh.cb.model_path = model_path
-            entity_collection.objects.link(object_mesh)
-            if not file_type == ImportFileType.rmesh_uer:
                 loc = Vector(flip(entity_dict["position"])) * 0.00625
                 rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
                 scl = Vector(entity_dict["scale"])
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-        elif entity_dict["entity_type"] == "mesh":
-            model_path = get_file(entity_dict["model_name"], False)
-            texture_path = get_file(entity_dict["texture_name"], True, False)
-            ob_data = entity_meshes.get(model_path)
+                model_path = get_file(entity_dict["model_name"], False)
+                texture_path = get_file(entity_dict["texture_name"], True, False)
+                if model_path is not None:
+                    object_mesh.cb.model_path = model_path
+                if texture_path is not None:
+                    object_mesh.cb.texture_path = texture_path
 
-            if ob_data is None and model_path:
-                ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
-                bm = bmesh.new()
-                is_simple=True
-                if model_path.lower().endswith(".b3d"):
-                    import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+            elif entity_dict["entity_type"] == "waypoint":
+                object_mesh = bpy.data.objects.new("%s waypoint" % entity_idx, None)
+                object_mesh.cb.object_type = str(ObjectType.entity_waypoint.value)
+                entity_collection.objects.link(object_mesh)
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = Quaternion()
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+
+            elif entity_dict["entity_type"] == "light":
+                object_data = bpy.data.lights.new("%s light" % entity_idx, "POINT")
+                object_mesh = bpy.data.objects.new("%s light" % entity_idx, object_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_light.value)
+                entity_collection.objects.link(object_mesh)
+
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = Quaternion()
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+
+                object_data.energy = entity_dict["intensity"] * 50
+                object_data.shadow_soft_size = entity_dict["range"] / 1000
+                r, g, b = entity_dict["color"].split(" ")
+                object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+                if file_type == ImportFileType.rmesh_uer2:
+                    object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
+                    object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
+                    object_data.use_shadow = bool(entity_dict["casts_shadows"])
+                    object_mesh.cb.scattering = entity_dict["scattering"]
+
+            elif entity_dict["entity_type"] == "light_fix":
+                object_data = bpy.data.lights.new("%s light_fix" % entity_idx, "POINT")
+                object_mesh = bpy.data.objects.new("%s light_fix" % entity_idx, object_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_light_fix.value)
+                entity_collection.objects.link(object_mesh)
+
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = Quaternion()
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+
+                object_data.energy = entity_dict["intensity"] * 50
+                object_data.shadow_soft_size = entity_dict["range"] / 1000
+                r, g, b = entity_dict["color"].split(" ")
+                object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+                if file_type == ImportFileType.rmesh_uer2:
+                    object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
+                    object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
+                    object_data.use_shadow = bool(entity_dict["casts_shadows"])
+                    object_mesh.cb.scattering = entity_dict["scattering"]
+
+            elif entity_dict["entity_type"] == "spotlight":
+                object_data = bpy.data.lights.new("%s spotlight" % entity_idx, "SPOT")
+                object_mesh = bpy.data.objects.new("%s spotlight" % entity_idx, object_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_spotlight.value)
+                entity_collection.objects.link(object_mesh)
+
+                object_data.energy = entity_dict["intensity"] * 50
+                object_data.shadow_soft_size = entity_dict["range"] / 1000
+                r, g, b = entity_dict["color"].split(" ")
+                object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+
+                if file_type == ImportFileType.rmesh_uer2:
+                    object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
+                    object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
+                    object_data.use_shadow = bool(entity_dict["casts_shadows"])
+                    x, y = entity_dict["direction"]
+
+                    rotation = [x, y, 0]
+                    object_data.spot_size = radians(entity_dict["inner_cosine"])
+                    object_data.spot_blend = entity_dict["scattering"]
 
                 else:
-                    import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+                    outer_deg: float = max(1.0, min(180.0, entity_dict["outer_cone_angle"]))
+                    inner_deg: float = max(1.0, min(180.0, entity_dict["inner_cone_angle"]))
+                    ratio = inner_deg / outer_deg if outer_deg > 0.0 else 1.0
 
-                bm.to_mesh(ob_data)
-                bm.free()
+                    object_data.spot_size = radians(outer_deg)
+                    object_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
 
-            object_mesh = bpy.data.objects.new("%s mesh" % entity_idx, ob_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_mesh.value)
-            entity_collection.objects.link(object_mesh)
+                    p, y, r = entity_dict["euler_rotation"].split(" ")
+                    rotation = [float(p), float(y), float(r)]
 
-            if model_path is not None:
-                object_mesh.cb.model_path = model_path
-            if texture_path is not None:
-                object_mesh.cb.texture_path = texture_path
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = get_blender_rot(entity_dict["position"], rotation, True)
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
-            scl = Vector(entity_dict["scale"])
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+            elif entity_dict["entity_type"] == "soundemitter":
+                speaker_data = bpy.data.speakers.new("%s soundemitter" % entity_idx)
+                object_mesh = bpy.data.objects.new("%s soundemitter" % entity_idx, speaker_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_sound_emitter.value)
+                entity_collection.objects.link(object_mesh)
 
-            object_mesh.cb.has_collision = bool(entity_dict["has_collision"])
-            object_mesh.cb.fx = entity_dict["fx"]
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = Quaternion()
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-        elif entity_dict["entity_type"] == "item":
-            ob_data = None
-            model_path = None
-            model_scale = 1
-            if items_ini:
-                item_group = None
-                model_name = entity_dict["model_name"]
-                if model_name == "misc":
-                    item_group = "misc"
-                    model_name = "playingcard"
-                elif model_name == "paper":
-                    item_group = "paper"
-                    model_name = "doc079"
-                elif model_name == "vest":
-                    item_group = "vest"
-                    model_name = "vest"
-                elif model_name == "hazmat":
-                    item_group = "hazmat"
-                    model_name = "hazmatsuit"
-                elif model_name == "nav":
-                    item_group = "nav"
-                    model_name = "snav"
+                object_mesh.cb.sound_emitter_id = entity_dict["id"]
+                object_mesh.data.distance_max = entity_dict["range"]
 
-                item_entry = items_ini.get(model_name, "model", fallback=None)
-                if item_entry:
-                    model_path = get_file(item_entry, False)
-                    ob_data = entity_meshes.get(model_path)
-                    model_scale = float(items_ini.get(model_name, "scale", fallback=0.01)) * 160
-                    if ob_data is None and model_path:
-                        ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
-                        bm = bmesh.new()
-                        is_simple=True
-                        if model_path.lower().endswith(".b3d"):
-                            import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+            elif entity_dict["entity_type"] == "playerstart":
+                object_mesh = bpy.data.objects.new("%s playerstart" % entity_idx, None)
+                object_mesh.cb.object_type = str(ObjectType.entity_player_start.value)
+                entity_collection.objects.link(object_mesh)
 
-                        else:
-                            import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = get_blender_rot(entity_dict["position"], [float(p), float(y), float(r)])
+                scl = Vector((1, 1, 1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-                        bm.to_mesh(ob_data)
-                        bm.free()
+            elif entity_dict["entity_type"] == "model":
+                model_path = get_file(entity_dict["model_name"], False, directory_path=local_prop_path)
+                ob_data = entity_meshes.get(model_path)
+                if ob_data is None and model_path:
+                    ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
+                    bm = bmesh.new()
+                    is_simple=True
+                    if model_path.lower().endswith(".b3d"):
+                        import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
 
-                if item_group:
-                    model_path = item_group
+                    else:
+                        import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
 
-            object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_item.value)
-            entity_collection.objects.link(object_mesh)
+                    bm.to_mesh(ob_data)
+                    bm.free()
 
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
-            scl = Vector((model_scale, model_scale, model_scale))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+                object_mesh = bpy.data.objects.new("%s model" % entity_idx, ob_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_model.value)
+                if model_path is not None:
+                    object_mesh.cb.model_path = model_path
+                entity_collection.objects.link(object_mesh)
+                if not file_type == ImportFileType.rmesh_uer:
+                    loc = Vector(flip(entity_dict["position"])) * 0.00625
+                    rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
+                    scl = Vector(entity_dict["scale"])
+                    object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-            object_mesh.cb.item_name = entity_dict["item_name"]
-            if model_path is not None:
-                object_mesh.cb.model_path = model_path
-            object_mesh.cb.use_custom_rotation = bool(entity_dict["use_custom_rotation"])
-            object_mesh.cb.state_1 = entity_dict["state_1"]
-            object_mesh.cb.state_2 = entity_dict["state_2"]
-            object_mesh.cb.spawn_chance = entity_dict["spawn_chance"]
+            elif entity_dict["entity_type"] == "mesh":
+                model_path = get_file(entity_dict["model_name"], False)
+                texture_path = get_file(entity_dict["texture_name"], True, False)
+                ob_data = entity_meshes.get(model_path)
 
-        elif entity_dict["entity_type"] == "door":
-            door_type = DoorType(entity_dict["door_type"])
-            button_type = ButtonType.normal
-            if entity_dict["key_card_level"] < 0:
-                button_type = ButtonType.scanner
-            elif len(entity_dict["keypad_code"]) > 0:
-                button_type = ButtonType.code
-            elif entity_dict["key_card_level"] > 0:
-                button_type = ButtonType.keycard
+                if ob_data is None and model_path:
+                    ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
+                    bm = bmesh.new()
+                    is_simple=True
+                    if model_path.lower().endswith(".b3d"):
+                        import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
 
-            door_state = DoorState(entity_dict["start_open"])
-            ob_data = create_door(door_type, button_type, door_state)
-            object_mesh = bpy.data.objects.new("%s door" % entity_idx, ob_data)
-            object_mesh.cb.object_type = str(ObjectType.entity_door.value)
-            entity_collection.objects.link(object_mesh)
+                    else:
+                        import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
 
-            loc = Vector(flip(entity_dict["position"])) * 0.00625
-            rot = Euler((0, 0, radians(entity_dict["angle"])))
-            scl = Vector((1,1,1))
-            object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+                    bm.to_mesh(ob_data)
+                    bm.free()
 
-            object_mesh.cb.door_type = entity_dict["door_type"]
-            object_mesh.cb.key_card_level = entity_dict["key_card_level"]
-            object_mesh.cb.keypad_code = entity_dict["keypad_code"]
-            object_mesh.cb.start_open = bool(entity_dict["start_open"])
-            object_mesh.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
+                object_mesh = bpy.data.objects.new("%s mesh" % entity_idx, ob_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_mesh.value)
+                entity_collection.objects.link(object_mesh)
 
-        else:
-            report({'WARNING'}, "Unknown entity type: %s" % entity_dict["entity_type"])
+                if model_path is not None:
+                    object_mesh.cb.model_path = model_path
+                if texture_path is not None:
+                    object_mesh.cb.texture_path = texture_path
+
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
+                scl = Vector(entity_dict["scale"])
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+
+                object_mesh.cb.has_collision = bool(entity_dict["has_collision"])
+                object_mesh.cb.fx = entity_dict["fx"]
+
+            elif entity_dict["entity_type"] == "item":
+                ob_data = None
+                model_path = None
+                model_scale = 1
+                if items_ini:
+                    item_group = None
+                    model_name = entity_dict["model_name"]
+                    if model_name == "misc":
+                        item_group = "misc"
+                        model_name = "playingcard"
+                    elif model_name == "paper":
+                        item_group = "paper"
+                        model_name = "doc079"
+                    elif model_name == "vest":
+                        item_group = "vest"
+                        model_name = "vest"
+                    elif model_name == "hazmat":
+                        item_group = "hazmat"
+                        model_name = "hazmatsuit"
+                    elif model_name == "nav":
+                        item_group = "nav"
+                        model_name = "snav"
+
+                    item_entry = items_ini.get(model_name, "model", fallback=None)
+                    if item_entry:
+                        model_path = get_file(item_entry, False)
+                        ob_data = entity_meshes.get(model_path)
+                        model_scale = float(items_ini.get(model_name, "scale", fallback=0.01)) * 160
+                        if ob_data is None and model_path:
+                            ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
+                            bm = bmesh.new()
+                            is_simple=True
+                            if model_path.lower().endswith(".b3d"):
+                                import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
+                            else:
+                                import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+
+                            bm.to_mesh(ob_data)
+                            bm.free()
+
+                    if item_group:
+                        model_path = item_group
+
+                object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_item.value)
+                entity_collection.objects.link(object_mesh)
+
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
+                scl = Vector((model_scale, model_scale, model_scale))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+
+                object_mesh.cb.item_name = entity_dict["item_name"]
+                if model_path is not None:
+                    object_mesh.cb.model_path = model_path
+                object_mesh.cb.use_custom_rotation = bool(entity_dict["use_custom_rotation"])
+                object_mesh.cb.state_1 = entity_dict["state_1"]
+                object_mesh.cb.state_2 = entity_dict["state_2"]
+                object_mesh.cb.spawn_chance = entity_dict["spawn_chance"]
+
+            elif entity_dict["entity_type"] == "door":
+                door_type = DoorType(entity_dict["door_type"])
+                button_type = ButtonType.normal
+                if entity_dict["key_card_level"] < 0:
+                    button_type = ButtonType.scanner
+                elif len(entity_dict["keypad_code"]) > 0:
+                    button_type = ButtonType.code
+                elif entity_dict["key_card_level"] > 0:
+                    button_type = ButtonType.keycard
+
+                door_state = DoorState(entity_dict["start_open"])
+                ob_data = create_door(door_type, button_type, door_state)
+                object_mesh = bpy.data.objects.new("%s door" % entity_idx, ob_data)
+                object_mesh.cb.object_type = str(ObjectType.entity_door.value)
+                entity_collection.objects.link(object_mesh)
+
+                loc = Vector(flip(entity_dict["position"])) * 0.00625
+                rot = Euler((0, 0, radians(entity_dict["angle"])))
+                scl = Vector((1,1,1))
+                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+
+                object_mesh.cb.door_type = entity_dict["door_type"]
+                object_mesh.cb.key_card_level = entity_dict["key_card_level"]
+                object_mesh.cb.keypad_code = entity_dict["keypad_code"]
+                object_mesh.cb.start_open = bool(entity_dict["start_open"])
+                object_mesh.cb.locked = bool(entity_dict["locked"])
+                object_mesh.cb.delete_half = bool(entity_dict["delete_half"])
+                object_mesh.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
+
+            else:
+                report({'WARNING'}, "Unknown entity type: %s" % entity_dict["entity_type"])
 
     for error in error_log:
         report({'WARNING'}, error)

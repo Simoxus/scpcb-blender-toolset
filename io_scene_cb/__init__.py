@@ -221,12 +221,42 @@ class CBObjectPropertiesGroup(PropertyGroup):
         description = "???",
         default = False,
         )
+    
+    locked: BoolProperty(
+        name ="Locked",
+        description = "???",
+        default = False,
+        )
+
+    delete_half: BoolProperty(
+        name ="Delete Half",
+        description = "???",
+        default = False,
+        )
 
     allow_scp_079_remote_control: BoolProperty(
         name ="Allow SCP-079 Remote Control",
         description = "???",
         default = False,
         )
+
+    door_ob: PointerProperty(
+        name="Door Object",
+        description="???",
+        type=bpy.types.Object
+    )
+
+    button_a_ob: PointerProperty(
+        name="Button A Object",
+        description="???",
+        type=bpy.types.Object
+    )
+
+    button_b_ob: PointerProperty(
+        name="Button B Object",
+        description="???",
+        type=bpy.types.Object
+    )
 
     linear_falloff: FloatProperty(
         name = "Linear Falloff",
