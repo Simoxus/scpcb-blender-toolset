@@ -866,7 +866,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                 for vertex_group in v.groups:
                     group_index = vertex_group.group
                     weight = vertex_group.weight
-                    if vertex_group_count > group_index:
+                    if vertex_group_count > group_index and weight > 0.0:
                             group_name = ob.vertex_groups[group_index].name
                             skin_group = skin_info.get(group_name)
                             if skin_group is None:
