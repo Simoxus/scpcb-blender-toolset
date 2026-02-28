@@ -101,6 +101,18 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
     file_asset = None
     file_path = None
     game_path = bpy.context.preferences.addons[__package__].preferences.game_path
+    if directory_path.lower().startswith("mods"):
+        parts = directory_path.split(os.sep)
+        part_count = len(parts)
+        if part_count >= 3 and parts[0].lower() == "mods":
+            directory_path = ""
+            inner_parts = parts[2:]
+            inner_part_count = len(inner_parts)
+            for part_idx, part in enumerate(inner_parts):
+                directory_path += part
+                if part_idx < inner_part_count - 1:
+                    directory_path += os.sep
+
     asset_directory = os.path.join(game_path, directory_path)
     if not is_string_empty(asset_directory) and file_name is not None:
         if not is_string_empty(directory_path):

@@ -240,12 +240,6 @@ class CBObjectPropertiesGroup(PropertyGroup):
         default = False,
         )
 
-    door_ob: PointerProperty(
-        name="Door Object",
-        description="???",
-        type=bpy.types.Object
-    )
-
     button_a_ob: PointerProperty(
         name="Button A Object",
         description="???",
@@ -473,9 +467,6 @@ def render_entity_door(context, layout, active_property):
     row = col.row()
     row.label(text='Allow SCP-079 Remote Control:')
     row.prop(active_property, "allow_scp_079_remote_control", text='')
-    row = col.row()
-    row.label(text='Door Object:')
-    row.prop(active_property, "door_ob", text='')
     row = col.row()
     row.label(text='Button A:')
     row.prop(active_property, "button_a_ob", text='')

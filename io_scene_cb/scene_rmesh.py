@@ -43,6 +43,12 @@ def get_referenced_collection(collection_name, parent_collection, hide_render=Fa
 
     return asset_collection
 
+def linear_to_gamma(v):
+    return pow(v, 1.0 / 2.2)
+
+def gamma_to_linear(v):
+    return pow(v, 2.2)
+
 def clamp(x, lo=-1.0, hi=1.0):
     return max(lo, min(hi, x))
 
@@ -223,7 +229,14 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
 
             color = (0, 0, 0)
             if layer_color:
-                r, g, b, a = layer_color.data[loop_index].color
+                if layer_color.domain == 'POINT':
+                    r, g, b, a = layer_color.data[loop.vertex_index].color
+                elif layer_color.domain == 'CORNER':
+                    r, g, b, a = layer_color.data[loop_index].color
+
+                r = linear_to_gamma(r)
+                g = linear_to_gamma(g)
+                b = linear_to_gamma(b)
                 color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
             if file_type == ExportFileType.rmesh_uer2:
@@ -603,9 +616,15 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                 report({'WARNING'}, 'Texture index out of range: %s' % texture_idx)
 
         loop_normals = []
-        layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
-        layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
-        layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
+        layer_color = mesh.color_attributes.get("color")
+        layer_uv_0 = mesh.uv_layers.get("uvmap_render")
+        layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
+        if not layer_color:
+            layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+        if not layer_uv_0:
+            layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
+        if not layer_uv_1:
+            layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
 
     for poly in mesh.polygons:
         poly.use_smooth = True
@@ -616,7 +635,10 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                 vertex = mesh_dict["vertices"][vert_index]
                 layer_uv_0.data[loop_index].uv = (vertex["uv_render"][0], 1 - vertex["uv_render"][1])
                 layer_uv_1.data[loop_index].uv = (vertex["uv_lightmap"][0], 1 - vertex["uv_lightmap"][1])
-                layer_color.data[loop_index].color = (vertex["color"][0] / 255, vertex["color"][1] / 255, vertex["color"][2] / 255, 1.0)
+                r = gamma_to_linear(vertex["color"][0] / 255)
+                g = gamma_to_linear(vertex["color"][1] / 255)
+                b = gamma_to_linear(vertex["color"][2] / 255)
+                layer_color.data[loop_index].color = (r, g, b, 1.0)
                 if file_type == ImportFileType.rmesh_uer2:
                     loop_normals.append(Vector(flip(vertex["normal"])))
 
@@ -1021,25 +1043,38 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     button_type = ButtonType.keycard
 
                 door_state = DoorState(entity_dict["start_open"])
-                ob_data = create_door(door_type, button_type, door_state, file_type)
-                object_mesh = bpy.data.objects.new("%s door" % entity_idx, ob_data)
-                object_mesh.cb.object_type = str(ObjectType.entity_door.value)
-                entity_collection.objects.link(object_mesh)
+                door_ob, button_a_ob, button_b_ob = create_door(door_type, button_type, door_state, file_type, entity_idx)
+                door_ob.cb.object_type = str(ObjectType.entity_door.value)
+                entity_collection.objects.link(door_ob)
+                entity_collection.objects.link(button_a_ob)
+                entity_collection.objects.link(button_b_ob)
 
                 loc = Vector(flip(entity_dict["position"])) * 0.00625
                 rot = Euler((0, 0, radians(entity_dict["angle"])))
                 scl = Vector((1,1,1))
-                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+                door_ob.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-                object_mesh.cb.door_type = entity_dict["door_type"]
-                object_mesh.cb.key_card_level = entity_dict["key_card_level"]
-                object_mesh.cb.keypad_code = entity_dict["keypad_code"]
-                object_mesh.cb.start_open = bool(entity_dict["start_open"])
+                door_ob.cb.door_type = entity_dict["door_type"]
+                door_ob.cb.key_card_level = entity_dict["key_card_level"]
+                door_ob.cb.keypad_code = entity_dict["keypad_code"]
+                door_ob.cb.start_open = bool(entity_dict["start_open"])
+                door_ob.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
+                door_ob.cb.button_a_ob = button_a_ob
+                door_ob.cb.button_b_ob = button_b_ob
                 if file_type == ImportFileType.rmesh_salvage:
-                    object_mesh.cb.locked = bool(entity_dict["locked"])
-                    object_mesh.cb.delete_half = bool(entity_dict["delete_half"])
+                    bpy.context.view_layer.update()
+                    door_ob.cb.locked = bool(entity_dict["locked"])
+                    door_ob.cb.delete_half = bool(entity_dict["delete_half"])
 
-                object_mesh.cb.allow_scp_079_remote_control = bool(entity_dict["allow_scp_079_remote_control"])
+                    loc = Vector(flip(entity_dict["button_1_position"])) * 0.00625
+                    rot = get_blender_rot(entity_dict["button_1_position"], entity_dict["button_1_angle"])
+                    scl = Vector((1,1,1))
+                    button_a_ob.matrix_world = button_a_ob.matrix_world @ Matrix.LocRotScale(loc, rot, scl)
+
+                    loc = Vector(flip(entity_dict["button_2_position"])) * 0.00625
+                    rot = get_blender_rot(entity_dict["button_2_position"], entity_dict["button_2_angle"])
+                    scl = Vector((1,1,1))
+                    button_b_ob.matrix_world = button_b_ob.matrix_world @ Matrix.LocRotScale(loc, rot, scl)
 
             else:
                 report({'WARNING'}, "Unknown entity type: %s" % entity_dict["entity_type"])
