@@ -1004,7 +1004,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                             bm = bmesh.new()
                             is_simple=True
                             if model_path.lower().endswith(".b3d"):
-                                import_b3d(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
+                                import_b3d(context, Path(model_path), fullbright_materials, report, bm, ob_data, is_simple, error_log, random_color_gen)
 
                             else:
                                 import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)

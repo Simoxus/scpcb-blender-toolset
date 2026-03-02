@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import zlib
@@ -5,6 +6,39 @@ import struct
 
 from enum import Enum, auto
 from io import TextIOWrapper
+
+TOKEN_NAME = 1
+TOKEN_STRING = 2
+TOKEN_INTEGER = 3
+TOKEN_GUID = 5
+TOKEN_INTEGER_LIST = 6
+TOKEN_FLOAT_LIST = 7
+
+TOKEN_OBRACE = 0x0A
+TOKEN_CBRACE = 0x0B
+TOKEN_OPAREN = 0x0C
+TOKEN_CPAREN = 0x0D
+TOKEN_OBRACKET = 0x0E
+TOKEN_CBRACKET = 0x0F
+TOKEN_OANGLE = 0x10
+TOKEN_CANGLE = 0x11
+TOKEN_DOT = 0x12
+TOKEN_COMMA = 0x13
+TOKEN_SEMICOLON = 0x14
+TOKEN_TEMPLATE = 0x1F
+TOKEN_WORD = 0x28
+TOKEN_DWORD = 0x29
+TOKEN_FLOAT = 0x2A
+TOKEN_DOUBLE = 0x2B
+TOKEN_CHAR = 0x2C
+TOKEN_UCHAR = 0x2D
+TOKEN_SWORD = 0x2E
+TOKEN_SDWORD = 0x2F
+TOKEN_VOID = 0x30
+TOKEN_LPSTR = 0x31
+TOKEN_UNICODE = 0x32
+TOKEN_CSTRING = 0x33
+TOKEN_ARRAY = 0x34
 
 class FileType(Enum):
     unk = 0
@@ -822,6 +856,469 @@ def parse_x_b_txt(text):
 
     return x_dict
 
+def read_short(input_stream):
+    return struct.unpack('<h', input_stream.read(2))[0]
+
+def read_int(input_stream):
+    return struct.unpack('<i', input_stream.read(4))[0]
+
+def read_float(input_stream):
+    return struct.unpack('<f', input_stream.read(4))[0]
+
+def read_string(input_stream):
+    string_length = struct.unpack('<i', input_stream.read(4))[0]
+    return input_stream.read(string_length).decode('utf-8')
+
+def parse_token_loop(x_dict, input_stream, x_dict_element, END_TOKEN):
+    while parse_token(x_dict, input_stream, x_dict_element) != END_TOKEN:
+        pass
+
+def parse_token(input_stream):
+    token = read_short(input_stream)
+    token_value = None
+    if token == TOKEN_NAME or token == TOKEN_STRING:
+        token_value = read_string(input_stream)
+    elif token == TOKEN_GUID:
+        guid_data = input_stream.read(16)
+        d1 = guid_data[0:4][::-1]
+        d2 = guid_data[4:6][::-1]
+        d3 = guid_data[6:8][::-1]
+        d4 = guid_data[8:16]
+
+        token_value = d1.hex() + "-" + d2.hex() + "-" + d3.hex() + "-" + d4[0:2].hex() + "-" + d4[2:].hex()
+    elif token == TOKEN_WORD:
+        token_value = "WORD"
+    elif token == TOKEN_DWORD:
+        token_value = "DWORD"
+    elif token == TOKEN_ARRAY:
+        token_value = "array"
+    elif token == TOKEN_FLOAT:
+        token_value = "FLOAT"
+    elif token == TOKEN_LPSTR:
+        token_value = "STRING"
+    elif token == TOKEN_INTEGER_LIST:
+        token_value = []
+        element_count = read_int(input_stream)
+        for element_idx in range(element_count):
+            element_value = read_int(input_stream)
+            token_value.append(element_value)
+    elif token == TOKEN_FLOAT_LIST:
+        token_value = []
+        element_count = read_int(input_stream)
+        for element_idx in range(element_count):
+            element_value = read_float(input_stream)
+            token_value.append(element_value)
+
+    return token, token_value
+
+def parse_material_binary(x_dict, mesh_dict, next_token, next_token_value, input_stream):
+    if next_token == TOKEN_NAME and next_token_value == "Material":
+        material_dict = {"name": None,
+                        "diffuse": (0.0, 0.0, 0.0, 0.0),
+                        "power": 0.0,
+                        "specular": (0.0, 0.0, 0.0),
+                        "emissive": (0.0, 0.0, 0.0),
+                        "texture": None
+                        }
+
+        next_token, next_token_value = parse_token(input_stream)
+        if next_token != TOKEN_OBRACE:
+            material_dict["name"] = next_token_value
+            parse_token(input_stream)
+
+        next_token, next_token_value = parse_token(input_stream)
+        dr = next_token_value[0]
+        dg = next_token_value[1]
+        db = next_token_value[2]
+        da = next_token_value[3]
+
+        material_dict["diffuse"] = (dr, dg, db, da)
+        material_dict["power"] = next_token_value[4]
+
+        sr = next_token_value[5]
+        sg = next_token_value[6]
+        sb = next_token_value[7]
+
+        material_dict["specular"] = (sr, sg, sb)
+
+        er = next_token_value[8]
+        eg = next_token_value[9]
+        eb = next_token_value[10]
+
+        material_dict["emissive"] = (er, eg, eb)
+
+        next_token, next_token_value = parse_token(input_stream)
+        if next_token == TOKEN_NAME and next_token_value == "TextureFilename":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            material_dict["texture"] = next_token_value
+            parse_token(input_stream)
+            parse_token(input_stream)
+            parse_token(input_stream)
+            
+        mesh_dict["materials"].append(material_dict)
+
+    elif next_token == TOKEN_OBRACE:
+        # This probably needs to be moved to the scene file so that we can kept the file as it was. - Gen
+        next_token, material_name = parse_token(input_stream)
+        parse_token(input_stream)
+
+        for material_dict in x_dict["materials"]:
+            if material_dict["name"] == material_name:
+                mesh_dict["materials"].append(material_dict)
+                break
+
+def parse_frame_binary(x_dict, input_stream, children_dict, stream_length):
+    frame_dict = {
+        "name": "",
+        "transform": [],
+        "meshes": [],
+        "children": []
+    }
+
+    next_token, next_token_value = parse_token(input_stream)
+    if next_token != TOKEN_OBRACE:
+        frame_dict["name"] = next_token_value
+        parse_token(input_stream)
+
+    next_token, next_token_value = parse_token(input_stream)
+    while next_token != TOKEN_CBRACE and stream_length > input_stream.tell():
+        if next_token == TOKEN_NAME and next_token_value == "FrameTransformMatrix":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            frame_dict["transform"] = next_token_value
+            parse_token(input_stream)
+
+        elif next_token == TOKEN_NAME and next_token_value == "Mesh":
+            parse_mesh_binary(x_dict, input_stream, frame_dict["meshes"], stream_length)
+
+        elif next_token == TOKEN_NAME and next_token_value == "Frame":
+            parse_frame_binary(x_dict, input_stream, frame_dict["children"], stream_length)
+
+        if (stream_length - input_stream.tell()) != 0:
+            next_token, next_token_value = parse_token(input_stream)
+
+    children_dict.append(frame_dict)
+
+def parse_mesh_binary(x_dict, input_stream, frame_meshes, stream_length):
+    mesh_dict = {
+        "name": None,
+        "vertices": [],
+        "faces": [],
+        "normals": [],
+        "normal_indices": [],
+        "texcoords": [],
+        "dup_preexport_count": 0,
+        "dup_indices": [],
+        "material_indices": [],
+        "materials": [],
+        "max_weights_per_vertex": 1.0,
+        "max_weights_per_face": 1.0,
+        "group_count": 0,
+        "skin_weights": []
+    }
+
+    next_token, next_token_value = parse_token(input_stream)
+    if next_token != TOKEN_OBRACE:
+        mesh_dict["name"] = next_token_value
+        parse_token(input_stream)
+
+    next_token, next_token_value = parse_token(input_stream)
+    vertex_count = 0
+    if len(next_token_value) > 0:
+        vertex_count = next_token_value[0]
+
+    next_token, next_token_value = parse_token(input_stream)
+    vertex_positions = next_token_value
+    for vertex_idx in range(vertex_count):
+        x = vertex_positions[(vertex_idx * 3) + 0]
+        y = vertex_positions[(vertex_idx * 3) + 1]
+        z = vertex_positions[(vertex_idx * 3) + 2]
+        mesh_dict["vertices"].append([x, y, z])
+
+    next_token, next_token_value = parse_token(input_stream)
+    face_count = 0
+    if len(next_token_value) > 0:
+        face_count = next_token_value[0]
+
+    point_index = 1
+    for face_idx in range(face_count):
+        face_indicies = []
+        face_length = next_token_value[point_index]
+        point_index += 1
+        for face_index in range(face_length):
+            face_indicies.append(next_token_value[point_index])
+            point_index += 1
+
+        mesh_dict["faces"].append(face_indicies)
+
+    next_token, next_token_value = parse_token(input_stream)
+    while next_token != TOKEN_CBRACE and stream_length > input_stream.tell():
+        if next_token == TOKEN_NAME and next_token_value == "MeshNormals":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            normal_count = 0
+            if len(next_token_value) > 0:
+                normal_count = next_token_value[0]
+
+            next_token, next_token_value = parse_token(input_stream)
+            normal_vectors = next_token_value
+            for normal_idx in range(normal_count):
+                i = normal_vectors[(normal_idx * 3) + 0]
+                j = normal_vectors[(normal_idx * 3) + 1]
+                k = normal_vectors[(normal_idx * 3) + 2]
+                mesh_dict["normals"].append([i, j, k])
+
+            next_token, next_token_value = parse_token(input_stream)
+            point_index = 1
+            for face_idx in range(face_count):
+                normal_indicies = []
+                face_length = int(next_token_value[point_index])
+                point_index += 1
+                for face_index in range(face_length):
+                    normal_indicies.append(next_token_value[point_index])
+                    point_index += 1
+
+                mesh_dict["normal_indices"].append(normal_indicies)
+
+            parse_token(input_stream)
+
+        elif next_token == TOKEN_NAME and next_token_value == "MeshTextureCoords":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            uv_count = 0
+            if len(next_token_value) > 0:
+                uv_count = next_token_value[0]
+
+            next_token, next_token_value = parse_token(input_stream)
+            uv_vectors = next_token_value
+            for uv_idx in range(uv_count):
+                x = uv_vectors[(uv_idx * 2) + 0]
+                y = uv_vectors[(uv_idx * 2) + 1]
+                mesh_dict["texcoords"].append([x, y])
+
+            parse_token(input_stream)
+
+        elif next_token == TOKEN_NAME and next_token_value == "VertexDuplicationIndices":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            point_index = 0
+            dup_count = 0
+            if len(next_token_value) > 0:
+                dup_count = next_token_value[point_index]
+                point_index += 1
+
+            mesh_dict["dup_preexport_count"] = 0
+            if len(next_token_value) > 1:
+                mesh_dict["dup_preexport_count"] = next_token_value[point_index]
+                point_index += 1
+
+            for dup_idx in range(dup_count):
+                mesh_dict["dup_indices"].append(next_token_value[point_index])
+                point_index += 1
+
+            parse_token(input_stream)
+
+        elif next_token == TOKEN_NAME and next_token_value == "MeshMaterialList":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            point_index = 0
+            material_count = 0
+            if len(next_token_value) > 0:
+                material_count = next_token_value[point_index]
+                point_index += 1
+
+            face_count = 0
+            if len(next_token_value) > 0:
+                face_count = next_token_value[point_index]
+                point_index += 1
+
+            for face_idx in range(face_count):
+                mesh_dict["material_indices"].append(next_token_value[point_index])
+                point_index += 1
+
+            if False:#x_dict["xof_header"] == "xof 0302txt 0064":
+                tokens.next()
+                for mat_idx in range(material_count):
+                   material_dict = {"name": None}
+                   tokens.next()
+                   material_dict["name"] = tokens.next()
+                   tokens.next()
+
+                   mesh_dict["materials"].append(material_dict)
+
+            else:
+                for mat_idx in range(material_count):
+                    next_token, next_token_value = parse_token(input_stream)
+                    parse_material_binary(x_dict, mesh_dict, next_token, next_token_value, input_stream)
+
+            next_token, next_token_value = parse_token(input_stream)
+
+        elif next_token == TOKEN_NAME and next_token_value == "XSkinMeshHeader":
+            parse_token(input_stream)
+            next_token, next_token_value = parse_token(input_stream)
+            mesh_dict["max_weights_per_vertex"] = next_token_value[0]
+            mesh_dict["max_weights_per_face"] = next_token_value[1]
+            mesh_dict["group_count"] = next_token_value[2]
+            parse_token(input_stream)
+
+        elif next_token == TOKEN_NAME and next_token_value == "SkinWeights":
+            parse_token(input_stream)
+            bone_dict = {"bone": None, "indices": [], "weights": [], "transform": []}
+            next_token, next_token_value = parse_token(input_stream)
+            bone_dict["bone"] = next_token_value
+            parse_token(input_stream)
+
+            point_index = 0
+            next_token, next_token_value = parse_token(input_stream)
+            vertex_count = 0
+            if len(next_token_value) > 0:
+                vertex_count = next_token_value[point_index]
+                point_index += 1
+
+            for vert_idx in range(vertex_count):
+                bone_dict["indices"].append(next_token_value[point_index])
+                point_index += 1
+
+            point_index = 0
+            next_token, next_token_value = parse_token(input_stream)
+            for vert_idx in range(vertex_count):
+                bone_dict["weights"].append(next_token_value[point_index])
+                point_index += 1
+
+            leftover_data = len(next_token_value) - point_index
+            for transform_idx in range(leftover_data):
+                bone_dict["transform"].append(next_token_value[point_index])
+                point_index += 1
+
+            mesh_dict["skin_weights"].append(bone_dict)
+
+            next_token, next_token_value = parse_token(input_stream)
+
+        if (stream_length - input_stream.tell()) != 0:
+            next_token, next_token_value = parse_token(input_stream)
+
+    frame_meshes.append(mesh_dict)
+
+def parse_x_b_binary(input_stream, header):
+    x_dict = {
+        "xof_header": header,
+        "templates": [],
+        "anim_ticks_per_second": None,
+        "materials": [],
+        "frames": [],
+        "meshes": [],
+        "animation_set": []
+    }
+
+    stream_length = len(input_stream.getvalue())
+    while stream_length > input_stream.tell():
+        next_token, name_token_value = parse_token(input_stream)
+        if next_token == TOKEN_TEMPLATE:
+            template_dict = {
+                "name": "",
+                "guid": "",
+                "fields": []
+            }
+
+            name_token, name_token_value = parse_token(input_stream)
+            parse_token(input_stream) # obracket
+            guid_token, guid_token_value = parse_token(input_stream)
+
+            if name_token_value is not None:
+                template_dict["name"] = name_token_value
+            if guid_token_value is not None:
+                template_dict["guid"] = guid_token_value
+
+            while next_token != TOKEN_CBRACE:
+                field_dict = {}
+                field_keys = []
+                next_token, next_token_value = parse_token(input_stream)
+                if next_token == TOKEN_CBRACE:
+                    continue
+
+                while next_token != TOKEN_SEMICOLON:
+                    field_keys.append(next_token_value)
+                    next_token, next_token_value = parse_token(input_stream)
+
+                if len(field_keys) == 2:
+                    field_dict["type"] = field_keys[0]
+                    field_dict["name"] = field_keys[1]
+                elif len(field_keys) == 6:
+                    field_dict["is_array"] = field_keys[0]
+                    field_dict["type"] = field_keys[1]
+                    field_dict["name"] = "%s[%s]" % (field_keys[2], field_keys[4])
+                else:
+                    print("Template with more than 6 or 2 entries")
+
+                template_dict["fields"].append(field_dict)
+
+            x_dict["templates"].append(template_dict)
+
+        elif next_token == TOKEN_NAME and name_token_value == "AnimTicksPerSecond":
+            parse_token(input_stream) # obracket
+            next_token, next_token_value = parse_token(input_stream)
+            fps_value = 20
+            if len(next_token_value) > 0:
+                fps_value = next_token_value[0]
+
+            x_dict["anim_ticks_per_second"] = fps_value
+            parse_token(input_stream) # cbracket
+
+        elif next_token == TOKEN_NAME and name_token_value == "Material":
+            parse_material_binary(x_dict, x_dict, next_token, next_token_value, input_stream)
+
+        elif next_token == TOKEN_NAME and name_token_value == "Frame":
+            parse_frame_binary(x_dict, input_stream, x_dict["frames"], stream_length)
+
+        elif next_token == TOKEN_NAME and name_token_value == "Mesh":
+            parse_mesh_binary(x_dict, input_stream, x_dict["meshes"], stream_length)
+
+        elif next_token == TOKEN_NAME and name_token_value == "AnimationSet":
+            if False:
+                anim_dict = {"name": None, "frame_data": []}
+                next_token = tokens.next()
+                if next_token != "{":
+                    anim_dict["name"] = next_token
+                    next_token = tokens.next()
+
+                next_token = tokens.next()
+                while next_token != "}" and tokens.left() > 0:
+                    if next_token == "Animation":
+                        frame_data_dict = {"frame_name": None, "key_type": 0, "keyframes": []}
+                        tokens.next()
+                        tokens.next()
+                        tokens.next()
+                        frame_data_dict["key_type"] = int(tokens.next())
+                        tokens.next()
+                        key_count = int(tokens.next())
+                        tokens.next()
+                        for key_idx in range(key_count):
+                            keyframe_dict = {"keyframe_index": 0, "transform": []}
+                            keyframe_dict["keyframe_index"] = int(tokens.next())
+                            tokens.next()
+                            keyframe_length = int(tokens.next())
+                            tokens.next()
+                            for keyframe_idx in range(keyframe_length):
+                                keyframe_dict["transform"].append(float(tokens.next()))
+                                tokens.next()
+                            tokens.next()
+                            tokens.next()
+
+                            frame_data_dict["keyframes"].append(keyframe_dict)
+
+                        tokens.next()
+                        tokens.next()
+                        frame_data_dict["frame_name"] = tokens.next()
+                        tokens.next()
+                        tokens.next()
+
+                        anim_dict["frame_data"].append(frame_data_dict)
+                    next_token = tokens.next()
+                x_dict["animation_set"].append(anim_dict)
+
+    return x_dict
+
 def read_x(file_path):
     x_dict = None
     version = 0
@@ -842,19 +1339,16 @@ def read_x(file_path):
             is_compressed = True
 
     if is_binary:
-        if is_compressed:
-            with file_path.open("rb") as x_stream:
-                file_header = x_stream.read(16).decode('utf-8')
-                data = x_stream.read()
-
+        with file_path.open("rb") as x_stream:
+            file_header = x_stream.read(16).decode('utf-8')
+            data = x_stream.read()
+            if is_compressed:
                 MSZIP_BLOCK = 0x8000
                 MSZIP_MAGIC = b"CK"
                 offset = 0
 
                 unzipped_size, = struct.unpack_from("<I", data, offset)
                 offset += 4
-
-                output = bytearray()
 
                 while offset < len(data):
                     uncompressed_size, block_size = struct.unpack_from("<HH", data, offset)
@@ -872,15 +1366,13 @@ def read_x(file_path):
                     compressed_data = data[offset:offset + (block_size - 2)]
                     offset += (block_size - 2)
 
-                    decompressed = zlib.decompress(compressed_data,wbits=-zlib.MAX_WBITS,bufsize=MSZIP_BLOCK)
+                    decompressed_stream = zlib.decompress(compressed_data, wbits=-zlib.MAX_WBITS, bufsize=MSZIP_BLOCK)
 
-                    output.extend(decompressed)
+                data = decompressed_stream
 
-                #output_path = os.path.expanduser("~/Desktop/output.bin")
-                #with open(output_path, "wb") as f:
-                    #f.write(output)
-        else:
-            print()
+            decompressed_stream = io.BytesIO(data)
+            x_dict = parse_x_b_binary(decompressed_stream, file_header)
+
     else:
         if version == 0:
             x_dict = parse_x_a_txt(file_path)
