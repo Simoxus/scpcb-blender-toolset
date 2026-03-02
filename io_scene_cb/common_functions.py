@@ -1,3 +1,4 @@
+import re
 import os
 import bpy
 import colorsys
@@ -216,3 +217,6 @@ def generate_texture_mapping(node_tree, input_node, input_key="Vector"):
 
 def flip(v):
     return ((v[0],v[2],v[1]) if len(v)<4 else (v[0], v[1],v[3],v[2]))
+
+def clean_string(text):
+    return re.sub(r'[^A-Za-z0-9]', '', text)

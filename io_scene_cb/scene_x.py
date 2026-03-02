@@ -12,6 +12,7 @@ from .common_functions import (RandomColorGenerator,
                                get_output_material_node, 
                                get_shader_node,
                                connect_inputs,
+                               clean_string,
                                SHADER_RESOURCES)
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
@@ -321,7 +322,6 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         mesh_dict["skin_weights"].append(bone_dict)
 
     mesh_dict["group_count"] = len(mesh_dict["skin_weights"])
-
     for slot in ob.material_slots:
         material_dict = {"name": None,
                         "diffuse": (0.0, 0.0, 0.0, 0.0),
@@ -343,7 +343,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
                 er, eg, eb, ea = node_group.inputs["Emission"].default_value
 
 
-                material_dict["name"] = mat.name
+                material_dict["name"] = clean_string(mat.name)
                 material_dict["diffuse"] = (dr, dg, db, da)
                 material_dict["power"] = node_group.inputs["Power"].default_value
                 material_dict["specular"] = (sr, sg, sb)
@@ -358,7 +358,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
                 er, eg, eb, ea = bdsf_principled.inputs["Emission Color"].default_value
                 image_node = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
 
-                material_dict["name"] = mat.name
+                material_dict["name"] = clean_string(mat.name)
                 material_dict["diffuse"] = (dr, dg, db, da)
                 material_dict["power"] = (2 / (bdsf_principled.inputs["Roughness"].default_value * bdsf_principled.inputs["Roughness"].default_value)) - 2
                 material_dict["specular"] = (sr, sg, sb)
@@ -397,11 +397,14 @@ def export_scene(context, output_path, report):
             if ob.type == "MESH":
                 if ob.parent_type == 'OBJECT' and ob.parent == active_ob:
                     skinned_ob_list.append(ob)
+
                 elif ob.parent_type == 'BONE' and ob.parent == active_ob and len(ob.parent_bone) > 0:
                     rigid_ob_list = rigid_ob_dict.get(ob.parent_bone)
                     if rigid_ob_list is None:
                         rigid_ob_list = rigid_ob_dict[ob.parent_bone] = []
+
                     rigid_ob_list.append(ob)
+
         bone_transforms = {}
         for bone in active_ob.data.bones:
             bone_transforms[bone.name] = active_ob.matrix_world @ bone.matrix_local
@@ -409,10 +412,12 @@ def export_scene(context, output_path, report):
         bpy.ops.object.mode_set(mode = 'POSE')
         get_skeleton_tree(active_ob, x_dict["frames"], bone_transforms, rigid_ob_dict, depsgraph, None)
         bpy.ops.object.mode_set(mode = 'OBJECT')
+
         for skinned_ob in skinned_ob_list:
             process_mesh(x_dict["meshes"], bone_transforms, active_ob, skinned_ob, depsgraph)
 
         write_x(x_dict, output_path)
+        active_ob.data.pose_position = 'POSE'
 
     else:
         report({'ERROR'}, "No armature selected. Export will now be aborted")
