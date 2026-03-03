@@ -12,6 +12,7 @@ bl_info = {
 import bpy
 
 from pathlib import Path
+from .common_functions import get_shader_node, SHADER_RESOURCES
 
 from bpy.types import (
         PropertyGroup,
@@ -27,6 +28,7 @@ from bpy.props import (
         PointerProperty,
         CollectionProperty
         )
+
 from bpy_extras.io_utils import (
     ImportHelper,
     ExportHelper
@@ -525,6 +527,45 @@ class CB_ObjectProps(Panel):
         elif object_type == ObjectType.entity_door:
             render_entity_door(context, layout, ob_cb)
 
+class CBRMESH_OT_CBShader(Operator):
+    bl_idname = "node.cb_rmesh"
+    bl_label = "Rmesh Material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        node_tree = context.space_data.edit_tree
+
+        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "rmesh_material")
+        shader_node.location = context.space_data.cursor_location
+
+        return {'FINISHED'}
+    
+class CBX_OT_CBShader(Operator):
+    bl_idname = "node.cb_x"
+    bl_label = "X Material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        node_tree = context.space_data.edit_tree
+
+        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "x_material")
+        shader_node.location = context.space_data.cursor_location
+
+        return {'FINISHED'}
+    
+class CBB3D_OT_CBShader(Operator):
+    bl_idname = "node.cb_b3d"
+    bl_label = "B3D Material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        node_tree = context.space_data.edit_tree
+
+        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "b3d_material")
+        shader_node.location = context.space_data.cursor_location
+
+        return {'FINISHED'}
+
 class ExportRMESH(Operator, ExportHelper):
     """Write an RMESH file"""
     bl_idname = 'export_scene.ermesh'
@@ -733,6 +774,13 @@ def menu_func_import(self, context):
     self.layout.operator(ImportX.bl_idname, text='SCP X (.x)')
     self.layout.operator(ImportB3D.bl_idname, text='SCP B3D (.b3d)')
 
+def menu_func_cb_shaders(self, context):
+    layout = self.layout
+    layout.separator()
+    layout.operator("node.cb_rmesh", text="Rmesh Material")
+    layout.operator("node.cb_x", text="X Material")
+    layout.operator("node.cb_b3d", text="B3D Material")
+
 classesscp = [
     ImportRMESH,
     ExportRMESH,
@@ -743,7 +791,11 @@ classesscp = [
     CBObjectPropertiesGroup,
     CB_ObjectProps,
     B3DImagePropertiesGroup,
-    B3DIMAGE_PT_SceneProps
+    B3DIMAGE_PT_SceneProps,
+    CBRMESH_OT_CBShader,
+    CBX_OT_CBShader,
+    CBB3D_OT_CBShader,
+    SCPCBAddonPrefs
 ]
 
 if (4, 1, 0) <= bpy.app.version:
@@ -752,19 +804,19 @@ if (4, 1, 0) <= bpy.app.version:
     classesscp.append(ImportB3D_FileHandler)
 
 def register():
-    bpy.utils.register_class(SCPCBAddonPrefs)
     for clsscp in classesscp:
         bpy.utils.register_class(clsscp)
 
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    bpy.types.NODE_MT_category_shader_shader.append(menu_func_cb_shaders)
     bpy.types.Object.cb = PointerProperty(type=CBObjectPropertiesGroup, name="RMESH Properties", description="Set properties for your rmesh object")
     bpy.types.Image.cb = PointerProperty(type=B3DImagePropertiesGroup)
 
 def unregister():
-    bpy.utils.unregister_class(SCPCBAddonPrefs)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
+    bpy.types.NODE_MT_category_shader_shader.remove(menu_func_cb_shaders)
     for clsscp in classesscp:
         bpy.utils.unregister_class(clsscp)
 
