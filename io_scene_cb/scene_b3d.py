@@ -667,7 +667,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
 
                         img = texture_entry.image
                         if img and img.source == 'FILE' and img.filepath:
-                            image_name = os.path.basename(img.filepath)
+                            image_name = os.path.basename(bpy.path.abspath(img.filepath))
                             for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
                                 txd, tyd = texture_dict["position"]
                                 sxd, syd = texture_dict["scale"]
@@ -749,7 +749,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                         image_name = ""
                         img = diffuse_node.image
                         if img and img.source == 'FILE' and img.filepath:
-                            image_name = os.path.basename(img.filepath)
+                            image_name = os.path.basename(bpy.path.abspath(img.filepath))
                             for tex_idx, texture_dict in enumerate(b3d_data["textures"]):
                                 if image_name == texture_dict["name"]:
                                     texture_dict_idx = tex_idx

@@ -253,6 +253,8 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     }
 
     mesh_dict["dup_preexport_count"] = len(mesh.vertices)
+    loc, rot, scl = ob.matrix_local.decompose()
+    local_matrix = Matrix.LocRotScale(Vector(), rot, scl)
 
     original_vertex_map = {}
     original_vertices = []
@@ -264,9 +266,11 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            loop_normal = flip(loop.normal)
+            final_normal = local_matrix @ loop.normal
+            final_normal.normalize()
+            loop_normal = flip(final_normal)
 
-            pos = Vector(flip(v.co)) * 160
+            pos = Vector(flip(local_matrix @ (v.co * 160)))
 
             uv = (0.0, 0.0)
             if uv_layer:
