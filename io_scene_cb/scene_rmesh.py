@@ -24,6 +24,7 @@ from .common_functions import (RandomColorGenerator,
                                get_shader_node,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
+                               SHADER_NODE_NAMES,
                                PM_IMPORT)
 
 def natural_key(s):
@@ -157,19 +158,24 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                     output_material_node = get_output_material_node(mat)
                     bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
                     node_group = get_linked_node(output_material_node, "Surface", "GROUP")
-                    if node_group and node_group.node_tree.name == "rmesh_material":
+                    if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
                         lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
                         diffuse_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
+                        diffuse_alpha_node = get_linked_node(node_group, "Diffuse Map Alpha", "TEX_IMAGE")
                         if lightmap_node is not None:
                             img = lightmap_node.image
                             if img and img.source == 'FILE' and img.filepath:
-                                lightmap_texture_dict["texture_type"] = node_group.inputs["Light Map Texture Type"].default_value
+                                lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
                                 lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
 
                         if diffuse_node is not None:
                             img = diffuse_node.image
                             if img and img.source == 'FILE' and img.filepath:
-                                diffuse_texture_dict["texture_type"] = node_group.inputs["Diffuse Map Texture Type"].default_value
+                                diffuse_texture_type = TextureType.opaque.value
+                                if diffuse_alpha_node is not None:
+                                    diffuse_texture_type = TextureType.transparent.value
+
+                                diffuse_texture_dict["texture_type"] = diffuse_texture_type
                                 diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
 
                     elif bdsf_principled:
@@ -193,12 +199,13 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                         image_node_b = get_linked_node(bdsf_principled, "Alpha", "TEX_IMAGE")
 
                         if image_node_a is not None:
-                            diffuse_texture_dict["texture_type"] = TextureType.opaque.value
+                            diffuse_texture_type = TextureType.opaque.value
+                            if image_node_b is not None:
+                                diffuse_texture_type = TextureType.transparent.value
+
                             if image_node_a.image.filepath:
                                 diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(image_node_a.image.filepath))
-
-                            if image_node_a == image_node_b:
-                                diffuse_texture_dict["texture_type"] = TextureType.transparent.value
+                                diffuse_texture_dict["texture_type"] = diffuse_texture_type
 
                 section_data[mat_name]["textures"].append(lightmap_texture_dict)
                 section_data[mat_name]["textures"].append(diffuse_texture_dict)
@@ -261,7 +268,13 @@ def export_scene(context, filepath, file_type, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
+    mesh_list, render_list, collision_list, trigger_box_list, entity_list = collect_objects()
+
+
     file_type = ExportFileType(int(file_type))
+    if file_type == ExportFileType.rmesh and len(trigger_box_list) > 0:
+        file_type = ExportFileType.rmesh_tb
+
     rmesh_version = 0
     if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_uer:
         rmesh_file_type = "RoomMesh"
@@ -287,8 +300,6 @@ def export_scene(context, filepath, file_type, report):
         "trigger_boxes": [],
         "entities": []
     }
-
-    mesh_list, render_list, collision_list, trigger_box_list, entity_list = collect_objects()
 
     depsgraph = context.evaluated_depsgraph_get()
 
@@ -544,7 +555,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         output_material_node = get_output_material_node(mat)
         output_material_node.location = Vector((0.0, 0.0))
 
-        rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "rmesh_material")
+        rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "cb_material")
         rmesh_node.name = "RMESH Material"
         rmesh_node.location = (-440.0, 0.0)
 
@@ -558,7 +569,6 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         texture_diffuse = None
         for texture_idx, texture_dict in enumerate(mesh_dict["textures"]):
             if texture_idx == 0:
-                lightmap_type = TextureType(texture_dict["texture_type"])
                 texture_lightmap_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
                 if texture_lightmap_data:
                     texture_lightmap = mat.node_tree.nodes.new("ShaderNodeTexImage")
@@ -566,10 +576,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                     texture_lightmap.image.alpha_mode = 'CHANNEL_PACKED'
                     texture_lightmap.location = (-720.0, -320.0)
 
-                    rmesh_node.inputs["Light Map Texture Type"].default_value = lightmap_type.value
-
                     connect_inputs(mat.node_tree, texture_lightmap, "Color", rmesh_node, "Light Map")
-                    connect_inputs(mat.node_tree, texture_lightmap, "Alpha", rmesh_node, "Light Map Alpha")
                     mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_lightmap)
                     uv_node.uv_map = "uvmap_lightmap"
                     mapping_node.vector_type = 'TEXTURE'
@@ -586,16 +593,17 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                     texture_diffuse.image.alpha_mode = 'CHANNEL_PACKED'
                     texture_diffuse.location = (-720.0, 0.0)
 
-                    rmesh_node.inputs["Diffuse Map Texture Type"].default_value = diffuse_type.value
-
                     connect_inputs(mat.node_tree, texture_diffuse, "Color", rmesh_node, "Diffuse Map")
-                    connect_inputs(mat.node_tree, texture_diffuse, "Alpha", rmesh_node, "Diffuse Map Alpha")
+                    if diffuse_type == TextureType.transparent:
+                        connect_inputs(mat.node_tree, texture_diffuse, "Alpha", rmesh_node, "Diffuse Map Alpha")
+
                     mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_diffuse)
                     uv_node.uv_map = "uvmap_render"
                     mapping_node.vector_type = 'TEXTURE'
 
                     texture_name = os.path.basename(texture_dict["texture_name"]).rsplit(".", 1)[0]
                     texture_bump_data = get_file("%sbump" % texture_name, directory_path=local_asset_path)
+                    texture_glow_data = get_file("%sglow" % texture_name, directory_path=local_asset_path)
                     if texture_bump_data:
                         texture_bump = mat.node_tree.nodes.new("ShaderNodeTexImage")
                         texture_bump.image = texture_bump_data
@@ -604,8 +612,19 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                         texture_bump.image.colorspace_settings.name = 'Non-Color'
                         texture_bump.location = (-720.0, -640.0)
                         connect_inputs(mat.node_tree, texture_bump, "Color", rmesh_node, "Normal Map")
-                        connect_inputs(mat.node_tree, texture_bump, "Alpha", rmesh_node, "Normal Map Alpha")
+
                         mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_bump)
+                        uv_node.uv_map = "uvmap_render"
+                        mapping_node.vector_type = 'TEXTURE'
+
+                    if texture_glow_data:
+                        texture_glow = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                        texture_glow.image = texture_glow_data
+                        texture_glow.image.alpha_mode = 'CHANNEL_PACKED'
+                        texture_glow.location = (-720.0, -1140)
+                        connect_inputs(mat.node_tree, texture_glow, "Color", rmesh_node, "Emission Map")
+
+                        mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_glow)
                         uv_node.uv_map = "uvmap_render"
                         mapping_node.vector_type = 'TEXTURE'
 

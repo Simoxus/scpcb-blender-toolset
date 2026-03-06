@@ -7,6 +7,7 @@ from math import pi, radians
 from mathutils import Matrix, Quaternion, Vector, Euler
 
 SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "shader_resources.blend")
+SHADER_NODE_NAMES = ("rmesh_material", "b3d_material", "cb_material")
 
 DTOR = pi / 180.0
 RTOD = 180.0 / pi

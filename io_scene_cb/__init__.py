@@ -263,7 +263,7 @@ class B3DImagePropertiesGroup(PropertyGroup):
     color: BoolProperty(
         name ="Color",
         description = "???",
-        default = False,
+        default = True,
         )
 
     alpha: BoolProperty(
@@ -323,6 +323,7 @@ class B3DImagePropertiesGroup(PropertyGroup):
     blend_type: EnumProperty(
         name="Blend Type",
         description="Set the blend type",
+        default = '2',
         items = ( ('0', "Do Not Blend", "Do Not Blend"),
                     ('1', "No Blend Or Alpha", "No Blend Or Alpha"),
                     ('2', "Multiply", "Multiply"),
@@ -527,41 +528,15 @@ class CB_ObjectProps(Panel):
         elif object_type == ObjectType.entity_door:
             render_entity_door(context, layout, ob_cb)
 
-class CBRMESH_OT_CBShader(Operator):
-    bl_idname = "node.cb_rmesh"
-    bl_label = "Rmesh Material"
+class CBRMAT_OT_CBShader(Operator):
+    bl_idname = "node.cb_materail"
+    bl_label = "CB Material"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         node_tree = context.space_data.edit_tree
 
-        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "rmesh_material")
-        shader_node.location = context.space_data.cursor_location
-
-        return {'FINISHED'}
-    
-class CBX_OT_CBShader(Operator):
-    bl_idname = "node.cb_x"
-    bl_label = "X Material"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        node_tree = context.space_data.edit_tree
-
-        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "x_material")
-        shader_node.location = context.space_data.cursor_location
-
-        return {'FINISHED'}
-    
-class CBB3D_OT_CBShader(Operator):
-    bl_idname = "node.cb_b3d"
-    bl_label = "B3D Material"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        node_tree = context.space_data.edit_tree
-
-        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "b3d_material")
+        shader_node = get_shader_node(node_tree, SHADER_RESOURCES, "cb_material")
         shader_node.location = context.space_data.cursor_location
 
         return {'FINISHED'}
@@ -576,7 +551,6 @@ class ExportRMESH(Operator, ExportHelper):
         name="File Type:",
         description="What game was the model file made for",
         items=[ ('0', "RMESH", "Export an RMESH intended for the original SCP CB"),
-                ('1', "RMESH Trigger Box", "Export an RMESH intended for the original SCP CB"),
                 ('2', "RMESH UER", "Export an RMESH intended for SCP CB UER 1.5.6"),
                 ('3', "RMESH UER 2", "Export an RMESH intended for SCP CB UER 2.0"),
                 ('4', "RM", "Export an RMESH intended for the Salvage SCP CB fork")
@@ -777,9 +751,7 @@ def menu_func_import(self, context):
 def menu_func_cb_shaders(self, context):
     layout = self.layout
     layout.separator()
-    layout.operator("node.cb_rmesh", text="Rmesh Material")
-    layout.operator("node.cb_x", text="X Material")
-    layout.operator("node.cb_b3d", text="B3D Material")
+    layout.operator("node.cb_material", text="CB Material")
 
 classesscp = [
     ImportRMESH,
@@ -792,9 +764,7 @@ classesscp = [
     CB_ObjectProps,
     B3DImagePropertiesGroup,
     B3DIMAGE_PT_SceneProps,
-    CBRMESH_OT_CBShader,
-    CBX_OT_CBShader,
-    CBB3D_OT_CBShader,
+    CBRMAT_OT_CBShader,
     SCPCBAddonPrefs
 ]
 

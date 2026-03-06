@@ -13,7 +13,91 @@ from .common_functions import (RandomColorGenerator,
                                get_shader_node,
                                connect_inputs,
                                clean_string,
-                               SHADER_RESOURCES)
+                               generate_texture_mapping,
+                               SHADER_RESOURCES,
+                               SHADER_NODE_NAMES)
+
+def generate_materials(materials_dict, random_color_gen, mesh, is_simple, ob_data, local_asset_path, error_log, material_list=None):
+    for material_idx, material_dict in enumerate(materials_dict):
+        material_name = ""
+        if material_dict["name"] is None:
+            material_name = "materIal_%s" % material_idx
+        else:
+            material_name = material_dict["name"]
+
+        material = bpy.data.materials.new(name=material_name)
+        material.diffuse_color = random_color_gen.next()
+
+        if mesh is not None:
+            mesh.materials.append(material)
+
+        if is_simple:
+            ob_data.materials.append(material)
+
+        material.use_nodes = True
+        for node in material.node_tree.nodes:
+            material.node_tree.nodes.remove(node)
+
+        output_material_node = get_output_material_node(material)
+        output_material_node.location = Vector((0.0, 0.0))
+
+        x_node = get_shader_node(material.node_tree, SHADER_RESOURCES, "cb_material")
+        x_node.name = "X Material"
+        x_node.location = (-440.0, 0.0)
+
+        connect_inputs(material.node_tree, x_node, "Shader", output_material_node, "Surface")
+
+        sr, sg, sb = material_dict["specular"]
+        er, eg, eb = material_dict["emissive"]
+        x_node.inputs["Diffuse Overlay"].default_value = material_dict["diffuse"]
+        x_node.inputs["Emission Strength"].default_value = material_dict["power"]
+        x_node.inputs["Specular Map"].default_value = (sr, sg, sb, 1)
+        x_node.inputs["Emission Map"].default_value = (er, eg, eb, 1)
+
+        texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
+        if texture_node:
+            texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+            texture.location = (-720.0, 0)
+            texture.image = texture_node
+            connect_inputs(material.node_tree, texture, "Color", x_node, "Diffuse Map")
+
+            mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture)
+            uv_node.uv_map = "uvmap_render"
+            mapping_node.vector_type = 'TEXTURE'
+
+            texture_name = os.path.basename(material_dict["texture"]).rsplit(".", 1)[0]
+            texture_bump_data = get_file("%sbump" % texture_name, directory_path=local_asset_path)
+            texture_glow_data = get_file("%sglow" % texture_name, directory_path=local_asset_path)
+            if texture_bump_data:
+                texture_bump = material.node_tree.nodes.new("ShaderNodeTexImage")
+                texture_bump.image = texture_bump_data
+                texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
+                texture_bump.interpolation = 'Cubic'
+                texture_bump.image.colorspace_settings.name = 'Non-Color'
+                texture_bump.location = (-720.0, -380)
+                connect_inputs(material.node_tree, texture_bump, "Color", x_node, "Normal Map")
+
+                mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture_bump)
+                uv_node.uv_map = "uvmap_render"
+                mapping_node.vector_type = 'TEXTURE'
+
+            if texture_glow_data:
+                texture_glow = material.node_tree.nodes.new("ShaderNodeTexImage")
+                texture_glow.image = texture_glow_data
+                texture_glow.image.alpha_mode = 'CHANNEL_PACKED'
+                texture_glow.location = (-720.0, -760)
+                connect_inputs(material.node_tree, texture_glow, "Color", x_node, "Emission Map")
+
+                mapping_node, uv_node = generate_texture_mapping(material.node_tree, texture_glow)
+                uv_node.uv_map = "uvmap_render"
+                mapping_node.vector_type = 'TEXTURE'
+
+        else:
+            if material_dict["texture"] is not None:
+                error_log.add('Failed to retrive "%s"' % material_dict["texture"])
+
+        if material_list is not None:
+            material_list.append(material)
 
 def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simple=False, world_transform=None, material_list=[], local_asset_path="", error_log=set(), random_color_gen=None):
     loop_normals = []
@@ -43,62 +127,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         poly.use_smooth = True
 
     if not x_dict["xof_header"] == "xof 0302txt 0064":
-        for material_idx, material_dict in enumerate(mesh_dict["materials"]):
-            material_name = ""
-            if material_dict["name"] is None:
-                material_name = "materIal_%s" % material_idx
-            else:
-                material_name = material_dict["name"]
-
-            material = bpy.data.materials.new(name=material_name)
-            material.diffuse_color = random_color_gen.next()
-
-            mesh.materials.append(material)
-            if is_simple:
-                ob_data.materials.append(material)
-
-            material.use_nodes = True
-            for node in material.node_tree.nodes:
-                material.node_tree.nodes.remove(node)
-
-            output_material_node = get_output_material_node(material)
-            output_material_node.location = Vector((0.0, 0.0))
-
-            x_node = get_shader_node(material.node_tree, SHADER_RESOURCES, "x_material")
-            x_node.name = "X Material"
-            x_node.location = (-440.0, 0.0)
-
-            connect_inputs(material.node_tree, x_node, "Shader", output_material_node, "Surface")
-
-            sr, sg, sb = material_dict["specular"]
-            er, eg, eb = material_dict["emissive"]
-            x_node.inputs["Diffuse Overlay"].default_value = material_dict["diffuse"]
-            x_node.inputs["Power"].default_value = material_dict["power"]
-            x_node.inputs["Specular"].default_value = (sr, sg, sb, 1)
-            x_node.inputs["Emission"].default_value = (er, eg, eb, 1)
-
-            texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
-            if texture_node:
-                texture = material.node_tree.nodes.new("ShaderNodeTexImage")
-                texture.location = (-720.0, 0)
-                texture.image = texture_node
-                connect_inputs(material.node_tree, texture, "Color", x_node, "Diffuse Map")
-                connect_inputs(material.node_tree, texture, "Alpha", x_node, "Diffuse Map Alpha")
-
-                texture_bump_data = get_file("%sbump" % os.path.basename(material_dict["texture"]).rsplit(".", 1)[0], directory_path=local_asset_path)
-                if texture_bump_data:
-                    texture_bump = material.node_tree.nodes.new("ShaderNodeTexImage")
-                    texture_bump.image = texture_bump_data
-                    texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
-                    texture_bump.interpolation = 'Cubic'
-                    texture_bump.image.colorspace_settings.name = 'Non-Color'
-                    texture_bump.location = (-720.0, -380)
-                    connect_inputs(material.node_tree, texture_bump, "Color", x_node, "Normal Map")
-                    connect_inputs(material.node_tree, texture_bump, "Alpha", x_node, "Normal Map Alpha")
-
-            else:
-                if material_dict["texture"] is not None:
-                    error_log.add('Failed to retrive "%s"' % material_dict["texture"])
+        generate_materials(mesh_dict["materials"], random_color_gen, mesh, is_simple, ob_data, local_asset_path, error_log)
 
     else:
         for mat in material_list:
@@ -340,16 +369,15 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
             output_material_node = get_output_material_node(mat)
             bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
             node_group = get_linked_node(output_material_node, "Surface", "GROUP")
-            if node_group and node_group.node_tree.name == "x_material":
+            if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
                 image_node = get_linked_node(node_group, "Diffuse Map", "TEX_IMAGE")
                 dr, dg, db, da = node_group.inputs["Diffuse Overlay"].default_value
-                sr, sg, sb, sa = node_group.inputs["Specular"].default_value
-                er, eg, eb, ea = node_group.inputs["Emission"].default_value
-
+                sr, sg, sb, sa = node_group.inputs["Specular Map"].default_value
+                er, eg, eb, ea = node_group.inputs["Emission Map"].default_value
 
                 material_dict["name"] = clean_string(mat.name)
                 material_dict["diffuse"] = (dr, dg, db, da)
-                material_dict["power"] = node_group.inputs["Power"].default_value
+                material_dict["power"] = node_group.inputs["Emission Strength"].default_value
                 material_dict["specular"] = (sr, sg, sb)
                 material_dict["emissive"] = (er, eg, eb)
                 if image_node and image_node.image:
@@ -364,7 +392,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
 
                 material_dict["name"] = clean_string(mat.name)
                 material_dict["diffuse"] = (dr, dg, db, da)
-                material_dict["power"] = (2 / (bdsf_principled.inputs["Roughness"].default_value * bdsf_principled.inputs["Roughness"].default_value)) - 2
+                material_dict["power"] = bdsf_principled.inputs[28].default_value
                 material_dict["specular"] = (sr, sg, sb)
                 material_dict["emissive"] = (er, eg, eb)
                 if image_node and image_node.image:
@@ -455,54 +483,7 @@ def import_scene(context, filepath, report, bm=None, ob_data=None, is_simple=Fal
             bpy.ops.object.mode_set(mode='EDIT')
 
         if x_dict["xof_header"] == "xof 0302txt 0064":
-            for material_dict in x_dict["materials"]:
-                material = bpy.data.materials.new(name=material_dict["name"])
-                material.diffuse_color = random_color_gen.next()
-
-                material.use_nodes = True
-                for node in material.node_tree.nodes:
-                    material.node_tree.nodes.remove(node)
-
-                output_material_node = get_output_material_node(material)
-                output_material_node.location = Vector((0.0, 0.0))
-
-                x_node = get_shader_node(material.node_tree, SHADER_RESOURCES, "x_material")
-                x_node.name = "X Material"
-                x_node.location = (-440.0, 0.0)
-
-                connect_inputs(material.node_tree, x_node, "Shader", output_material_node, "Surface")
-
-                sr, sg, sb = material_dict["specular"]
-                er, eg, eb = material_dict["emissive"]
-                x_node.inputs["Diffuse Overlay"].default_value = material_dict["diffuse"]
-                x_node.inputs["Power"].default_value = material_dict["power"]
-                x_node.inputs["Specular"].default_value = (sr, sg, sb, 1)
-                x_node.inputs["Emission"].default_value = (er, eg, eb, 1)
-
-                texture_node = get_file(material_dict["texture"], True, True, directory_path=local_asset_path)
-                if texture_node:
-                    texture = material.node_tree.nodes.new("ShaderNodeTexImage")
-                    texture.location = (-720.0, 0)
-                    texture.image = texture_node
-                    connect_inputs(material.node_tree, texture, "Color", x_node, "Diffuse Map")
-                    connect_inputs(material.node_tree, texture, "Alpha", x_node, "Diffuse Map Alpha")
-
-                    texture_bump_data = get_file("%sbump" % os.path.basename(material_dict["texture"]).rsplit(".", 1)[0], directory_path=local_asset_path)
-                    if texture_bump_data:
-                        texture_bump = material.node_tree.nodes.new("ShaderNodeTexImage")
-                        texture_bump.image = texture_bump_data
-                        texture_bump.image.alpha_mode = 'CHANNEL_PACKED'
-                        texture_bump.interpolation = 'Cubic'
-                        texture_bump.image.colorspace_settings.name = 'Non-Color'
-                        texture_bump.location = (-720.0, -380)
-                        connect_inputs(material.node_tree, texture_bump, "Color", x_node, "Normal Map")
-                        connect_inputs(material.node_tree, texture_bump, "Alpha", x_node, "Normal Map Alpha")
-
-                else:
-                    if material_dict["texture"] is not None:
-                        error_log.add('Failed to retrive "%s"' % material_dict["texture"])
-
-                material_list.append(material)
+            generate_materials(x_dict["materials"], random_color_gen, None, is_simple, ob_data, local_asset_path, error_log, material_list)
 
         rigid_obs = []
         for bone in x_dict["frames"]:

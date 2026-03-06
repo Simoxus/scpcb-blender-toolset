@@ -72,15 +72,14 @@ class B3DParser:
                 tex = []
                 while self.fp.tell() < next_pos:
                     name = self.gets()
-                    flags, texture_type = self.s(2)
-                    blend, pad1 = self.s(2)
+                    flags = self.i(1)[0]
+                    blend = self.i(1)[0]
                     pos2 = self.f(2)
                     scale = self.f(2)
                     rot = self.f(1)[0]
                     tex.append({
                         'name': name,
                         'flags': flags,
-                        'texture_type': texture_type,
                         'blend': blend,
                         'position': pos2,
                         'scale': scale,
@@ -95,8 +94,8 @@ class B3DParser:
                     name = self.gets()
                     rgba = self.f(4)
                     shine = self.f(1)[0]
-                    blend, pad0 = self.s(2)
-                    fx, pad1 = self.s(2)
+                    blend = self.i(1)[0]
+                    fx = self.i(1)[0]
                     tids = self.i(n_texs)
                     mats.append({
                         'name': name,
@@ -358,9 +357,8 @@ def write_b3d(path, data, version=1):
 
         for t in data['textures']:
             w.writes(t['name'])
-            w.s(t['flags'])
-            w.s(t['texture_type'])
-            w.s(t['blend'], 0)
+            w.i(t['flags'])
+            w.i(t['blend'])
             w.f(*t['position'])
             w.f(*t['scale'])
             w.f(t['rotation'])
@@ -379,9 +377,8 @@ def write_b3d(path, data, version=1):
             w.writes(m['name'])
             w.f(*m['rgba'])
             w.f(m['shine'])
-            w.s(m['blend'], 0)
-            w.s(m['fx'], 0)
-
+            w.i(m['blend'])
+            w.i(m['fx'])
             w.i(*m['tids'])
 
         payload += make_chunk("BRUS", w.bytes())
