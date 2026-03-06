@@ -1223,7 +1223,7 @@ def export_scene(context, filepath, report):
     mesh_dict = None
     key_dict = defaultdict(list)
     for node_ob in bpy.data.objects:
-        if node_ob.type == "MESH" and node_ob.parent.type == "ARMATURE" and node_ob.parent.animation_data is not None and node_ob.parent.animation_data.nla_tracks is not None:
+        if node_ob.type == "MESH" and node_ob.parent and node_ob.parent.type == "ARMATURE" and node_ob.parent.animation_data is not None and node_ob.parent.animation_data.nla_tracks is not None:
             armature_ob = node_ob.parent
 
             armature_ob.data.pose_position = 'REST'
