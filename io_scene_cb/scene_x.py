@@ -244,17 +244,20 @@ def get_skeleton_tree(active_ob, frame_dict, bone_transforms, rigid_ob_dict, dep
             rigid_obs = rigid_ob_dict.get(bone.name)
             if rigid_obs is not None:
                 for rigid_ob in rigid_obs:
-                    process_mesh(bone_dict["meshes"], bone_transforms, active_ob, rigid_ob, depsgraph)
+                    process_mesh(bone_dict["meshes"], bone_transforms, active_ob, rigid_ob, depsgraph, bone)
 
             bone_dict["transform"] = blender_matrix_to_x(bone_transforms.get(bone.name))
             get_skeleton_tree(active_ob, bone_dict["children"], bone_transforms, rigid_ob_dict, depsgraph, bone)
 
             frame_dict.append(bone_dict)
 
-def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
+def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph, bone=None):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
+    mesh.transform(ob.matrix_world)
+    if bone is not None:
+        mesh.transform((armature.matrix_world @ bone.matrix).inverted())
 
     uv_layer = None
     uv_count = len(mesh.uv_layers)
@@ -281,8 +284,6 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
     }
 
     mesh_dict["dup_preexport_count"] = len(mesh.vertices)
-    loc, rot, scl = ob.matrix_local.decompose()
-    local_matrix = Matrix.LocRotScale(Vector(), rot, scl)
 
     original_vertex_map = {}
     original_vertices = []
@@ -293,12 +294,10 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph):
         mesh_dict["material_indices"].append(mat_idx)
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
-            v = mesh.vertices[loop.vertex_index]
-            final_normal = local_matrix @ loop.normal
-            final_normal.normalize()
-            loop_normal = flip(final_normal)
+            v = mesh.vertices[loop.vertex_index] 
+            loop_normal = flip(loop.normal)
 
-            pos = Vector(flip(local_matrix @ (v.co * 160)))
+            pos = Vector(flip(v.co * 160))
 
             uv = (0.0, 0.0)
             if uv_layer:
@@ -405,8 +404,18 @@ def export_scene(context, output_path, report):
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
-    active_ob = context.object
-    if active_ob and active_ob.type == 'ARMATURE' and len(active_ob.data.bones) > 0:
+    armature_ob = None
+    if context.object and context.object.type == 'ARMATURE' and len(context.object.data.bones) > 0:
+        armature_ob = context.object
+        
+    if armature_ob is None:
+        for ob in bpy.data.objects:
+            if ob.type == 'ARMATURE' and len(ob.data.bones) > 0:
+                context.view_layer.objects.active = ob
+                armature_ob = ob
+                break
+
+    if armature_ob:
         x_dict = {
             "xof_header": None,
             "templates": [],
@@ -422,14 +431,14 @@ def export_scene(context, output_path, report):
         skinned_ob_list = []
         rigid_ob_dict = {}
 
-        active_ob.data.pose_position = 'REST'
+        armature_ob.data.pose_position = 'REST'
         depsgraph = context.evaluated_depsgraph_get()
         for ob in bpy.data.objects:
             if ob.type == "MESH":
-                if ob.parent_type == 'OBJECT' and ob.parent == active_ob:
+                if ob.parent_type == 'OBJECT' and ob.parent == armature_ob:
                     skinned_ob_list.append(ob)
 
-                elif ob.parent_type == 'BONE' and ob.parent == active_ob and len(ob.parent_bone) > 0:
+                elif ob.parent_type == 'BONE' and ob.parent == armature_ob and len(ob.parent_bone) > 0:
                     rigid_ob_list = rigid_ob_dict.get(ob.parent_bone)
                     if rigid_ob_list is None:
                         rigid_ob_list = rigid_ob_dict[ob.parent_bone] = []
@@ -437,18 +446,18 @@ def export_scene(context, output_path, report):
                     rigid_ob_list.append(ob)
 
         bone_transforms = {}
-        for bone in active_ob.data.bones:
-            bone_transforms[bone.name] = active_ob.matrix_world @ bone.matrix_local
+        for bone in armature_ob.data.bones:
+            bone_transforms[bone.name] = armature_ob.matrix_world @ bone.matrix_local
 
         bpy.ops.object.mode_set(mode = 'POSE')
-        get_skeleton_tree(active_ob, x_dict["frames"], bone_transforms, rigid_ob_dict, depsgraph, None)
+        get_skeleton_tree(armature_ob, x_dict["frames"], bone_transforms, rigid_ob_dict, depsgraph, None)
         bpy.ops.object.mode_set(mode = 'OBJECT')
 
         for skinned_ob in skinned_ob_list:
-            process_mesh(x_dict["meshes"], bone_transforms, active_ob, skinned_ob, depsgraph)
+            process_mesh(x_dict["meshes"], bone_transforms, armature_ob, skinned_ob, depsgraph)
 
         write_x(x_dict, output_path)
-        active_ob.data.pose_position = 'POSE'
+        armature_ob.data.pose_position = 'POSE'
 
     else:
         report({'ERROR'}, "No armature selected. Export will now be aborted")
