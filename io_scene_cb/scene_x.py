@@ -2,7 +2,6 @@ import os
 import bpy
 
 from pathlib import Path
-from math import sqrt, radians
 from mathutils import Matrix, Vector, Quaternion
 from .process_x import write_x, read_x
 from .common_functions import (RandomColorGenerator, 
@@ -178,11 +177,11 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
 
 def x_matrix_to_blender(mat):
     loc, rot, scl = Matrix((mat[0:4], mat[4:8], mat[8:12], mat[12:16])).transposed().decompose()
-    return Matrix.LocRotScale(Vector(flip(loc)) * 0.00625, Quaternion(flip(rot)), Vector(flip(scl)))
+    return Matrix.LocRotScale(Vector(flip(loc)) * 0.00625, Quaternion(flip(rot)).inverted(), Vector(flip(scl)))
 
 def blender_matrix_to_x(mat):
     loc, rot, scl = mat.decompose()
-    b_matrix = Matrix.LocRotScale(Vector(flip(loc)) * 160, Quaternion(flip(rot)), Vector(flip(scl))).transposed()
+    b_matrix = Matrix.LocRotScale(Vector(flip(loc)) * 160, Quaternion(flip(rot)).inverted(), Vector(flip(scl))).transposed()
     matrix_array = []
     for row in b_matrix:
         for element in row:
