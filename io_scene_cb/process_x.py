@@ -621,7 +621,8 @@ def write_mesh(mesh_dict, x_stream, indent_level=0, final_mesh=False):
             x_stream.write('%s"%s";\n' % (get_indentation(indent_level + 4), texture_name))
             x_stream.write("%s}\n" % get_indentation(indent_level + 3))
 
-    x_stream.write("%s}\n" % get_indentation(indent_level + 2))
+        x_stream.write("%s}\n" % get_indentation(indent_level + 2))
+
     x_stream.write("%s}\n" % get_indentation(indent_level + 1))
     if mesh_dict["group_count"] > 0:
         x_stream.write("\n")
