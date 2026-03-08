@@ -12,7 +12,8 @@ bl_info = {
 import bpy
 
 from pathlib import Path
-from .common_functions import get_shader_node, SHADER_RESOURCES
+from .common_functions import get_shader_node, SHADER_RESOURCES, ObjectType
+from .scene_rmesh import update_object
 
 from bpy.types import (
         PropertyGroup,
@@ -34,39 +35,8 @@ from bpy_extras.io_utils import (
     ExportHelper
     )
 
-from enum import Flag, Enum, auto
 if (4, 1, 0) <= bpy.app.version:
     from bpy.types import FileHandler
-
-class ObjectType(Enum):
-    exclude = 0
-    mesh = auto()
-    render = auto()
-    collision = auto()
-    trigger_box = auto()
-    entity_screen = auto()
-    entity_save_screen = auto()
-    entity_waypoint = auto()
-    entity_light = auto()
-    entity_light_fix = auto()
-    entity_spotlight = auto()
-    entity_sound_emitter = auto()
-    entity_player_start = auto()
-    entity_model = auto()
-    entity_mesh = auto()
-    entity_item = auto()
-    entity_door = auto()
-    node_brush = auto()
-    node_terrainsector = auto()
-    node_terrain = auto()
-    node_mesh = auto()
-    node_field_hit = auto()
-    node_light = auto()
-    node_spotlight = auto()
-    node_sunlight = auto()
-    node_soundemitter = auto()
-    node_waypoint = auto()
-    node_object = auto()
 
 class SCPCBAddonPrefs(bpy.types.AddonPreferences):
     bl_idname = __name__
@@ -126,7 +96,7 @@ class CBObjectPropertiesGroup(PropertyGroup):
             description="Model to use for this entity",
             default="",
             maxlen=1024,
-            subtype='DIR_PATH'
+            subtype='FILE_PATH'
     )
 
     texture_path: StringProperty(
@@ -134,7 +104,7 @@ class CBObjectPropertiesGroup(PropertyGroup):
             description="Texture to use for this entity",
             default="",
             maxlen=1024,
-            subtype='DIR_PATH'
+            subtype='FILE_PATH'
     )
 
     trigger_group: StringProperty(
@@ -405,12 +375,16 @@ def render_entity_model(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
     row = col.row()
+    row.operator("cbob.update_ob")
+    row = col.row()
     row.label(text='Model Path:')
     row.prop(active_property, "model_path", text='')
 
 def render_entity_mesh(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
+    row = col.row()
+    row.operator("cbob.update_ob")
     row = col.row()
     row.label(text='Model Path:')
     row.prop(active_property, "model_path", text='')
@@ -428,11 +402,10 @@ def render_entity_item(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
     row = col.row()
+    row.operator("cbob.update_ob")
+    row = col.row()
     row.label(text='Item Name:')
     row.prop(active_property, "item_name", text='')
-    row = col.row()
-    row.label(text='Model Path:')
-    row.prop(active_property, "model_path", text='')
     row = col.row()
     row.label(text='Use Custom Rotation:')
     row.prop(active_property, "use_custom_rotation", text='')
@@ -449,6 +422,8 @@ def render_entity_item(context, layout, active_property):
 def render_entity_door(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
+    row = col.row()
+    row.operator("cbob.update_ob")
     row = col.row()
     row.label(text='Door Type:')
     row.prop(active_property, "door_type", text='')
@@ -476,6 +451,15 @@ def render_entity_door(context, layout, active_property):
     row = col.row()
     row.label(text='Button B:')
     row.prop(active_property, "button_b_ob", text='')
+
+class CBOB_OT_UpdateOb(Operator):
+    bl_idname = "cbob.update_ob"
+    bl_label = "Update Object"
+
+    def execute(self, context):
+        update_object(context, self.report)
+
+        return {'FINISHED'}
 
 class CB_ObjectProps(Panel):
     bl_label = "CB Object Properties"
@@ -765,7 +749,8 @@ classesscp = [
     B3DImagePropertiesGroup,
     B3DIMAGE_PT_SceneProps,
     CBRMAT_OT_CBShader,
-    SCPCBAddonPrefs
+    SCPCBAddonPrefs,
+    CBOB_OT_UpdateOb
 ]
 
 if (4, 1, 0) <= bpy.app.version:

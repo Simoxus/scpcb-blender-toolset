@@ -2,6 +2,7 @@ import re
 import os
 import bpy
 import colorsys
+from enum import Flag, Enum, auto
 
 from math import pi, radians
 from mathutils import Matrix, Quaternion, Vector, Euler
@@ -13,6 +14,36 @@ DTOR = pi / 180.0
 RTOD = 180.0 / pi
 
 PM_IMPORT = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
+
+class ObjectType(Enum):
+    exclude = 0
+    mesh = auto()
+    render = auto()
+    collision = auto()
+    trigger_box = auto()
+    entity_screen = auto()
+    entity_save_screen = auto()
+    entity_waypoint = auto()
+    entity_light = auto()
+    entity_light_fix = auto()
+    entity_spotlight = auto()
+    entity_sound_emitter = auto()
+    entity_player_start = auto()
+    entity_model = auto()
+    entity_mesh = auto()
+    entity_item = auto()
+    entity_door = auto()
+    node_brush = auto()
+    node_terrainsector = auto()
+    node_terrain = auto()
+    node_mesh = auto()
+    node_field_hit = auto()
+    node_light = auto()
+    node_spotlight = auto()
+    node_sunlight = auto()
+    node_soundemitter = auto()
+    node_waypoint = auto()
+    node_object = auto()
 
 def pitch_quat(p):
     return Quaternion((1.0, 0.0, 0.0), p)

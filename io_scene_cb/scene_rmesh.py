@@ -4,7 +4,6 @@ import bpy
 import bmesh
 import configparser
 
-from . import ObjectType
 from pathlib import Path
 from mathutils import Matrix, Vector, Euler, Quaternion
 from .scene_x import import_scene as import_x
@@ -13,6 +12,7 @@ from math import radians, pi, degrees, asin, atan2
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 from .object_helper import create_door, DoorType, ButtonType, DoorState
 from .common_functions import (RandomColorGenerator, 
+                               ObjectType, 
                                get_file, 
                                is_string_empty, 
                                get_blender_rot, 
@@ -27,9 +27,125 @@ from .common_functions import (RandomColorGenerator,
                                SHADER_NODE_NAMES,
                                PM_IMPORT)
 
+def update_object(context, report):
+    ob = context.object
+    ob_type = ObjectType(int(ob.cb.object_type))
+    if ob_type == ObjectType.entity_model or ob_type == ObjectType.entity_mesh:
+        model_path = bpy.path.abspath(ob.cb.model_path)
+        if os.path.isfile(model_path):
+            ob.data.clear_geometry()
+            ob.data.materials.clear()
+
+            bm = bmesh.new()
+            is_simple=True
+            if model_path.lower().endswith(".b3d"):
+                import_b3d(context, Path(model_path), True, report, bm, ob.data, is_simple)
+
+            else:
+                import_x(context, Path(model_path), report, bm, ob.data, is_simple)
+
+            bm.to_mesh(ob.data)
+            bm.free()
+
+        else:
+            report({'WARNING'}, 'Model path does not point to a valid file.')
+
+    elif ob_type == ObjectType.entity_item:
+        game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
+
+        items_ini_path = os.path.join(game_path, r"Data\items.ini")
+        if os.path.isfile(items_ini_path):
+            items_ini = configparser.ConfigParser()
+            items_ini.read(items_ini_path)
+
+            model_name = ob.cb.item_name
+            if model_name == "misc":
+                model_name = "playingcard"
+            elif model_name == "paper":
+                model_name = "doc079"
+            elif model_name == "vest":
+                model_name = "vest"
+            elif model_name == "hazmat":
+                model_name = "hazmatsuit"
+            elif model_name == "nav":
+                model_name = "snav"
+
+            item_entry = items_ini.get(model_name, "model", fallback=None)
+            if item_entry:
+                model_path = get_file(item_entry, False)
+                if os.path.isfile(model_path):
+                    ob.data.clear_geometry()
+                    ob.data.materials.clear()
+
+                    bm = bmesh.new()
+                    is_simple=True
+                    if model_path.lower().endswith(".b3d"):
+                        import_b3d(context, Path(model_path), True, report, bm, ob.data, is_simple)
+
+                    else:
+                        import_x(context, Path(model_path), report, bm, ob.data, is_simple)
+
+                    bm.to_mesh(ob.data)
+                    bm.free()
+
+                else:
+                    report({'WARNING'}, 'Model path does not point to a valid file.')
+
+            else:
+                report({'WARNING'}, 'Unable to find a matching model entry in items.ini.')
+
+        else:
+            report({'WARNING'}, 'Unable to find a valid items.ini.')
+
+    elif ob_type == ObjectType.entity_door:
+        entity_collection = get_referenced_collection("entities", context.scene.collection, False)
+
+        door_type = DoorType(ob.cb.door_type)
+        door_state = DoorState(ob.cb.start_open)
+        button_type = ButtonType.normal
+        if ob.cb.key_card_level < 0:
+            button_type = ButtonType.scanner
+        elif len(ob.cb.keypad_code) > 0:
+            button_type = ButtonType.code
+        elif ob.cb.key_card_level > 0:
+            button_type = ButtonType.keycard
+
+        file_type = ImportFileType.rmesh
+        entity_idx = 0
+        sd_ob = ob
+        sba_ob = ob.cb.button_a_ob
+        sbb_ob = ob.cb.button_b_ob
+
+        valid_door_ob = False
+        if sd_ob and sd_ob.data:
+            valid_door_ob = True
+            sd_ob.data.clear_geometry()
+            sd_ob.data.materials.clear()
+
+        if sba_ob and sba_ob.data:
+            sba_ob.data.clear_geometry()
+            sba_ob.data.materials.clear()
+
+        if sbb_ob and sbb_ob.data:
+            sbb_ob.data.clear_geometry()
+            sbb_ob.data.materials.clear()
+
+        if valid_door_ob:
+            door_ob, button_a_ob, button_b_ob = create_door(door_type, button_type, door_state, file_type, entity_idx, sd_ob, sba_ob, sbb_ob)
+            if not sba_ob:
+                entity_collection.objects.link(button_b_ob)
+                door_ob.cb.button_a_ob = button_a_ob
+                button_a_ob.matrix_world = door_ob.matrix_world @ button_a_ob.matrix_world
+            if not sbb_ob:
+                entity_collection.objects.link(button_a_ob)
+                door_ob.cb.button_b_ob = button_b_ob
+                button_b_ob.matrix_world = door_ob.matrix_world @ button_b_ob.matrix_world
+
+        else:
+            report({'WARNING'}, 'Object is not a mesh type. Convert active object to a mesh manually and then attempt to update.')
+
 def natural_key(s):
-    return [int(t) if t.isdigit() else t.lower()
-            for t in re.split(r'(\d+)', s)]
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
 
 def get_referenced_collection(collection_name, parent_collection, hide_render=False, hide_viewport=False):
     asset_collection = bpy.data.collections.get(collection_name)
@@ -992,25 +1108,18 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
 
             elif entity_dict["entity_type"] == "item":
                 ob_data = None
-                model_path = None
                 model_scale = 1
                 if items_ini:
-                    item_group = None
                     model_name = entity_dict["model_name"]
                     if model_name == "misc":
-                        item_group = "misc"
                         model_name = "playingcard"
                     elif model_name == "paper":
-                        item_group = "paper"
                         model_name = "doc079"
                     elif model_name == "vest":
-                        item_group = "vest"
                         model_name = "vest"
                     elif model_name == "hazmat":
-                        item_group = "hazmat"
                         model_name = "hazmatsuit"
                     elif model_name == "nav":
-                        item_group = "nav"
                         model_name = "snav"
 
                     item_entry = items_ini.get(model_name, "model", fallback=None)
@@ -1031,9 +1140,6 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                             bm.to_mesh(ob_data)
                             bm.free()
 
-                    if item_group:
-                        model_path = item_group
-
                 object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
                 object_mesh.cb.object_type = str(ObjectType.entity_item.value)
                 entity_collection.objects.link(object_mesh)
@@ -1044,8 +1150,6 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
                 object_mesh.cb.item_name = entity_dict["item_name"]
-                if model_path is not None:
-                    object_mesh.cb.model_path = model_path
                 object_mesh.cb.use_custom_rotation = bool(entity_dict["use_custom_rotation"])
                 object_mesh.cb.state_1 = entity_dict["state_1"]
                 object_mesh.cb.state_2 = entity_dict["state_2"]
