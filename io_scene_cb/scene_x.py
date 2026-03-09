@@ -14,7 +14,8 @@ from .common_functions import (RandomColorGenerator,
                                clean_string,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
-                               SHADER_NODE_NAMES)
+                               SHADER_NODE_NAMES,
+                               ROOMSCALE)
 
 def generate_materials(materials_dict, random_color_gen, mesh, is_simple, ob_data, local_asset_path, error_log, material_list=None):
     for material_idx, material_dict in enumerate(materials_dict):
@@ -107,7 +108,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         else:
             mesh_name = "mesh"
 
-    vertices = [Vector(flip(vertex)) * 0.00625 for vertex in mesh_dict["vertices"]]
+    vertices = [Vector(flip(vertex)) * ROOMSCALE for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
@@ -177,7 +178,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
 
 def x_matrix_to_blender(mat):
     loc, rot, scl = Matrix((mat[0:4], mat[4:8], mat[8:12], mat[12:16])).transposed().decompose()
-    return Matrix.LocRotScale(Vector(flip(loc)) * 0.00625, Quaternion(flip(rot)).inverted(), Vector(flip(scl)))
+    return Matrix.LocRotScale(Vector(flip(loc)) * ROOMSCALE, Quaternion(flip(rot)).inverted(), Vector(flip(scl)))
 
 def blender_matrix_to_x(mat):
     loc, rot, scl = mat.decompose()

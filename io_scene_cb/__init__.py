@@ -153,74 +153,79 @@ class CBObjectPropertiesGroup(PropertyGroup):
 
     use_custom_rotation: BoolProperty(
         name ="Use Custom Rotation",
-        description = "Use Custom Rotation",
+        description = "If set to No, the item's rotation will be randomized",
         default = False,
         )
 
     state_1: FloatProperty(
         name = "State 1",
-        description = "???"
+        description = "Multi-purpose state variable. Exclusively used (for the purposes of a room editor) to represent the remaining power in battery-powered items. 0-1000 for the Night Vision Goggles, 0-100 for all others"
         )
     
     state_2: FloatProperty(
         name = "State 2",
-        description = "???"
+        description = "Second multi-purpose state variable"
         )
     
     spawn_chance: FloatProperty(
         name = "Spawn Chance",
-        description = "???"
+        description = "The chance for this item to spawn. Between 0 and 1 where 1 means a guaranteed spawn and 0.25 means a 25% chance for the item to spawn"
         )
 
-    door_type: IntProperty(
-        name = "Door Type",
-        description = "???"
+    door_type: EnumProperty(
+        name="Door Type",
+        description="What type of door is this entity",
+        items = ( ('0', "Normal", "The standard doors you'll find in light and entrance"),
+                    ('1', "Big", "The larger doors you'll find in containment chambers and gates"),
+                    ('2', "Heavy", "The doors you'll find in heavy containment"),
+                    ('3', "Elevator", "The doors used for elevators")
+                )
         )
-    
+
     key_card_level: IntProperty(
         name = "Key Card Level",
-        description = "???"
+        description = "The level of keycard required to open this door or 0 for no key card. -1 corresponds to the white severed hand, -2 to the black severed hand. Mutually exclusive with Keypad Code"
         )
 
     keypad_code: StringProperty(
             name = "Keypad Code",
-            description="????",
+            description="A numeric four digit code (longer or non-numeric codes render the door unopenable) or an empty string for no code. Mutually exclusive with Key Card Level",
             default="",
     )
 
     start_open: BoolProperty(
         name ="Start Open",
-        description = "???",
+        description = "Whether the door should spawn open",
         default = False,
         )
     
     locked: BoolProperty(
         name ="Locked",
-        description = "???",
+        description = "Whether the door should be openable by the player",
         default = False,
         )
 
     delete_half: BoolProperty(
         name ="Delete Half",
-        description = "???",
+        description = "Whether only half of the door should spawn. Useful when there is no space on one side of the door for it to retract into",
         default = False,
         )
 
     allow_scp_079_remote_control: BoolProperty(
         name ="Allow SCP-079 Remote Control",
-        description = "???",
+        description = "Allow SCP-079 to remotely close the door in front of the player if the remote door control system is enabled",
         default = False,
         )
 
     button_a_ob: PointerProperty(
         name="Button A Object",
-        description="???",
+        description="The object being used to represent button A",
         type=bpy.types.Object
     )
 
     button_b_ob: PointerProperty(
         name="Button B Object",
-        description="???",
+        description="The object being used to represent button B",
         type=bpy.types.Object
     )
 
@@ -439,9 +444,11 @@ def render_entity_door(context, layout, active_property):
     row = col.row()
     row.label(text='Locked:')
     row.prop(active_property, "locked", text='')
-    row = col.row()
-    row.label(text='Delete Half:')
-    row.prop(active_property, "delete_half", text='')
+    if not active_property.door_type == '3':
+        row = col.row()
+        row.label(text='Delete Half:')
+        row.prop(active_property, "delete_half", text='')
+
     row = col.row()
     row.label(text='Allow SCP-079 Remote Control:')
     row.prop(active_property, "allow_scp_079_remote_control", text='')
@@ -455,6 +462,7 @@ def render_entity_door(context, layout, active_property):
 class CBOB_OT_UpdateOb(Operator):
     bl_idname = "cbob.update_ob"
     bl_label = "Update Object"
+    bl_description = "When clicked the active object in the scene is update to match the entity settings set"
 
     def execute(self, context):
         update_object(context, self.report)

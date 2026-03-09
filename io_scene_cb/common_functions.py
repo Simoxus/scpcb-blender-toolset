@@ -13,6 +13,8 @@ SHADER_NODE_NAMES = ("rmesh_material", "b3d_material", "cb_material")
 DTOR = pi / 180.0
 RTOD = 180.0 / pi
 
+ROOMSCALE = 0.00625
+
 PM_IMPORT = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
 class ObjectType(Enum):
@@ -170,10 +172,6 @@ def get_file(file_name, use_image_set=True, generate_image_node=True, directory_
                         if file.lower() == "%s.%s" % (file_name_wo_ext, extension):
                             file_path = os.path.join(root, file)
                             break
-
-        # Not sure why I do this - Gen
-        #if file_path is None:
-            #file_path = ""
 
     if use_image_set and generate_image_node:
         if file_path is not None and os.path.isfile(file_path):

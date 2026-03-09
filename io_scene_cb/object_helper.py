@@ -9,8 +9,14 @@ from .process_rmesh import ImportFileType
 from mathutils import Matrix, Vector, Euler
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
+from .common_functions import ROOMSCALE
 
-RoomScale = 1
+# Notes
+# Room scale seems to be 0.00390625
+# The inverse of this is 256
+# In order for the scale value to work in our Blender scene it seems we need to do whatever math the BB asks for and then multiply 256 against the result
+# positions seem to be good when doing whatever the bb asks for and then multipling with 1.6 probably cause of the scale stuff we do
+# I'm not sure where the other plugin got 0.00625 but the value I pulled from the game might be the real scale I need to set the imported assets to to match the ingame scale.
 
 class DoorType(Enum):
     normal = 0
@@ -27,7 +33,6 @@ class ButtonType(Enum):
 class DoorState(Enum):
     closed = 0
     open = auto()
-    broken = auto()
 
 def create_object(ob_bm, ob_data, ob_transform, model_path):
     if str(model_path).lower().endswith(".x"):
@@ -62,7 +67,7 @@ def create_object(ob_bm, ob_data, ob_transform, model_path):
         bm.free()
         bpy.data.meshes.remove(temp_data)
 
-def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed, file_type=ImportFileType.rmesh, entity_idx=0, sd_ob=None, sba_ob=None, sbb_ob=None):
+def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_state=DoorState.closed, door_halved=False, file_type=ImportFileType.rmesh, entity_idx=0, sd_ob=None, sba_ob=None, sbb_ob=None):
     if sd_ob:
         door_ob_data = sd_ob.data
 
@@ -92,10 +97,14 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         if not door_state == DoorState.closed:
             x = 1.2732
 
-        ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((0, 0, radians(180))), Vector((55, 55, 55)) * RoomScale)
-        create_object(ob_bm, door_ob_data, ob_matrix, BigDoorLeftPath)
-        ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, radians(180))), Vector((55, 55, 55)) * RoomScale)
-        create_object(ob_bm, door_ob_data, ob_matrix, BigDoorRightPath)
+        if door_halved:
+            ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, radians(180))), Vector((55, 55, 55)))
+            create_object(ob_bm, door_ob_data, ob_matrix, BigDoorRightPath)
+        else:
+            ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((0, 0, radians(180))), Vector((55, 55, 55)))
+            create_object(ob_bm, door_ob_data, ob_matrix, BigDoorLeftPath)
+            ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, radians(180))), Vector((55, 55, 55)))
+            create_object(ob_bm, door_ob_data, ob_matrix, BigDoorRightPath)
 
     elif door_type == DoorType.heavy:
         ax = 0
@@ -104,10 +113,15 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
             ax = 0.76
             bx = 1.074
 
-        ob_matrix = Matrix.LocRotScale(Vector((-ax, 0, 0)), Euler((0, 0, radians(180))), Vector((1, 1, 1)))
-        create_object(ob_bm, door_ob_data, ob_matrix, HeavyDoorRightPath)
-        ob_matrix = Matrix.LocRotScale(Vector((bx, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
-        create_object(ob_bm, door_ob_data, ob_matrix, HeavyDoorLeftPath)
+        if door_halved:
+            ob_matrix = Matrix.LocRotScale(Vector((bx, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
+            create_object(ob_bm, door_ob_data, ob_matrix, HeavyDoorLeftPath)
+        else:
+            ob_matrix = Matrix.LocRotScale(Vector((-ax, 0, 0)), Euler((0, 0, radians(180))), Vector((1, 1, 1)))
+            create_object(ob_bm, door_ob_data, ob_matrix, HeavyDoorRightPath)
+            ob_matrix = Matrix.LocRotScale(Vector((bx, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
+            create_object(ob_bm, door_ob_data, ob_matrix, HeavyDoorLeftPath)
+
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
         create_object(ob_bm, door_ob_data, ob_matrix, DoorFramePath)
 
@@ -120,6 +134,7 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         create_object(ob_bm, door_ob_data, ob_matrix, ElevatorDoorsPath)
         ob_matrix = Matrix.LocRotScale(Vector((-x, 0, 0)), Euler((radians(0), 0, radians(180))), Vector((1, 1, 1)))
         create_object(ob_bm, door_ob_data, ob_matrix, ElevatorDoorsPath)
+
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
         create_object(ob_bm, door_ob_data, ob_matrix, DoorFramePath)
 
@@ -128,13 +143,18 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         if not door_state == DoorState.closed:
             x = 1.1528
 
-        sx = (204.0 * 0.00625) * RoomScale / 0.0693
-        sy = (16.0 * 0.00625) * RoomScale / 0.0066
-        sz = (312.0 * 0.00625) * RoomScale / 0.1518
-        ob_matrix = Matrix.LocRotScale(Vector((-x, -0.05, 0)), Euler((0, 0, radians(180))), Vector((sx, sy, sz)))
-        create_object(ob_bm, door_ob_data, ob_matrix, DoorPath)
-        ob_matrix = Matrix.LocRotScale(Vector((x, 0.05, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
-        create_object(ob_bm, door_ob_data, ob_matrix, DoorPath)
+        sx = (204.0 * 0.00625) * ROOMSCALE / 0.0693
+        sy = (16.0 * 0.00625) * ROOMSCALE / 0.0066
+        sz = (312.0 * 0.00625) * ROOMSCALE / 0.1518
+        if door_halved:
+            ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
+            create_object(ob_bm, door_ob_data, ob_matrix, DoorPath)
+        else:
+            ob_matrix = Matrix.LocRotScale(Vector((-x, -0.05, 0)), Euler((0, 0, radians(180))), Vector((sx, sy, sz)))
+            create_object(ob_bm, door_ob_data, ob_matrix, DoorPath)
+            ob_matrix = Matrix.LocRotScale(Vector((x, 0.05, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
+            create_object(ob_bm, door_ob_data, ob_matrix, DoorPath)
+
         ob_matrix = Matrix.LocRotScale(Vector((0, 0, 0)), Euler((0, 0, 0)), Vector((1, 1, 1)))
         create_object(ob_bm, door_ob_data, ob_matrix, DoorFramePath)
 
@@ -162,6 +182,7 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
     button_a_ob_bm = bmesh.new()
     button_b_ob_bm = bmesh.new()
     ob_bm = bmesh.new()
+    button_scale = Vector((7.68, 7.68, 7.68))
     if door_type == DoorType.big:
         create_object(button_a_ob_bm, button_a_ob_data, Matrix(), ButtonPath)
         create_object(button_b_ob_bm, button_b_ob_data, Matrix(), ButtonPath)
@@ -170,13 +191,8 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         button_b_ob_bm.to_mesh(button_b_ob_data)
         button_b_ob_bm.free()
 
-        if file_type == ImportFileType.rmesh_salvage:
-            ob_a_matrix = Matrix.LocRotScale(Vector((2.7, -1.2, 1.12)), Euler((0, 0, radians(-90))), Vector((7.7, 7.7, 7.7)))
-            ob_b_matrix = Matrix.LocRotScale(Vector((-2.7, 1.2, 1.12)), Euler((0, 0, radians(90))), Vector((7.7, 7.7, 7.7)))
-        else:
-            ob_a_matrix = Matrix.LocRotScale(Euler((0, 0, radians(180))).to_matrix() @ Vector((-2.70001, 1.2, 1.12)), Euler((0, 0, radians(-90))), Vector((7.7, 7.7, 7.7)))
-            ob_b_matrix = Matrix.LocRotScale(Euler((0, 0, radians(180))).to_matrix() @ Vector((3.1, -0.6, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
-
+        ob_a_matrix = Matrix.LocRotScale(Vector((2.7, -1.2, 1.12)), Euler((0, 0, radians(-90))), button_scale)
+        ob_b_matrix = Matrix.LocRotScale(Vector((-2.7, 1.2, 1.12)), Euler((0, 0, radians(90))), button_scale)
         if sba_ob:
             button_a_ob = sba_ob
 
@@ -201,8 +217,8 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         button_b_ob_bm.to_mesh(button_b_ob_data)
         button_b_ob_bm.free()
 
-        ob_a_matrix = Matrix.LocRotScale(Vector((0.959999, -0.16, 1.12)), Euler((0, 0, 0)), Vector((7.7, 7.7, 7.7)))
-        ob_b_matrix = Matrix.LocRotScale(Vector((-0.959999, 0.16, 1.12)), Euler((0, 0, radians(180))), Vector((7.7, 7.7, 7.7)))
+        ob_a_matrix = Matrix.LocRotScale(Vector((0.96, -0.16, 1.12)), Euler((0, 0, 0)), button_scale)
+        ob_b_matrix = Matrix.LocRotScale(Vector((-0.96, 0.16, 1.12)), Euler((0, 0, radians(180))), button_scale)
 
         if sba_ob:
             button_a_ob = sba_ob
