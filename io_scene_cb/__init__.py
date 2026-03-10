@@ -699,6 +699,34 @@ class ImportB3D(Operator, ImportHelper):
             context.window_manager.fileselect_add(self)
             return {'RUNNING_MODAL'}
 
+class ImportSMF(Operator, ImportHelper):
+    """Import an SMF file"""
+    bl_idname = "import_scene.ismf"
+    bl_label = "Import SMF"
+    filename_ext = '.smf'
+
+    filter_glob: StringProperty(
+        default="*.smf",
+        options={'HIDDEN'},
+        )
+
+    filepath: StringProperty(
+        subtype='FILE_PATH',
+        options={'SKIP_SAVE'}
+        )
+
+    def execute(self, context):
+        from . import scene_smf
+
+        return scene_smf.import_scene(context, Path(self.filepath), self.report)
+
+    if (4, 1, 0) <= bpy.app.version:
+        def invoke(self, context, event):
+            if self.filepath:
+                return self.execute(context)
+            context.window_manager.fileselect_add(self)
+            return {'RUNNING_MODAL'}
+
 if (4, 1, 0) <= bpy.app.version:
     class ImportRMESH_FileHandler(FileHandler):
         bl_idname = "RMESH_FH_import"
@@ -730,6 +758,16 @@ if (4, 1, 0) <= bpy.app.version:
         def poll_drop(cls, context):
             return (context.area and context.area.type == 'VIEW_3D')
 
+    class ImportSMF_FileHandler(FileHandler):
+        bl_idname = "SMF_FH_import"
+        bl_label = "File handler for SMF import"
+        bl_import_operator = "import_scene.ismf"
+        bl_file_extensions = "smf"
+
+        @classmethod
+        def poll_drop(cls, context):
+            return (context.area and context.area.type == 'VIEW_3D')
+
 def menu_func_export(self, context):
     self.layout.operator(ExportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
     self.layout.operator(ExportX.bl_idname, text='SCP X (.x)')
@@ -739,6 +777,7 @@ def menu_func_import(self, context):
     self.layout.operator(ImportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
     self.layout.operator(ImportX.bl_idname, text='SCP X (.x)')
     self.layout.operator(ImportB3D.bl_idname, text='SCP B3D (.b3d)')
+    self.layout.operator(ImportSMF.bl_idname, text='SCP SMF (.smf)')
 
 def menu_func_cb_shaders(self, context):
     layout = self.layout
@@ -752,6 +791,7 @@ classesscp = [
     ExportX,
     ImportB3D,
     ExportB3D,
+    ImportSMF,
     CBObjectPropertiesGroup,
     CB_ObjectProps,
     B3DImagePropertiesGroup,
@@ -765,6 +805,7 @@ if (4, 1, 0) <= bpy.app.version:
     classesscp.append(ImportRMESH_FileHandler)
     classesscp.append(ImportX_FileHandler)
     classesscp.append(ImportB3D_FileHandler)
+    classesscp.append(ImportSMF_FileHandler)
 
 def register():
     for clsscp in classesscp:
