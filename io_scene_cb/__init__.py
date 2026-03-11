@@ -521,7 +521,7 @@ class CB_ObjectProps(Panel):
             render_entity_door(context, layout, ob_cb)
 
 class CBRMAT_OT_CBShader(Operator):
-    bl_idname = "node.cb_materail"
+    bl_idname = "node.cb_material"
     bl_label = "CB Material"
     bl_options = {'REGISTER', 'UNDO'}
 
