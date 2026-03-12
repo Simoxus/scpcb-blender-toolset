@@ -239,7 +239,7 @@ def read_rmesh(file_path, file_type):
                     for ff in range(31):
                         ff_element = read_unsigned_int(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
-                    
+
                 else:
                     entity_dict["euler_rotation"] = read_string(rmesh_stream)
                     entity_dict["inner_cone_angle"] = read_unsigned_int(rmesh_stream)
@@ -460,7 +460,7 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_vector(rmesh_stream, entity_dict["position"])
                 if file_type == ExportFileType.rmesh or file_type == ExportFileType.rmesh_tb:
                     write_string(rmesh_stream, entity_dict["item_name"])
-                
+
                 write_string(rmesh_stream, entity_dict["model_name"])
                 write_byte(rmesh_stream, entity_dict["use_custom_rotation"])
                 write_vector(rmesh_stream, entity_dict["euler_rotation"])

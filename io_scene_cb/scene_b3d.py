@@ -3,21 +3,21 @@ import bpy
 
 from . import ObjectType
 from pathlib import Path
-from math import radians, degrees, floor
 from bpy_extras import anim_utils
 from enum import Enum, auto, Flag
 from collections import defaultdict
+from math import radians, degrees, floor
 from .process_b3d import B3DTree, write_b3d
-from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import (RandomColorGenerator, 
-                               get_file, 
-                               is_string_empty, 
-                               get_material_name, 
-                               get_linked_node, 
-                               get_output_material_node, 
-                               flip, 
-                               get_shader_node, 
-                               connect_inputs, 
+from mathutils import Matrix, Vector, Quaternion
+from .common_functions import (RandomColorGenerator,
+                               get_file,
+                               is_string_empty,
+                               get_material_name,
+                               get_linked_node,
+                               get_output_material_node,
+                               flip,
+                               get_shader_node,
+                               connect_inputs,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
                                SHADER_NODE_NAMES)
@@ -42,7 +42,7 @@ class TextureBlendEnum(Enum):
     add = auto()
     dot3 = auto()
     multiply2 = auto()
-    
+
 class MaterialFXFlags(Flag):
     full_bright = auto()
     use_vertex_colors_instead_of_brush_color = auto()
@@ -113,7 +113,7 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
             layer_uv_0.data[loop_index].uv = (U0, 1 - V0)
             if uv_count > 1:
                 layer_uv_1.data[loop_index].uv = (U1, 1 - V1)
-            
+
 
             if rgba_count > 0:
                 layer_color.data[loop_index].color = node["rgba"][vert_index]
@@ -302,7 +302,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
     has_key = node.get("key") is not None
     has_mesh = node.get("mesh") is not None
     generated_mesh = False
-                        
+
     result = parse_kv_string(node["name"])
     if is_simple:
         if has_mesh:
@@ -329,12 +329,12 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
                 context.view_layer.objects.active = armature
 
-                armature.cb.object_type = str(ObjectType.node_object.value)
+                armature.cb.object_type = str(ObjectType.exclude.value)
 
                 node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
                 if parent_ob is not None:
                     armature.parent = parent_ob
-            
+
                 armature.matrix_local = node_transform
 
                 if last_mesh:
@@ -353,7 +353,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                         context.scene.render.fps = int(anim_dict["fps"])
 
                         anim_data = armature.animation_data_create()
-                        anim_data.action = None 
+                        anim_data.action = None
                         track = anim_data.nla_tracks.new()
                         track.name = armature.name
 
@@ -376,7 +376,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                         context.scene.frame_end = anim_dict["frames"]
 
                         anim_data = armature.animation_data_create()
-                        anim_data.action = None 
+                        anim_data.action = None
                         track = anim_data.nla_tracks.new()
                         track.name = armature.name
 
@@ -414,7 +414,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
         else:
             if result["classname"].lower().startswith("brush"):
                 generated_mesh = True
-                
+
                 mesh_data = None
                 if node.get("mesh"):
                     mesh_data = import_mesh(node["mesh"], material_list)
@@ -422,7 +422,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_brush.value)
+                object_mesh.cb.object_type = str(ObjectType.mesh.value)
 
             elif result["classname"].lower().startswith("terrainsector"):
                 generated_mesh = True
@@ -434,7 +434,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_terrainsector.value)
+                object_mesh.cb.object_type = str(ObjectType.mesh.value)
 
             elif result["classname"].lower().startswith("terrain"):
                 generated_mesh = True
@@ -446,7 +446,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_terrain.value)
+                object_mesh.cb.object_type = str(ObjectType.mesh.value)
 
             elif result["classname"].lower().startswith("mesh"):
                 generated_mesh = True
@@ -458,7 +458,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_mesh.value)
+                object_mesh.cb.object_type = str(ObjectType.mesh.value)
 
             elif result["classname"].lower().startswith("field_hit"):
                 generated_mesh = True
@@ -470,7 +470,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], mesh_data)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_field_hit.value)
+                object_mesh.cb.object_type = str(ObjectType.mesh.value)
 
             elif result["classname"] == "light":
                 light_data = bpy.data.lights.new(result["classname"], "POINT")
@@ -483,7 +483,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 light_data.color = (r / 255, g / 255, b / 255)
                 object_mesh.cb.linear_falloff = result["linearfalloff"]
 
-                object_mesh.cb.object_type = str(ObjectType.node_light.value)
+                object_mesh.cb.object_type = str(ObjectType.entity_light.value)
 
             elif result["classname"] == "spotlight":
                 spotlight_data = bpy.data.lights.new(result["classname"], "SPOT")
@@ -504,14 +504,14 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
                 object_mesh.cb.linear_falloff = result["linearfalloff"]
 
-                object_mesh.cb.object_type = str(ObjectType.node_spotlight.value)
+                object_mesh.cb.object_type = str(ObjectType.entity_spotlight.value)
 
             elif result["classname"] == "sunlight":
                 sunlight_data = bpy.data.lights.new(result["classname"], "SUN")
                 object_mesh = bpy.data.objects.new(result["classname"], sunlight_data)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_sunlight.value)
+                object_mesh.cb.object_type = str(ObjectType.exclude.value)
 
             elif result["classname"].startswith("soundemitter"):
                 speaker_data = bpy.data.speakers.new(result["classname"])
@@ -521,13 +521,13 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh.cb.sound_emitter_id = result["sound"]
                 object_mesh.data.distance_max = result["range"]
 
-                object_mesh.cb.object_type = str(ObjectType.node_soundemitter.value)
+                object_mesh.cb.object_type = str(ObjectType.entity_sound_emitter.value)
 
             elif result["classname"].startswith("waypoint"):
                 object_mesh = bpy.data.objects.new(result["classname"], None)
                 context.collection.objects.link(object_mesh)
 
-                object_mesh.cb.object_type = str(ObjectType.node_waypoint.value)
+                object_mesh.cb.object_type = str(ObjectType.entity_waypoint.value)
 
             else:
                 if not generated_mesh and has_mesh and not has_skeleton:
@@ -535,18 +535,18 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                     mesh_data = import_mesh(node["mesh"], material_list)
                     object_mesh = bpy.data.objects.new(node["name"], mesh_data)
                     context.collection.objects.link(object_mesh)
+                    object_mesh.cb.object_type = str(ObjectType.mesh.value)
                 else:
                     object_mesh = bpy.data.objects.new(result["classname"], None)
                     object_mesh.empty_display_size = 0.00625
 
                     context.collection.objects.link(object_mesh)
-
-                object_mesh.cb.object_type = str(ObjectType.node_object.value)
+                    object_mesh.cb.object_type = str(ObjectType.exclude.value)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
                 object_mesh.parent = parent_ob
-        
+
             object_mesh.matrix_local = node_transform
 
         if not generated_mesh and has_mesh:
@@ -561,8 +561,8 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 armature_modifier.object = armature
             elif parent_ob:
                 last_mesh.parent = parent_ob
-            
-            last_mesh.cb.object_type = str(ObjectType.node_object.value)
+
+            last_mesh.cb.object_type = str(ObjectType.mesh.value)
 
             node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             last_mesh.matrix_local = node_transform
@@ -686,7 +686,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                 texture_entries = [lightmap_node, diffuse_node]
                 for texture_entry_idx, texture_entry in enumerate(texture_entries):
                     image_name = ""
-                    texture_dict_idx = -1 
+                    texture_dict_idx = -1
                     if not texture_entry:
                         # Limiting it to 2 because honestly I think the max inputs on this game is 2. Everything else is derived from the diffuse name
                         # Check goes away during rigged exports to allow SCP 1048a to export with its third texture id that I'm pretty sure does nothing - Gen
@@ -933,19 +933,19 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=Non
             node_dict.append(ob_node_dict)
 
 def get_node_name(ob):
-    node_name = ob.name
+    node_name = ob.name.lower()
     object_type_enum = ObjectType(int(ob.cb.object_type))
-    if object_type_enum == ObjectType.node_brush:
+    if "brush" in node_name:
         node_name = "classname=brush"
-    elif object_type_enum == ObjectType.node_terrainsector:
+    elif "terrainsector" in node_name:
         node_name = "classname=terrainsector"
-    elif object_type_enum == ObjectType.node_terrain:
+    elif "terrain" in node_name:
         node_name = "classname=terrain"
-    elif object_type_enum == ObjectType.node_mesh:
+    elif "mesh" in node_name:
         node_name = "classname=mesh"
-    elif object_type_enum == ObjectType.node_field_hit:
+    elif "field_hit" in node_name:
         node_name = "classname=field_hit"
-    elif object_type_enum == ObjectType.node_light:
+    elif object_type_enum == ObjectType.entity_light:
         r, g, b = ob.data.color
 
         light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
@@ -953,7 +953,7 @@ def get_node_name(ob):
         light_range = "range=%s" % int(ob.data.shadow_soft_size * 1000)
         light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
         node_name = "classname=light\r\n%s\r\n%s\r\n%s\r\n%s" % (light_color, light_intensity, light_range, light_linear_falloff)
-    elif object_type_enum == ObjectType.node_spotlight:
+    elif object_type_enum == ObjectType.entity_spotlight:
         r, g, b = ob.data.color
         outer_deg = degrees(ob.data.spot_size)
 
@@ -966,19 +966,11 @@ def get_node_name(ob):
         light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
 
         node_name = "classname=spotlight\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s" % (light_angles, light_color, light_intensity, light_range, light_inner_cone_angle, light_outer_cone_angle, light_linear_falloff)
-    elif object_type_enum == ObjectType.node_sunlight:
-        r, g, b = ob.data.color
-
-        light_angles = "angles=%s %s %s" % (0, 0, 0)
-        light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
-        light_intensity = "intensity=%s" % (ob.data.energy / 50)
-
-        node_name = "classname=sunlight\r\n%s\r\n%s\r\n%s" % (light_angles, light_color, light_intensity)
-    elif object_type_enum == ObjectType.node_soundemitter:
+    elif object_type_enum == ObjectType.entity_sound_emitter:
         sound_id_str = "sound=%s" % ob.cb.sound_emitter_id
         range_str = "range=%s" % ob.data.distance_max
         node_name = "classname=soundemitter\r\n%s\r\n%s" % (sound_id_str, range_str)
-    elif object_type_enum == ObjectType.node_waypoint:
+    elif object_type_enum == ObjectType.entity_waypoint:
         node_name = "classname=waypoint"
 
     return node_name
@@ -1162,7 +1154,7 @@ def gather_keyframe_data(context, armature, node_data):
     )
     if not nla_track:
         return
-    
+
     node_names = {armature.name}
     if armature.pose:
         node_names.update(b.name for b in armature.pose.bones)
@@ -1260,7 +1252,7 @@ def export_scene(context, filepath, report):
                 mni, mnj, mnk = world_normal
 
                 mesh_dict["normals"][n_idx] = (mni, mnk, mnj)
-            
+
             root_node["mesh"] = mesh_dict
 
         for nla_track in armature_ob.animation_data.nla_tracks:
@@ -1293,7 +1285,7 @@ def find_bones(node, bone_check_list, uv_counts):
 
     for child_node in node["nodes"]:
         find_bones(child_node, bone_check_list, uv_counts)
-    
+
 def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
 
@@ -1302,7 +1294,7 @@ def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_da
         local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
 
     data = B3DTree().parse(filepath)
-    
+
     if error_log is None:
         error_log = set()
     if random_color_gen is None:
@@ -1310,7 +1302,7 @@ def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_da
 
     material_list = []
     texture_count = 0
-    
+
     has_skeleton = False
     bone_check_list = []
     uv_counts = []

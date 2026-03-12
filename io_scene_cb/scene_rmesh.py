@@ -5,21 +5,21 @@ import bmesh
 import configparser
 
 from pathlib import Path
-from mathutils import Matrix, Vector, Euler, Quaternion
+from math import radians, degrees
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
-from math import radians, pi, degrees, asin, atan2
+from mathutils import Matrix, Vector, Euler, Quaternion
 from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 from .object_helper import create_door, DoorType, ButtonType, DoorState
-from .common_functions import (RandomColorGenerator, 
-                               ObjectType, 
-                               get_file, 
-                               is_string_empty, 
-                               get_blender_rot, 
-                               get_material_name, 
-                               get_linked_node, 
-                               connect_inputs, 
-                               get_output_material_node, 
+from .common_functions import (RandomColorGenerator,
+                               ObjectType,
+                               get_file,
+                               is_string_empty,
+                               get_blender_rot,
+                               get_material_name,
+                               get_linked_node,
+                               connect_inputs,
+                               get_output_material_node,
                                flip,
                                get_shader_node,
                                generate_texture_mapping,
@@ -33,7 +33,7 @@ MIN_BUTTON_LENGTH = 0.01
 def update_object(context, report):
     ob = context.object
     ob_type = ObjectType(int(ob.cb.object_type))
-    if ob_type == ObjectType.entity_model or ob_type == ObjectType.entity_mesh:
+    if ob_type == ObjectType.entity_model:
         model_path = bpy.path.abspath(ob.cb.model_path)
         if os.path.isfile(model_path):
             ob.data.clear_geometry()
@@ -214,14 +214,9 @@ def collect_objects():
                 trigger_box_list.append(ob)
         elif ob_type == ObjectType.entity_screen:
             entity_list.append(ob)
-        elif ob_type == ObjectType.entity_save_screen:
-            entity_list.append(ob)
         elif ob_type == ObjectType.entity_waypoint:
             entity_list.append(ob)
         elif ob_type == ObjectType.entity_light:
-            if ob.type == 'LIGHT' and ob.data.type == 'POINT':
-                entity_list.append(ob)
-        elif ob_type == ObjectType.entity_light_fix:
             if ob.type == 'LIGHT' and ob.data.type == 'POINT':
                 entity_list.append(ob)
         elif ob_type == ObjectType.entity_spotlight:
@@ -230,11 +225,7 @@ def collect_objects():
         elif ob_type == ObjectType.entity_sound_emitter:
             if ob.type == 'SPEAKER':
                 entity_list.append(ob)
-        elif ob_type == ObjectType.entity_player_start:
-            entity_list.append(ob)
         elif ob_type == ObjectType.entity_model:
-            entity_list.append(ob)
-        elif ob_type == ObjectType.entity_mesh:
             entity_list.append(ob)
         elif ob_type == ObjectType.entity_item:
             entity_list.append(ob)
@@ -471,25 +462,20 @@ def export_scene(context, filepath, file_type, report):
         object_type = ObjectType(int(ob.cb.object_type))
         if object_type == ObjectType.entity_screen:
             loc, rot, scl = ob.matrix_world.decompose()
-
             entity_dict = {}
 
-            entity_dict["entity_type"] = "screen"
-            entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
+            if file_type == ExportFileType.rmesh_uer or file_type == ExportFileType.rmesh_uer2:
+                entity_dict["entity_type"] = "save_screen"
+
+            else:
+                entity_dict["entity_type"] = "screen"
+
             entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
-            rmesh_dict["entities"].append(entity_dict)
-
-        elif object_type == ObjectType.entity_save_screen:
-            loc, rot, scl = ob.matrix_world.decompose()
-
-            entity_dict = {}
-
-            entity_dict["entity_type"] = "save_screen"
-            entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
             entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.cb.model_path))
+            entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
             entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
             entity_dict["scale"] = flip(scl)
-            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
+
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_waypoint:
@@ -510,27 +496,6 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["range"] = ob.data.shadow_soft_size * 1000
             entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
             entity_dict["intensity"] = ob.data.energy / 50
-            if file_type == ExportFileType.rmesh_uer2:
-                entity_dict["has_sprite"] = ob.cb.has_sprite
-                entity_dict["sprite_scale"] = ob.cb.sprite_scale
-                entity_dict["casts_shadows"] = ob.data.use_shadow
-                entity_dict["scattering"] = ob.cb.scattering
-                entity_dict["ff_array"] = []
-                for ff in range(31):
-                    entity_dict["ff_array"].append(0)
-
-            rmesh_dict["entities"].append(entity_dict)
-
-        elif object_type == ObjectType.entity_light_fix:
-            loc, rot, scl = ob.matrix_world.decompose()
-            r, g, b = ob.data.color
-            entity_dict = {}
-
-            entity_dict["entity_type"] = "light_fix"
-            entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
-            entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
-            entity_dict["intensity"] = ob.data.energy / 50
-            entity_dict["range"] = ob.data.shadow_soft_size * 1000
             if file_type == ExportFileType.rmesh_uer2:
                 entity_dict["has_sprite"] = ob.cb.has_sprite
                 entity_dict["sprite_scale"] = ob.cb.sprite_scale
@@ -587,26 +552,21 @@ def export_scene(context, filepath, file_type, report):
             loc, rot, scl = ob.matrix_world.decompose()
             entity_dict = {}
 
+            if file_type == ExportFileType.rmesh_uer or file_type == ExportFileType.rmesh_uer2:
+                entity_dict["entity_type"] = "mesh"
+
+            else:
+                entity_dict["entity_type"] = "model"
+
             entity_dict["entity_type"] = "model"
             entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.cb.model_path))
-            rmesh_dict["entities"].append(entity_dict)
-            if not file_type == ExportFileType.rmesh_uer:
-                entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
-                entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
-                entity_dict["scale"] = flip(scl)
-
-        elif object_type == ObjectType.entity_mesh:
-            loc, rot, scl = ob.matrix_world.decompose()
-            entity_dict = {}
-
-            entity_dict["entity_type"] = "mesh"
+            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
             entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
-            entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.cb.model_path))
             entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
             entity_dict["scale"] = flip(scl)
             entity_dict["has_collision"] = int(ob.cb.has_collision)
             entity_dict["fx"] = ob.cb.fx
-            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
+
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_item:
@@ -622,6 +582,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["state_1"] = ob.cb.state_1
             entity_dict["state_2"] = ob.cb.state_2
             entity_dict["spawn_chance"] = ob.cb.spawn_chance
+
             rmesh_dict["entities"].append(entity_dict)
 
         elif object_type == ObjectType.entity_door:
@@ -650,7 +611,7 @@ def export_scene(context, filepath, file_type, report):
                 if loc_ba.length >= MIN_BUTTON_LENGTH:
                     baw_loc, baw_rot, baw_scl = button_a_ob.matrix_world.decompose()
                     button_1_position = flip(baw_loc * 160)
- 
+
                 arx, ary, arz = get_blitz_rot(rot_ba.to_euler())
                 button_1_angle = (round(arx), round(ary), round(arz))
 
@@ -957,7 +918,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
 
             elif entity_dict["entity_type"] == "save_screen":
                 object_mesh = bpy.data.objects.new("%s save_screen" % entity_idx, None)
-                object_mesh.cb.object_type = str(ObjectType.entity_save_screen.value)
+                object_mesh.cb.object_type = str(ObjectType.entity_screen.value)
                 entity_collection.objects.link(object_mesh)
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
@@ -967,6 +928,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
 
                 model_path = get_file(entity_dict["model_name"], False)
                 texture_path = get_file(entity_dict["texture_name"], True, False)
+                object_mesh.cb.is_uer = True
                 if model_path is not None:
                     object_mesh.cb.model_path = model_path
                 if texture_path is not None:
@@ -996,6 +958,10 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 object_data.shadow_soft_size = entity_dict["range"] / 1000
                 r, g, b = entity_dict["color"].split(" ")
                 object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+
+                if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
+                    object_mesh.cb.is_uer = True
+
                 if file_type == ImportFileType.rmesh_uer2:
                     object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
                     object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
@@ -1005,7 +971,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
             elif entity_dict["entity_type"] == "light_fix":
                 object_data = bpy.data.lights.new("%s light_fix" % entity_idx, "POINT")
                 object_mesh = bpy.data.objects.new("%s light_fix" % entity_idx, object_data)
-                object_mesh.cb.object_type = str(ObjectType.entity_light_fix.value)
+                object_mesh.cb.object_type = str(ObjectType.entity_light.value)
                 entity_collection.objects.link(object_mesh)
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
@@ -1017,6 +983,9 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 object_data.shadow_soft_size = entity_dict["range"] / 1000
                 r, g, b = entity_dict["color"].split(" ")
                 object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+                if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
+                    object_mesh.cb.is_uer = True
+
                 if file_type == ImportFileType.rmesh_uer2:
                     object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
                     object_mesh.cb.sprite_scale = entity_dict["sprite_scale"]
@@ -1033,6 +1002,8 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 object_data.shadow_soft_size = entity_dict["range"] / 1000
                 r, g, b = entity_dict["color"].split(" ")
                 object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
+                if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
+                    object_mesh.cb.is_uer = True
 
                 if file_type == ImportFileType.rmesh_uer2:
                     object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
@@ -1076,7 +1047,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
 
             elif entity_dict["entity_type"] == "playerstart":
                 object_mesh = bpy.data.objects.new("%s playerstart" % entity_idx, None)
-                object_mesh.cb.object_type = str(ObjectType.entity_player_start.value)
+                object_mesh.cb.object_type = str(ObjectType.exclude.value)
                 entity_collection.objects.link(object_mesh)
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
@@ -1084,8 +1055,17 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 scl = Vector((1, 1, 1))
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-            elif entity_dict["entity_type"] == "model":
+            elif entity_dict["entity_type"] == "model" or entity_dict["entity_type"] == "mesh":
+                is_uer_prop = False
+                if entity_dict["entity_type"] == "mesh":
+                    object_mesh.cb.is_uer = True
+                    is_uer_prop = True
+
                 model_path = get_file(entity_dict["model_name"], False, directory_path=local_prop_path)
+                texture_path = None
+                if is_uer_prop:
+                    texture_path = get_file(entity_dict["texture_name"], True, False)
+
                 ob_data = entity_meshes.get(model_path)
                 if ob_data is None and model_path:
                     ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s model" % entity_idx)
@@ -1100,10 +1080,14 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     bm.to_mesh(ob_data)
                     bm.free()
 
-                object_mesh = bpy.data.objects.new("%s model" % entity_idx, ob_data)
+                object_mesh = bpy.data.objects.new("%s %s" % (entity_idx, entity_dict["entity_type"]), ob_data)
                 object_mesh.cb.object_type = str(ObjectType.entity_model.value)
                 if model_path is not None:
                     object_mesh.cb.model_path = model_path
+
+                if texture_path is not None:
+                    object_mesh.cb.texture_path = texture_path
+
                 entity_collection.objects.link(object_mesh)
                 if not file_type == ImportFileType.rmesh_uer:
                     loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
@@ -1111,40 +1095,9 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     scl = Vector(entity_dict["scale"])
                     object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
-            elif entity_dict["entity_type"] == "mesh":
-                model_path = get_file(entity_dict["model_name"], False)
-                texture_path = get_file(entity_dict["texture_name"], True, False)
-                ob_data = entity_meshes.get(model_path)
-
-                if ob_data is None and model_path:
-                    ob_data = entity_meshes[model_path] = bpy.data.meshes.new("%s mesh" % entity_idx)
-                    bm = bmesh.new()
-                    is_simple=True
-                    if model_path.lower().endswith(".b3d"):
-                        import_b3d(context, Path(model_path), fullbright_materials, report, bm, ob_data, is_simple, error_log, random_color_gen)
-
-                    else:
-                        import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
-
-                    bm.to_mesh(ob_data)
-                    bm.free()
-
-                object_mesh = bpy.data.objects.new("%s mesh" % entity_idx, ob_data)
-                object_mesh.cb.object_type = str(ObjectType.entity_mesh.value)
-                entity_collection.objects.link(object_mesh)
-
-                if model_path is not None:
-                    object_mesh.cb.model_path = model_path
-                if texture_path is not None:
-                    object_mesh.cb.texture_path = texture_path
-
-                loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
-                rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
-                scl = Vector(entity_dict["scale"])
-                object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
-
-                object_mesh.cb.has_collision = bool(entity_dict["has_collision"])
-                object_mesh.cb.fx = entity_dict["fx"]
+                if is_uer_prop:
+                    object_mesh.cb.has_collision = bool(entity_dict["has_collision"])
+                    object_mesh.cb.fx = entity_dict["fx"]
 
             elif entity_dict["entity_type"] == "item":
                 ob_data = None
@@ -1237,7 +1190,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     loc_baw, rot_baw, scl_baw = button_a_ob.matrix_world.decompose()
                     if not loc_result.length >= MIN_BUTTON_LENGTH:
                         loc_result = loc_baw
-                    
+
                     rot = get_blender_rot(entity_dict["button_1_position"], entity_dict["button_1_angle"])
                     scl = scl_baw
                     button_a_ob.matrix_world = Matrix.LocRotScale(loc_result, rot, scl)

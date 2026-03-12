@@ -41,7 +41,7 @@ def read_node(smf_stream, node_dict):
 
         child_node_dict["texture_group"] = read_null_string(smf_stream)
         child_node_dict["texture_name"] = read_null_string(smf_stream)
-        
+
         vertex_count = struct.unpack("H", smf_stream.read(2))[0]
         for vertex_idx in range(vertex_count):
             child_node_dict["vertices"].append(read_vector3d(smf_stream))

@@ -73,7 +73,7 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
 
     else:
         door_ob_data = bpy.data.meshes.new("door_entity")
-        
+
     ob_bm = bmesh.new()
 
     game_path = bpy.context.preferences.addons[__package__].preferences.game_path
@@ -178,7 +178,7 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
 
     else:
         button_b_ob_data = bpy.data.meshes.new("button_b_entity")
-    
+
     button_a_ob_bm = bmesh.new()
     button_b_ob_bm = bmesh.new()
     ob_bm = bmesh.new()

@@ -4,11 +4,11 @@ import bpy
 from pathlib import Path
 from mathutils import Matrix, Vector, Quaternion
 from .process_x import write_x, read_x
-from .common_functions import (RandomColorGenerator, 
-                               get_file, 
-                               is_string_empty, 
-                               flip, 
-                               get_output_material_node, 
+from .common_functions import (RandomColorGenerator,
+                               get_file,
+                               is_string_empty,
+                               flip,
+                               get_output_material_node,
                                get_shader_node,
                                connect_inputs,
                                clean_string,
@@ -295,7 +295,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph, bone=None):
         mesh_dict["material_indices"].append(mat_idx)
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
-            v = mesh.vertices[loop.vertex_index] 
+            v = mesh.vertices[loop.vertex_index]
             loop_normal = flip(loop.normal)
 
             pos = Vector(flip(v.co * 160))
@@ -408,7 +408,7 @@ def export_scene(context, output_path, report):
     armature_ob = None
     if context.object and context.object.type == 'ARMATURE' and len(context.object.data.bones) > 0:
         armature_ob = context.object
-        
+
     if armature_ob is None:
         for ob in bpy.data.objects:
             if ob.type == 'ARMATURE' and len(ob.data.bones) > 0:

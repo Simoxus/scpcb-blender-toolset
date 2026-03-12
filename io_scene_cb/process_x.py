@@ -956,7 +956,7 @@ def parse_material_binary(x_dict, mesh_dict, next_token, next_token_value, input
             parse_token(input_stream)
             parse_token(input_stream)
             parse_token(input_stream)
-            
+
         mesh_dict["materials"].append(material_dict)
 
     elif next_token == TOKEN_OBRACE:

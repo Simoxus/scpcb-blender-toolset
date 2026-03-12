@@ -66,29 +66,20 @@ class CBObjectPropertiesGroup(PropertyGroup):
                     ('3', "Collision", "Object is valid for CB/CB-S/UER/UER2"),
                     ('4', "Trigger Box", "Object is valid for CB/CB-S"),
                     ('5', "Entity Screen", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('6', "Entity Save Screen", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('7', "Entity Waypoint", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('8', "Entity Light", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('9', "Entity Light Fix", "Object is valid for UER/UER2"),
-                    ('10', "Entity Spotlight", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('11', "Entity Sound Emitter", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('12', "Entity Player Start", "Object is valid for CB"),
-                    ('13', "Entity Model", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('14', "Entity Mesh", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('15', "Entity Item", "Object is valid for CB-S"),
-                    ('16', "Entity Door", "Object is valid for CB-S"),
-                    ('17', "Node Brush", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('18', "Node Terrain Sector", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('19', "Node Terrain", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('20', "Node Mesh", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('21', "Node Field Hit", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('22', "Node Light", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('23', "Node Spotlight", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('24', "Node Sunlight", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('25', "Node Sound Emitter", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('26', "Node Waypoint", "Object is valid for CB/CB-S/UER/UER2"),
-                    ('27', "Node Object", "Object is valid for CB/CB-S/UER/UER2")
+                    ('6', "Entity Waypoint", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('7', "Entity Light", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('8', "Entity Spotlight", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('9', "Entity Sound Emitter", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('10', "Entity Model", "Object is valid for CB/CB-S/UER/UER2"),
+                    ('11', "Entity Item", "Object is valid for CB-S"),
+                    ('12', "Entity Door", "Object is valid for CB-S"),
                 )
+        )
+
+    is_uer: BoolProperty(
+        name ="Is UER variant",
+        description = "Object uses the UER variant. Displays UER options in Blender panels if enabled",
+        default = False,
         )
 
     model_path: StringProperty(
@@ -161,12 +152,12 @@ class CBObjectPropertiesGroup(PropertyGroup):
         name = "State 1",
         description = "Multi-purpose state variable. Exclusively used (for the purposes of a room editor) to represent the remaining power in battery-powered items. 0-1000 for the Night Vision Goggles, 0-100 for all others"
         )
-    
+
     state_2: FloatProperty(
         name = "State 2",
         description = "Second multi-purpose state variable"
         )
-    
+
     spawn_chance: FloatProperty(
         name = "Spawn Chance",
         description = "The chance for this item to spawn. Between 0 and 1 where 1 means a guaranteed spawn and 0.25 means a 25% chance for the item to spawn"
@@ -198,7 +189,7 @@ class CBObjectPropertiesGroup(PropertyGroup):
         description = "Whether the door should spawn open",
         default = False,
         )
-    
+
     locked: BoolProperty(
         name ="Locked",
         description = "Whether the door should be openable by the player",
@@ -264,7 +255,7 @@ class B3DImagePropertiesGroup(PropertyGroup):
         description = "???",
         default = False,
         )
-    
+
     clamp_v: BoolProperty(
         name ="Clamp V",
         description = "???",
@@ -346,28 +337,40 @@ def render_screen(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
     row = col.row()
-    row.label(text='Texture Path:')
-    row.prop(active_property, "texture_path", text='')
-
-def render_save_screen(context, layout, active_property):
-    box = layout.split()
-    col = box.column(align=True)
-    row = col.row()
-    row.label(text='Model Path:')
-    row.prop(active_property, "model_path", text='')
+    row.label(text='Is UER Variant:')
+    row.prop(active_property, "is_uer", text='')
+    if active_property.is_uer:
+        row = col.row()
+        row.label(text='Model Path:')
+        row.prop(active_property, "model_path", text='')
     row = col.row()
     row.label(text='Texture Path:')
     row.prop(active_property, "texture_path", text='')
 
-def render_entity_light(context, layout, active_property):
+def render_entity_light(context, layout, active_property, is_spotlight=False):
     box = layout.split()
     col = box.column(align=True)
     row = col.row()
-    row.label(text='Has Sprite:')
-    row.prop(active_property, "has_sprite", text='')
-    row = col.row()
-    row.label(text='Sprite Scale:')
-    row.prop(active_property, "sprite_scale", text='')
+    row.label(text='Is UER Variant:')
+    row.prop(active_property, "is_uer", text='')
+    if active_property.is_uer:
+        row = col.row()
+        row.label(text='Has Sprite:')
+        row.prop(active_property, "has_sprite", text='')
+        row = col.row()
+        row.label(text='Sprite Scale:')
+        row.prop(active_property, "sprite_scale", text='')
+        row = col.row()
+        row.label(text='Scattering:')
+        row.prop(active_property, "scattering", text='')
+
+    elif is_spotlight:
+        row = col.row()
+        row.label(text='Has Sprite:')
+        row.prop(active_property, "has_sprite", text='')
+        row = col.row()
+        row.label(text='Sprite Scale:')
+        row.prop(active_property, "sprite_scale", text='')
 
 def render_sound_emitter(context, layout, active_property):
     box = layout.split()
@@ -382,26 +385,21 @@ def render_entity_model(context, layout, active_property):
     row = col.row()
     row.operator("cbob.update_ob")
     row = col.row()
-    row.label(text='Model Path:')
-    row.prop(active_property, "model_path", text='')
-
-def render_entity_mesh(context, layout, active_property):
-    box = layout.split()
-    col = box.column(align=True)
-    row = col.row()
-    row.operator("cbob.update_ob")
+    row.label(text='Is UER Variant:')
+    row.prop(active_property, "is_uer", text='')
     row = col.row()
     row.label(text='Model Path:')
     row.prop(active_property, "model_path", text='')
-    row = col.row()
-    row.label(text='Texture Path:')
-    row.prop(active_property, "texture_path", text='')
-    row = col.row()
-    row.label(text='Has Collision:')
-    row.prop(active_property, "has_collision", text='')
-    row = col.row()
-    row.label(text='FX:')
-    row.prop(active_property, "fx", text='')
+    if active_property.is_uer:
+        row = col.row()
+        row.label(text='Texture Path:')
+        row.prop(active_property, "texture_path", text='')
+        row = col.row()
+        row.label(text='Has Collision:')
+        row.prop(active_property, "has_collision", text='')
+        row = col.row()
+        row.label(text='FX:')
+        row.prop(active_property, "fx", text='')
 
 def render_entity_item(context, layout, active_property):
     box = layout.split()
@@ -501,20 +499,14 @@ class CB_ObjectProps(Panel):
             render_trigger(context, layout, ob_cb)
         elif object_type == ObjectType.entity_screen:
             render_screen(context, layout, ob_cb)
-        elif object_type == ObjectType.entity_save_screen:
-            render_save_screen(context, layout, ob_cb)
         elif object_type == ObjectType.entity_light:
             render_entity_light(context, layout, ob_cb)
-        elif object_type == ObjectType.entity_light_fix:
-            render_entity_light(context, layout, ob_cb)
         elif object_type == ObjectType.entity_spotlight:
-            render_entity_light(context, layout, ob_cb)
+            render_entity_light(context, layout, ob_cb, True)
         elif object_type == ObjectType.entity_sound_emitter:
             render_sound_emitter(context, layout, ob_cb)
         elif object_type == ObjectType.entity_model:
             render_entity_model(context, layout, ob_cb)
-        elif object_type == ObjectType.entity_mesh:
-            render_entity_mesh(context, layout, ob_cb)
         elif object_type == ObjectType.entity_item:
             render_entity_item(context, layout, ob_cb)
         elif object_type == ObjectType.entity_door:

@@ -4,15 +4,15 @@ import bpy
 from pathlib import Path
 from .process_smf import read_smf
 from mathutils import Matrix, Vector, Quaternion, Euler
-from .common_functions import (RandomColorGenerator, 
-                               get_file, 
-                               is_string_empty, 
-                               get_material_name, 
-                               get_linked_node, 
-                               get_output_material_node, 
-                               flip, 
-                               get_shader_node, 
-                               connect_inputs, 
+from .common_functions import (RandomColorGenerator,
+                               get_file,
+                               is_string_empty,
+                               get_material_name,
+                               get_linked_node,
+                               get_output_material_node,
+                               flip,
+                               get_shader_node,
+                               connect_inputs,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
                                SHADER_NODE_NAMES)
@@ -124,7 +124,7 @@ def import_scene(context, filepath, report):
         local_asset_path = os.path.dirname(os.path.relpath(str(filepath), str(game_path)))
 
     data = read_smf(filepath)
-    
+
     error_log = set()
     random_color_gen = RandomColorGenerator() # generates a random sequence of colors
 
