@@ -81,6 +81,12 @@ class CBObjectPropertiesGroup(PropertyGroup):
         description = "Object uses the UER variant. Displays UER options in Blender panels if enabled",
         default = False,
         )
+    
+    is_light_fix: BoolProperty(
+        name ="Is light fix variant",
+        description = "Object uses the UER light fix variant. Designed to fix per vertex lighting on entities not working properly",
+        default = False,
+        )
 
     model_path: StringProperty(
             name = "Model",
@@ -354,6 +360,11 @@ def render_entity_light(context, layout, active_property, is_spotlight=False):
     row.label(text='Is UER Variant:')
     row.prop(active_property, "is_uer", text='')
     if active_property.is_uer:
+        if not is_spotlight:
+            row = col.row()
+            row.label(text='Is Light Fix:')
+            row.prop(active_property, "is_light_fix", text='')
+
         row = col.row()
         row.label(text='Has Sprite:')
         row.prop(active_property, "has_sprite", text='')

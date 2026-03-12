@@ -491,7 +491,11 @@ def export_scene(context, filepath, file_type, report):
             r, g, b = ob.data.color
             entity_dict = {}
 
-            entity_dict["entity_type"] = "light"
+            if file_type == ExportFileType.rmesh_uer and ob.cb.is_light_fix:
+                entity_dict["entity_type"] = "light_fix"
+            else:
+                entity_dict["entity_type"] = "light"
+
             entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
             entity_dict["range"] = ob.data.shadow_soft_size * 1000
             entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
@@ -985,6 +989,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
                 if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
                     object_mesh.cb.is_uer = True
+                    object_mesh.cb.is_light_fix = True
 
                 if file_type == ImportFileType.rmesh_uer2:
                     object_mesh.cb.has_sprite = bool(entity_dict["has_sprite"])
