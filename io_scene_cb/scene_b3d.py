@@ -935,6 +935,8 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=Non
 def get_node_name(ob):
     node_name = ob.name.lower()
     object_type_enum = ObjectType(int(ob.cb.object_type))
+    # The classname bit seems to be something 3D World Studio sets for certain objects and isn't special for the game at all.
+    # Going through the effort of preserving it for the sake of the importer. - Gen
     if "brush" in node_name:
         node_name = "classname=brush"
     elif "terrainsector" in node_name:

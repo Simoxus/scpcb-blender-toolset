@@ -277,7 +277,11 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                         if lightmap_node is not None:
                             img = lightmap_node.image
                             if img and img.source == 'FILE' and img.filepath:
-                                lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
+                                texture_type_value = TextureType.lightmap.value
+                                if file_type == ExportFileType.rmesh_uer2:
+                                    texture_type_value = TextureType.opaque.value
+
+                                lightmap_texture_dict["texture_type"] = texture_type_value
                                 lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
 
                         if diffuse_node is not None:
@@ -332,7 +336,8 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            loop_normal = flip(loop.normal)
+            i, j, k = loop.normal
+            loop_normal = (i, j, k)
 
             pos = Vector(flip((ob_eval.matrix_world @ v.co))) * 160
 
@@ -377,11 +382,12 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
     ob_eval.to_mesh_clear()
 
 def export_scene(context, filepath, file_type, report):
+    game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
+
     if context.view_layer.objects.active is not None:
         bpy.ops.object.mode_set(mode='OBJECT')
 
     mesh_list, render_list, collision_list, trigger_box_list, entity_list = collect_objects()
-
 
     file_type = ExportFileType(int(file_type))
     if file_type == ExportFileType.rmesh and len(trigger_box_list) > 0:
@@ -562,9 +568,16 @@ def export_scene(context, filepath, file_type, report):
             else:
                 entity_dict["entity_type"] = "model"
 
-            entity_dict["entity_type"] = "model"
-            entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.cb.model_path))
-            entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
+            model_name = os.path.basename(bpy.path.abspath(ob.cb.model_path))
+            texture_name = ""
+            if file_type == ExportFileType.rmesh_uer2:
+                model_name = model_name.rsplit(".", 1)[0]
+                results = bpy.path.abspath(ob.cb.texture_path).split(str(game_path) + os.sep, 1)
+                if len(results) > 1:
+                    texture_name = results[1]
+
+            entity_dict["model_name"] = model_name
+            entity_dict["texture_name"] = texture_name
             entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
             entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
             entity_dict["scale"] = flip(scl)
@@ -780,7 +793,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                 b = gamma_to_linear(vertex["color"][2] / 255)
                 layer_color.data[loop_index].color = (r, g, b, 1.0)
                 if file_type == ImportFileType.rmesh_uer2:
-                    loop_normals.append(Vector(flip(vertex["normal"])))
+                    loop_normals.append(Vector(vertex["normal"]))
 
     if file_type == ImportFileType.rmesh_uer2 and not is_collision:
         mesh.normals_split_custom_set(loop_normals)
@@ -1063,7 +1076,6 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
             elif entity_dict["entity_type"] == "model" or entity_dict["entity_type"] == "mesh":
                 is_uer_prop = False
                 if entity_dict["entity_type"] == "mesh":
-                    object_mesh.cb.is_uer = True
                     is_uer_prop = True
 
                 model_path = get_file(entity_dict["model_name"], False, directory_path=local_prop_path)
@@ -1086,6 +1098,9 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     bm.free()
 
                 object_mesh = bpy.data.objects.new("%s %s" % (entity_idx, entity_dict["entity_type"]), ob_data)
+                if is_uer_prop:
+                    object_mesh.cb.is_uer = True
+
                 object_mesh.cb.object_type = str(ObjectType.entity_model.value)
                 if model_path is not None:
                     object_mesh.cb.model_path = model_path
