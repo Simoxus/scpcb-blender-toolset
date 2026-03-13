@@ -9,13 +9,12 @@ from math import radians, degrees
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
 from mathutils import Matrix, Vector, Euler, Quaternion
-from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 from .object_helper import create_door, DoorType, ButtonType, DoorState
+from .process_rmesh import TextureType, write_rmesh, read_rmesh, ImportFileType, ExportFileType
 from .common_functions import (RandomColorGenerator,
                                ObjectType,
                                get_file,
                                is_string_empty,
-                               get_blender_rot,
                                get_material_name,
                                get_linked_node,
                                connect_inputs,
@@ -25,7 +24,6 @@ from .common_functions import (RandomColorGenerator,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
                                SHADER_NODE_NAMES,
-                               PM_IMPORT,
                                ROOMSCALE)
 
 MIN_BUTTON_LENGTH = 0.01
@@ -171,25 +169,36 @@ def linear_to_gamma(v):
 def gamma_to_linear(v):
     return pow(v, 2.2)
 
-def clamp(x, lo=-1.0, hi=1.0):
-    return max(lo, min(hi, x))
+axis_swap = Matrix(((1,0,0), (0,0,1), (0,1,0)))
+def get_blender_rot(rotation, is_spotlight=False):
+    pitch, yaw, roll = rotation
 
-def get_blitz_rot(blender_euler, is_spotlight=False):
-    rx, ry, rz = blender_euler
-    rx = -rx
-    ry = -ry
+    e = Euler((radians(pitch), -radians(yaw), radians(roll)), 'ZXY')
+    q = e.to_quaternion()
 
-    rot = Euler((rx, ry, rz)).to_quaternion()
-    if not is_spotlight:
-        rot = rot @ Matrix.Rotation(radians(-90), 4, 'X').to_quaternion()
+    m = q.to_matrix()
+    m = axis_swap @ m @ axis_swap.inverted()
 
-    m = Matrix.LocRotScale(Vector((0,0,0)), rot, Vector((1,1,1)))
-    m = PM_IMPORT.inverted() @ m
-    b_loc, b_rot, b_scl = m.decompose()
-    p, y, r = b_rot.to_euler('XYZ')
-    y = -y
+    if is_spotlight:
+        m = m @ Matrix.Rotation(radians(90), 3, 'X')
 
-    return (degrees(p), degrees(y), degrees(r))
+    return m.to_quaternion()
+
+def get_blitz_rot(rot, is_spotlight=False):
+    m = rot.to_matrix()
+
+    if is_spotlight:
+        m = m @ Matrix.Rotation(radians(-90), 3, 'X')
+
+    m = axis_swap.inverted() @ m @ axis_swap
+
+    e = m.to_euler('ZXY')
+
+    pitch = degrees(e.x)
+    yaw   = -degrees(e.y)
+    roll  = degrees(e.z)
+
+    return (pitch, yaw, roll)
 
 def collect_objects():
     mesh_list = []
@@ -479,7 +488,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["texture_name"] = os.path.basename(bpy.path.abspath(ob.cb.texture_path))
             entity_dict["model_name"] = os.path.basename(bpy.path.abspath(ob.cb.model_path))
             entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
-            entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
+            entity_dict["euler_rotation"] = get_blitz_rot(rot)
             entity_dict["scale"] = flip(scl)
 
             rmesh_dict["entities"].append(entity_dict)
@@ -528,7 +537,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
             entity_dict["intensity"] = ob.data.energy / 50
             if file_type == ExportFileType.rmesh_uer2:
-                p, y, r = get_blitz_rot(rot.to_euler(), True)
+                p, y, r = get_blitz_rot(rot, True)
                 entity_dict["has_sprite"] = ob.cb.has_sprite
                 entity_dict["sprite_scale"] = ob.cb.sprite_scale
                 entity_dict["casts_shadows"] = ob.data.use_shadow
@@ -541,7 +550,7 @@ def export_scene(context, filepath, file_type, report):
 
             else:
                 outer_deg = degrees(ob.data.spot_size)
-                p, y, r = get_blitz_rot(rot.to_euler(), True)
+                p, y, r = get_blitz_rot(rot, True)
                 entity_dict["euler_rotation"] = "%s %s %s" % (p, y, r)
                 entity_dict["inner_cone_angle"] = int(ob.data.spot_blend * outer_deg)
                 entity_dict["outer_cone_angle"] = int(outer_deg)
@@ -579,7 +588,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["model_name"] = model_name
             entity_dict["texture_name"] = texture_name
             entity_dict["position"] = tuple(Vector(flip(loc)) * 160)
-            entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
+            entity_dict["euler_rotation"] = get_blitz_rot(rot)
             entity_dict["scale"] = flip(scl)
             entity_dict["has_collision"] = int(ob.cb.has_collision)
             entity_dict["fx"] = ob.cb.fx
@@ -595,7 +604,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["item_name"] = ob.cb.item_name
             entity_dict["model_name"] = ob.cb.model_path
             entity_dict["use_custom_rotation"] = ob.cb.use_custom_rotation
-            entity_dict["euler_rotation"] = get_blitz_rot(rot.to_euler())
+            entity_dict["euler_rotation"] = get_blitz_rot(rot)
             entity_dict["state_1"] = ob.cb.state_1
             entity_dict["state_2"] = ob.cb.state_2
             entity_dict["spawn_chance"] = ob.cb.spawn_chance
@@ -629,7 +638,7 @@ def export_scene(context, filepath, file_type, report):
                     baw_loc, baw_rot, baw_scl = button_a_ob.matrix_world.decompose()
                     button_1_position = flip(baw_loc * 160)
 
-                arx, ary, arz = get_blitz_rot(rot_ba.to_euler())
+                arx, ary, arz = get_blitz_rot(rot_ba)
                 button_1_angle = (round(arx), round(ary), round(arz))
 
             if button_b_ob:
@@ -639,7 +648,7 @@ def export_scene(context, filepath, file_type, report):
                     bbw_loc, bbw_rot, bbw_scl = button_a_ob.matrix_world.decompose()
                     button_2_position = flip(bbw_loc * 160)
 
-                brx, bry, brz = get_blitz_rot(rot_bb.to_euler())
+                brx, bry, brz = get_blitz_rot(rot_bb)
                 button_2_angle = (round(brx), round(bry), round(brz))
 
             entity_dict["entity_type"] = "door"
@@ -939,7 +948,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 entity_collection.objects.link(object_mesh)
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
-                rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
+                rot = get_blender_rot(entity_dict["euler_rotation"])
                 scl = Vector(entity_dict["scale"])
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
@@ -1045,7 +1054,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     rotation = [float(p), float(y), float(r)]
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
-                rot = get_blender_rot(entity_dict["position"], rotation, True)
+                rot = get_blender_rot(rotation, True)
                 scl = Vector((1, 1, 1))
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
@@ -1069,7 +1078,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 entity_collection.objects.link(object_mesh)
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
-                rot = get_blender_rot(entity_dict["position"], [float(p), float(y), float(r)])
+                rot = get_blender_rot([float(p), float(y), float(r)])
                 scl = Vector((1, 1, 1))
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
@@ -1111,7 +1120,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 entity_collection.objects.link(object_mesh)
                 if not file_type == ImportFileType.rmesh_uer:
                     loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
-                    rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
+                    rot = get_blender_rot(entity_dict["euler_rotation"])
                     scl = Vector(entity_dict["scale"])
                     object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
@@ -1158,7 +1167,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                 entity_collection.objects.link(object_mesh)
 
                 loc = Vector(flip(entity_dict["position"])) * ROOMSCALE
-                rot = get_blender_rot(entity_dict["position"], entity_dict["euler_rotation"])
+                rot = get_blender_rot(entity_dict["euler_rotation"])
                 scl = Vector((model_scale, model_scale, model_scale))
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
 
@@ -1211,7 +1220,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     if not loc_result.length >= MIN_BUTTON_LENGTH:
                         loc_result = loc_baw
 
-                    rot = get_blender_rot(entity_dict["button_1_position"], entity_dict["button_1_angle"])
+                    rot = get_blender_rot(entity_dict["button_1_angle"])
                     scl = scl_baw
                     button_a_ob.matrix_world = Matrix.LocRotScale(loc_result, rot, scl)
 
@@ -1220,7 +1229,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     if not loc_result.length >= MIN_BUTTON_LENGTH:
                         loc_result = loc_bbw
 
-                    rot = get_blender_rot(entity_dict["button_2_position"], entity_dict["button_2_angle"])
+                    rot = get_blender_rot(entity_dict["button_2_angle"])
                     scl = scl_bbw
                     button_b_ob.matrix_world = Matrix.LocRotScale(loc_result, rot, scl)
 

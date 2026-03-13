@@ -1,9 +1,4 @@
-import os
-import sys
 import struct
-
-def log(msg):
-    print(msg)
 
 def read_vector3d(f):
     return struct.unpack("fff", f.read(12))

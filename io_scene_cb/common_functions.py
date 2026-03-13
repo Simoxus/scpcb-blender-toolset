@@ -2,20 +2,14 @@ import re
 import os
 import bpy
 import colorsys
-from enum import Flag, Enum, auto
 
-from math import pi, radians
-from mathutils import Matrix, Quaternion, Vector, Euler
+from mathutils import Vector
+from enum import Flag, Enum, auto
 
 SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "shader_resources.blend")
 SHADER_NODE_NAMES = ("rmesh_material", "b3d_material", "cb_material")
 
-DTOR = pi / 180.0
-RTOD = 180.0 / pi
-
 ROOMSCALE = 0.00625
-
-PM_IMPORT = Matrix.Rotation(radians(90), 4, 'X') @ Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0)) @ Matrix.Scale(0.00625, 4)
 
 class ObjectType(Enum):
     exclude = 0
@@ -31,32 +25,6 @@ class ObjectType(Enum):
     entity_model = auto()
     entity_item = auto()
     entity_door = auto()
-
-def pitch_quat(p):
-    return Quaternion((1.0, 0.0, 0.0), p)
-
-def yaw_quat(y):
-    return Quaternion((0.0, 1.0, 0.0), y)
-
-def roll_quat(r):
-    return Quaternion((0.0, 0.0, 1.0), r)
-
-def rotation_quat(p, y, r):
-    return yaw_quat(y) @ pitch_quat(p) @ roll_quat(r)
-
-def get_blender_rot(entity_position, entity_rotation, is_spotlight=False):
-    p, y, r = entity_rotation
-    y = -y
-    quat = rotation_quat(p * DTOR, y * DTOR, r * DTOR)
-    quat.normalized()
-
-    loc, rot, scl = (PM_IMPORT @ Matrix.LocRotScale(entity_position, quat, Vector((1,1,1)))).decompose()
-    if not is_spotlight:
-        rx, ry, rz = (rot @ Matrix.Rotation(radians(90), 4, 'X').to_quaternion()).to_euler()
-    else:
-        rx, ry, rz = rot.to_euler()
-
-    return Euler((-rx, -ry, rz))
 
 def lim32(n):
     """Simulate a 32 bit unsigned interger overflow"""
