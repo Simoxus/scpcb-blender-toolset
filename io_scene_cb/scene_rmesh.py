@@ -285,36 +285,48 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                         diffuse_alpha_node = get_linked_node(node_group, "Diffuse Map Alpha", "TEX_IMAGE")
                         if lightmap_node is not None:
                             img = lightmap_node.image
-                            if img and img.source == 'FILE' and img.filepath:
+                            if img:
                                 texture_type_value = TextureType.lightmap.value
                                 if file_type == ExportFileType.rmesh_uer2:
                                     texture_type_value = TextureType.opaque.value
-
                                 lightmap_texture_dict["texture_type"] = texture_type_value
-                                lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+                                if img.source == 'FILE' and img.filepath:
+                                    lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+                                elif img.source == 'GENERATED':
+                                    lightmap_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.name))
 
                         if diffuse_node is not None:
                             img = diffuse_node.image
-                            if img and img.source == 'FILE' and img.filepath:
+                            if img:
                                 diffuse_texture_type = TextureType.opaque.value
                                 if diffuse_alpha_node is not None:
                                     diffuse_texture_type = TextureType.transparent.value
-
                                 diffuse_texture_dict["texture_type"] = diffuse_texture_type
-                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+                                if img.source == 'FILE' and img.filepath:
+                                    diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.filepath))
+                                elif img.source == 'GENERATED':
+                                    diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img.name))
 
                     elif bdsf_principled:
+                        lightmap_type_value = TextureType.lightmap.value
+                        if file_type == ExportFileType.rmesh_uer2:
+                            lightmap_type_value = TextureType.opaque.value
                         for node in mat.node_tree.nodes:
                             if node.type == 'TEX_IMAGE':
-                                image = node.image
-                                if not image:
+                                img = node.image
+                                if not img:
                                     continue
 
-                                if image.filepath:
-                                    filename = os.path.basename(bpy.path.abspath(image.filepath))
-                                    name_no_ext = os.path.splitext(filename)[0]
-                                    if "_lm" in name_no_ext.lower():
-                                        lightmap_texture_dict["texture_type"] = TextureType.lightmap.value
+                                if img.source == 'FILE' and img.filepath:
+                                    filename = os.path.basename(bpy.path.abspath(img.filepath))
+                                    if "_lm" in filename.lower():
+                                        lightmap_texture_dict["texture_type"] = lightmap_type_value
+                                        lightmap_texture_dict["texture_name"] = filename
+                                        break
+                                elif img.source == 'GENERATED':
+                                    filename = os.path.basename(bpy.path.abspath(img.name))
+                                    if "_lm" in filename.lower():
+                                        lightmap_texture_dict["texture_type"] = lightmap_type_value
                                         lightmap_texture_dict["texture_name"] = filename
                                         break
 
@@ -322,15 +334,19 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                         bdsf_principled = get_linked_node(output_material_node, "Surface", "BSDF_PRINCIPLED")
                         image_node_a = get_linked_node(bdsf_principled, "Base Color", "TEX_IMAGE")
                         image_node_b = get_linked_node(bdsf_principled, "Alpha", "TEX_IMAGE")
-
                         if image_node_a is not None:
-                            diffuse_texture_type = TextureType.opaque.value
-                            if image_node_b is not None:
-                                diffuse_texture_type = TextureType.transparent.value
+                            img_a = image_node_a.image
+                            if img_a:
+                                diffuse_texture_type = TextureType.opaque.value
+                                if image_node_b is not None and image_node_b.image:
+                                    diffuse_texture_type = TextureType.transparent.value
 
-                            if image_node_a.image.filepath:
-                                diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(image_node_a.image.filepath))
-                                diffuse_texture_dict["texture_type"] = diffuse_texture_type
+                                if img_a.source == 'FILE' and img_a.filepath:
+                                    diffuse_texture_dict["texture_type"] = diffuse_texture_type
+                                    diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img_a.filepath))
+                                elif img_a.source == 'GENERATED':
+                                    diffuse_texture_dict["texture_type"] = diffuse_texture_type
+                                    diffuse_texture_dict["texture_name"] = os.path.basename(bpy.path.abspath(img_a.name))
 
                 section_data[mat_name]["textures"].append(lightmap_texture_dict)
                 section_data[mat_name]["textures"].append(diffuse_texture_dict)
@@ -713,6 +729,15 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         for texture_idx, texture_dict in enumerate(mesh_dict["textures"]):
             if texture_idx == 0:
                 texture_lightmap_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
+                if not texture_lightmap_data and not is_string_empty(texture_dict["texture_name"]):
+                    if not file_type == ImportFileType.rmesh_uer2:
+                        error_log.add('Failed to retrive "%s". Generating blank image' % texture_dict["texture_name"])
+
+                    texture_lightmap_data = bpy.data.images.get(texture_dict["texture_name"])
+                    if texture_lightmap_data is None:
+                        texture_lightmap_data = bpy.data.images.new(name=texture_dict["texture_name"], width=2, height=2)
+                        texture_lightmap_data.generated_color = (1.0, 1.0, 1.0, 1.0)
+
                 if texture_lightmap_data:
                     texture_lightmap = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture_lightmap.image = texture_lightmap_data
@@ -730,6 +755,15 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
             elif texture_idx == 1:
                 diffuse_type = TextureType(texture_dict["texture_type"])
                 texture_diffuse_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
+                if not texture_diffuse_data and not is_string_empty(texture_dict["texture_name"]):
+                    if not file_type == ImportFileType.rmesh_uer2:
+                        error_log.add('Failed to retrive "%s". Generating blank image' % texture_dict["texture_name"])
+
+                    texture_diffuse_data = bpy.data.images.get(texture_dict["texture_name"])
+                    if texture_diffuse_data is None:
+                        texture_diffuse_data = bpy.data.images.new(name=texture_dict["texture_name"], width=2, height=2)
+                        texture_diffuse_data.generated_color = (1.0, 1.0, 1.0, 1.0)
+
                 if texture_diffuse_data:
                     texture_diffuse = mat.node_tree.nodes.new("ShaderNodeTexImage")
                     texture_diffuse.image = texture_diffuse_data
@@ -771,9 +805,6 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                         uv_node.uv_map = "uvmap_render"
                         mapping_node.vector_type = 'TEXTURE'
 
-                elif len(texture_dict["texture_name"]) > 0:
-                    error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
-                    report({'WARNING'}, 'Failed to retrive "%s"' % texture_dict["texture_name"])
             else:
                 report({'WARNING'}, 'Texture index out of range: %s' % texture_idx)
 
