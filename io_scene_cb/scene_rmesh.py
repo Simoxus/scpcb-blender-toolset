@@ -376,7 +376,9 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                 u1, v1 = layer_uv_1.data[loop_index].uv
                 uv_lightmap = (u1, 1 - v1)
 
-            color = (0, 0, 0)
+            r = 1
+            g = 1
+            b = 1
             if layer_color:
                 if layer_color.domain == 'POINT':
                     r, g, b, a = layer_color.data[loop.vertex_index].color
@@ -386,7 +388,8 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
                 r = linear_to_gamma(r)
                 g = linear_to_gamma(g)
                 b = linear_to_gamma(b)
-                color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
+
+            color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
             if file_type == ExportFileType.rmesh_uer2:
                 key = str((round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal))
@@ -756,9 +759,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                 diffuse_type = TextureType(texture_dict["texture_type"])
                 texture_diffuse_data = get_file(texture_dict["texture_name"], directory_path=local_asset_path)
                 if not texture_diffuse_data and not is_string_empty(texture_dict["texture_name"]):
-                    if not file_type == ImportFileType.rmesh_uer2:
-                        error_log.add('Failed to retrive "%s". Generating blank image' % texture_dict["texture_name"])
-
+                    error_log.add('Failed to retrive "%s". Generating blank image' % texture_dict["texture_name"])
                     texture_diffuse_data = bpy.data.images.get(texture_dict["texture_name"])
                     if texture_diffuse_data is None:
                         texture_diffuse_data = bpy.data.images.new(name=texture_dict["texture_name"], width=2, height=2)
