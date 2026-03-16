@@ -2,9 +2,7 @@ import os
 from pathlib import Path
 from enum import Enum, auto, Flag
 
-from .common_functions import (read_string,
-                               write_string,
-                               read_null_string,
+from .common_functions import (read_null_string,
                                write_null_string,
                                read_integer,
                                write_integer,
@@ -13,22 +11,20 @@ from .common_functions import (read_string,
                                read_byte,
                                write_byte,
                                read_float,
-                               write_float,
-                               read_vector,
-                               write_vector,
-                               read_2d_vector,
-                               write_2d_vector,
-                               read_uv,
-                               write_uv,
-                               read_color,
-                               write_color)
+                               write_float)
 
-class UnkFlags(Flag):
+class TransformFlags(Flag):
     exclude_scale = auto()
-    bit1 = auto()
-    bit2 = auto()
-    bit3 = auto()
-    bit4 = auto()
+    unk1 = auto()
+    unk2 = auto()
+    unk3 = auto()
+    unk4 = auto()
+
+class MaterialFlags(Flag):
+    unk0 = auto()
+    has_extension = auto()
+    unk1 = auto()
+    unk2 = auto()
 
 def read_3dw(file_path):
     _3dw_dict = {
@@ -52,9 +48,6 @@ def read_3dw(file_path):
         object_count = read_integer(_3dw_stream)
         object_offset = read_integer(_3dw_stream)
 
-        last_face_id = 0
-        last_object_id = 0
-
         _3dw_stream.seek(name_offset)
         for name_idx in range(name_count):
             _3dw_dict["names"].append(read_null_string(_3dw_stream))
@@ -67,7 +60,6 @@ def read_3dw(file_path):
             name = _3dw_dict["names"][index] if 0 <= index < len(_3dw_dict["names"]) else None
 
             if name == "group":
-
                 flags = read_byte(_3dw_stream)
                 group_index = read_integer(_3dw_stream)
 
@@ -105,7 +97,7 @@ def read_3dw(file_path):
                 object_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
 
                 extension_name_index = -1
-                if (flags & 2) != 0:
+                if MaterialFlags.has_extension in MaterialFlags(flags):
                     extension_name_index = read_integer(_3dw_stream)
 
                 new_group = {"flags": flags, "group_index": group_index, "object_name": object_name, "extension_name_index": extension_name_index}
@@ -172,7 +164,7 @@ def read_3dw(file_path):
                 x_scale = 1.0
                 y_scale = 1.0
                 z_scale = 1.0
-                if not UnkFlags.exclude_scale in UnkFlags(entity["flags"]):
+                if not TransformFlags.exclude_scale in TransformFlags(entity["flags"]):
                     x_scale = read_float(_3dw_stream)
                     y_scale = read_float(_3dw_stream)
                     z_scale = read_float(_3dw_stream)
@@ -320,7 +312,6 @@ def read_3dw(file_path):
                             "lightmap_texcoord": (0.0, 0.0)
                         }
 
-
                         vertex["vertex_index"] = read_byte(_3dw_stream)
                         vertex["diffuse_texcoord"] = (read_float(_3dw_stream), read_float(_3dw_stream))
                         if (face["flags"] & 16) != 0:
@@ -332,6 +323,14 @@ def read_3dw(file_path):
 
                 _3dw_dict["objects"].append(entity)
 
+            elif name == "terrain":
+                # TODO
+                print(_3dw_stream.tell())
+                _3dw_stream.seek(size, 1)
+            elif name == "lightmap":
+                # TODO
+                print(_3dw_stream.tell())
+                _3dw_stream.seek(size, 1)
             else:
                 _3dw_stream.seek(size, 1)
 
