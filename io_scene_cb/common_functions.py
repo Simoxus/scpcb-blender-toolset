@@ -5,7 +5,6 @@ import struct
 import colorsys
 
 from enum import Enum, auto
-from mathutils import Vector
 
 SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "shader_resources.blend")
 SHADER_NODE_NAMES = ("rmesh_material", "b3d_material", "cb_material")
@@ -192,8 +191,9 @@ def generate_texture_mapping(node_tree, input_node, input_key="Vector"):
     mapping_node = node_tree.nodes.new("ShaderNodeMapping")
     uv_node = node_tree.nodes.new("ShaderNodeUVMap")
 
-    mapping_node.location = Vector((-180.0, 0.0)) + input_node.location
-    uv_node.location = Vector((-360.0, 0.0)) + input_node.location
+    x, y = input_node.location
+    mapping_node.location = (-180.0 + x, 0.0 + y) 
+    uv_node.location = (-360.0 + x, 0.0 + y)
 
     connect_inputs(node_tree, uv_node, "UV", mapping_node, "Vector")
     connect_inputs(node_tree, mapping_node, "Vector", input_node, input_key)

@@ -180,19 +180,19 @@ def read_3dw(file_path):
                 entity["properties"]["scale"] = (x_scale, y_scale, z_scale)
 
                 mesh_dict = _3dw_dict["mesh_references"].get(mesh_reference_index)
-                vertex_color_count = 0
                 if mesh_dict is not None:
                     limb_count = mesh_dict['limb_count']
                     for limb_idx in range(limb_count):
                         unk0 = read_integer(_3dw_stream)
                         vertex_color_count = read_short(_3dw_stream)
+                        vertex_color_list = []
+                        for color_idx in range(vertex_color_count):
+                            red = read_byte(_3dw_stream)
+                            green = read_byte(_3dw_stream)
+                            blue = read_byte(_3dw_stream)
+                            vertex_color_list.append((red, green, blue))
 
-                # I believe this is what the next block is but no idea really as I haven't gotten far enough to test it.
-                for color_idx in range(vertex_color_count):
-                    red = read_byte(_3dw_stream)
-                    green = read_byte(_3dw_stream)
-                    blue = read_byte(_3dw_stream)
-                    entity["vertex_colors"].append((red, green, blue))
+                        entity["vertex_colors"].append(vertex_color_list)
 
                 _3dw_dict["objects"].append(entity)
 
