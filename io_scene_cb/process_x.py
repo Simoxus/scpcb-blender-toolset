@@ -7,6 +7,15 @@ import struct
 from enum import Enum, auto
 from io import TextIOWrapper
 
+from .common_functions import (read_string,
+                               write_string,
+                               read_integer,
+                               write_integer,
+                               read_short,
+                               write_short,
+                               read_float,
+                               write_float)
+
 TOKEN_NAME = 1
 TOKEN_STRING = 2
 TOKEN_INTEGER = 3
@@ -857,19 +866,6 @@ def parse_x_b_txt(text):
 
     return x_dict
 
-def read_short(input_stream):
-    return struct.unpack('<h', input_stream.read(2))[0]
-
-def read_int(input_stream):
-    return struct.unpack('<i', input_stream.read(4))[0]
-
-def read_float(input_stream):
-    return struct.unpack('<f', input_stream.read(4))[0]
-
-def read_string(input_stream):
-    string_length = struct.unpack('<i', input_stream.read(4))[0]
-    return input_stream.read(string_length).decode('utf-8')
-
 def parse_token_loop(x_dict, input_stream, x_dict_element, END_TOKEN):
     while parse_token(x_dict, input_stream, x_dict_element) != END_TOKEN:
         pass
@@ -899,13 +895,13 @@ def parse_token(input_stream):
         token_value = "STRING"
     elif token == TOKEN_INTEGER_LIST:
         token_value = []
-        element_count = read_int(input_stream)
+        element_count = read_integer(input_stream)
         for element_idx in range(element_count):
-            element_value = read_int(input_stream)
+            element_value = read_integer(input_stream)
             token_value.append(element_value)
     elif token == TOKEN_FLOAT_LIST:
         token_value = []
-        element_count = read_int(input_stream)
+        element_count = read_integer(input_stream)
         for element_idx in range(element_count):
             element_value = read_float(input_stream)
             token_value.append(element_value)

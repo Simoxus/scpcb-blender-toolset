@@ -108,7 +108,7 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
         else:
             mesh_name = "mesh"
 
-    vertices = [Vector(flip(vertex)) * ROOMSCALE for vertex in mesh_dict["vertices"]]
+    vertices = [ROOMSCALE * Vector(flip(vertex)) for vertex in mesh_dict["vertices"]]
     triangles = [triangle[::-1] for triangle in mesh_dict["faces"]]
     mesh = bpy.data.meshes.new(mesh_name)
     mesh.from_pydata(vertices, [], triangles)
@@ -178,11 +178,11 @@ def create_object(arm_ob, parent_bone, x_dict, mesh_dict, ob_data=None, is_simpl
 
 def x_matrix_to_blender(mat):
     loc, rot, scl = Matrix((mat[0:4], mat[4:8], mat[8:12], mat[12:16])).transposed().decompose()
-    return Matrix.LocRotScale(Vector(flip(loc)) * ROOMSCALE, Quaternion(flip(rot)).inverted(), Vector(flip(scl)))
+    return Matrix.LocRotScale(ROOMSCALE * Vector(flip(loc)), Quaternion(flip(rot)).inverted(), Vector(flip(scl)))
 
 def blender_matrix_to_x(mat):
     loc, rot, scl = mat.decompose()
-    b_matrix = Matrix.LocRotScale(Vector(flip(loc)) * 160, Quaternion(flip(rot)).inverted(), Vector(flip(scl))).transposed()
+    b_matrix = Matrix.LocRotScale((1.0 / ROOMSCALE) * Vector(flip(loc)), Quaternion(flip(rot)).inverted(), Vector(flip(scl))).transposed()
     matrix_array = []
     for row in b_matrix:
         for element in row:
@@ -298,7 +298,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph, bone=None):
             v = mesh.vertices[loop.vertex_index]
             loop_normal = flip(loop.normal)
 
-            pos = Vector(flip(v.co * 160))
+            pos = (1.0 / ROOMSCALE) * Vector(flip(v.co))
 
             uv = (0.0, 0.0)
             if uv_layer:

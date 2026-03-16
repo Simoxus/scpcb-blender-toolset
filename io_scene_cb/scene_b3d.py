@@ -20,7 +20,9 @@ from .common_functions import (RandomColorGenerator,
                                connect_inputs,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
-                               SHADER_NODE_NAMES)
+                               SHADER_NODE_NAMES,
+                               ROOMSCALE,
+                               LIGHTEXPONENT)
 
 class TextureFXFlags(Flag):
     color = auto()
@@ -63,9 +65,7 @@ class TextureTypeEnum(Enum):
 def import_mesh(node, material_list, is_simple=False, ob_data=None):
     loop_normals = []
 
-    m_scl = Matrix.Scale(0.00625, 4)
-
-    vertices = [m_scl @ Vector(flip(vertex)) for vertex in node["vertices"]]
+    vertices = [ROOMSCALE * Vector(flip(vertex)) for vertex in node["vertices"]]
     faces = [face[::-1] for brush in node["faces"] for face in brush["indices"]]
     mesh = bpy.data.meshes.new("mesh")
     mesh.from_pydata(vertices, [], faces)
@@ -183,7 +183,7 @@ def import_fcurve_data(ob, strips, bone_name, keyframe_dict, node_transform, is_
                     rotation_field = frame_data.get("rotation")
                     scale_field = frame_data.get("scale")
                     if position_field is not None:
-                        last_position = Matrix.Scale(0.00625,4) @ Vector(flip(position_field))
+                        last_position = ROOMSCALE * Vector(flip(position_field))
 
                     if rotation_field is not None:
                         last_rotation = Quaternion(flip(rotation_field))
@@ -281,7 +281,7 @@ def get_bone_distance(node, parent_ob):
         child_position = Vector(child_nodes[0]["position"])
         position = Vector(node["position"])
 
-        bone_distance = (Matrix.Scale(0.00625, 4) @ (position - child_position)).length
+        bone_distance = (ROOMSCALE * (position - child_position)).length
 
     elif child_node_count > 1:
         positions = []
@@ -290,10 +290,10 @@ def get_bone_distance(node, parent_ob):
 
         average_position = (sum(positions, Vector()) / len(positions))
         position = Vector(node["position"])
-        bone_distance = (Matrix.Scale(0.00625, 4) @ (position - average_position)).length
+        bone_distance = (ROOMSCALE * (position - average_position)).length
 
     if bone_distance < 0.000001:
-        bone_distance = 0.00625
+        bone_distance = ROOMSCALE
 
     return bone_distance
 
@@ -306,7 +306,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
     result = parse_kv_string(node["name"])
     if is_simple:
         if has_mesh:
-            node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+            node_transform = Matrix.LocRotScale(ROOMSCALE * Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if bm_transform is not None:
                 bm_transform = bm_transform @ node_transform
             else:
@@ -331,7 +331,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
                 armature.cb.object_type = str(ObjectType.exclude.value)
 
-                node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+                node_transform = Matrix.LocRotScale(ROOMSCALE * Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
                 if parent_ob is not None:
                     armature.parent = parent_ob
 
@@ -398,9 +398,9 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
             else:
                 object_mesh = armature.data.edit_bones.new(node["name"])
-                object_mesh.length = 0.00625
+                object_mesh.length = ROOMSCALE
 
-                node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+                node_transform = Matrix.LocRotScale(ROOMSCALE * Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
                 if parent_ob is not None:
                     if isinstance(parent_ob, bpy.types.EditBone):
                         object_mesh.parent = parent_ob
@@ -477,8 +477,9 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], light_data)
                 context.collection.objects.link(object_mesh)
 
-                light_data.energy = result["intensity"] * 50
-                light_data.shadow_soft_size = result["range"] / 1000
+                light_data.shadow_soft_size = ROOMSCALE * result["range"]
+                light_data.energy = result["intensity"] * (light_data.shadow_soft_size ** LIGHTEXPONENT) 
+
                 r, g, b = result["color"]
                 light_data.color = (r / 255, g / 255, b / 255)
                 object_mesh.cb.linear_falloff = result["linearfalloff"]
@@ -490,8 +491,8 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], spotlight_data)
                 context.collection.objects.link(object_mesh)
 
-                spotlight_data.energy = result["intensity"] * 50
-                spotlight_data.shadow_soft_size = result["range"] / 1000
+                spotlight_data.shadow_soft_size = ROOMSCALE * result["range"]
+                spotlight_data.energy = result["intensity"] * (spotlight_data.shadow_soft_size ** LIGHTEXPONENT) 
                 r, g, b = result["color"]
                 spotlight_data.color = (r / 255, g / 255, b / 255)
 
@@ -538,12 +539,12 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                     object_mesh.cb.object_type = str(ObjectType.mesh.value)
                 else:
                     object_mesh = bpy.data.objects.new(result["classname"], None)
-                    object_mesh.empty_display_size = 0.00625
+                    object_mesh.empty_display_size = ROOMSCALE
 
                     context.collection.objects.link(object_mesh)
                     object_mesh.cb.object_type = str(ObjectType.exclude.value)
 
-            node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+            node_transform = Matrix.LocRotScale(ROOMSCALE * Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             if parent_ob is not None:
                 object_mesh.parent = parent_ob
 
@@ -564,7 +565,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
 
             last_mesh.cb.object_type = str(ObjectType.mesh.value)
 
-            node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
+            node_transform = Matrix.LocRotScale(ROOMSCALE * Vector(flip(node["position"])), Quaternion(flip(node["rotation"])), Vector(flip(node["scale"])))
             last_mesh.matrix_local = node_transform
 
         if has_skin and len(node["bones"]) > 0:
@@ -791,7 +792,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
         for loop_index in tri.loops:
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
-            x, y, z = Matrix.Scale(160.0, 4) @ v.co
+            x, y, z = (1.0 / ROOMSCALE) * v.co
             i, j, k = loop.normal
             pos = (x, z, y)
             loop_normal = (i, k, j)
@@ -859,7 +860,7 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=Non
                 node_transform = parent_ob.matrix_local.inverted() @ bone.matrix_local
             loc, rot_quat, scl = node_transform.decompose()
 
-            tx, ty, tz = Matrix.Scale(160, 4) @ loc
+            tx, ty, tz = (1.0 / ROOMSCALE) * loc
             sx, sy, sz = scl
             rw, ri, rj, rk = rot_quat
             ob_node_dict = {
@@ -900,7 +901,7 @@ def get_scene_bones(b3d_data, node_dict, depsgraph, skin_info=None, key_info=Non
 
                         f_loc, f_rot_quat, f_scl = frame_transform.decompose()
 
-                        f_tx, f_ty, f_tz = Matrix.Scale(160, 4) @ f_loc
+                        f_tx, f_ty, f_tz = (1.0 / ROOMSCALE) * f_loc
                         f_sx, f_sy, f_sz = f_scl
                         f_rw, f_ri, f_rj, f_rk = f_rot_quat
 
@@ -951,8 +952,8 @@ def get_node_name(ob):
         r, g, b = ob.data.color
 
         light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
-        light_intensity = "intensity=%s" % (ob.data.energy / 50)
-        light_range = "range=%s" % int(ob.data.shadow_soft_size * 1000)
+        light_range = "range=%s" % ((1.0 / ROOMSCALE) * ob.data.shadow_soft_size)
+        light_intensity = "intensity=%s" % (ob.data.energy / (ob.data.shadow_soft_size ** LIGHTEXPONENT))
         light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
         node_name = "classname=light\r\n%s\r\n%s\r\n%s\r\n%s" % (light_color, light_intensity, light_range, light_linear_falloff)
     elif object_type_enum == ObjectType.entity_spotlight:
@@ -961,8 +962,8 @@ def get_node_name(ob):
 
         light_angles = "angles=%s %s %s" % (0, 0, 0)
         light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
-        light_intensity = "intensity=%s" % (ob.data.energy / 50)
-        light_range = "range=%s" % int(ob.data.shadow_soft_size * 1000)
+        light_range = "range=%s" % ((1.0 / ROOMSCALE) * ob.data.shadow_soft_size)
+        light_intensity = "intensity=%s" % (ob.data.energy / (ob.data.shadow_soft_size ** LIGHTEXPONENT))
         light_inner_cone_angle = "innerconeangle=%s" % int(ob.data.spot_blend * outer_deg)
         light_outer_cone_angle = "outerconeangle=%s" % int(outer_deg)
         light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
@@ -987,7 +988,7 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
 
             node_name = get_node_name(ob)
 
-            tx, ty, tz = Matrix.Scale(160, 4) @ loc
+            tx, ty, tz = (1.0 / ROOMSCALE) * loc
             sx, sy, sz = scl
             rw, ri, rj, rk = rot_quat
             ob_node_dict = {
@@ -1026,7 +1027,7 @@ def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_in
 
                             f_loc, f_rot_quat, f_scl = frame_transform.decompose()
 
-                            f_tx, f_ty, f_tz = Matrix.Scale(160, 4) @ f_loc
+                            f_tx, f_ty, f_tz = (1.0 / ROOMSCALE) * f_loc
                             f_sx, f_sy, f_sz = f_scl
                             f_rw, f_ri, f_rj, f_rk = f_rot_quat
                             key_dict = {

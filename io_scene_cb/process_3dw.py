@@ -1,0 +1,338 @@
+import os
+from pathlib import Path
+from enum import Enum, auto, Flag
+
+from .common_functions import (read_string,
+                               write_string,
+                               read_null_string,
+                               write_null_string,
+                               read_integer,
+                               write_integer,
+                               read_short,
+                               write_short,
+                               read_byte,
+                               write_byte,
+                               read_float,
+                               write_float,
+                               read_vector,
+                               write_vector,
+                               read_2d_vector,
+                               write_2d_vector,
+                               read_uv,
+                               write_uv,
+                               read_color,
+                               write_color)
+
+class UnkFlags(Flag):
+    exclude_scale = auto()
+    bit1 = auto()
+    bit2 = auto()
+    bit3 = auto()
+    bit4 = auto()
+
+def read_3dw(file_path):
+    _3dw_dict = {
+        "map_version": 0,
+        "map_flags": 0,
+        "names": [],
+        "materials": [],
+        "mesh_references": {},
+        "groups": {},
+        "visgroups": {},
+        "objects": []
+    }
+
+    with file_path.open("rb") as _3dw_stream:
+        _3dw_dict["map_version"] = read_short(_3dw_stream)
+        _3dw_dict["map_flags"] = read_byte(_3dw_stream)
+
+        name_count = read_integer(_3dw_stream)
+        name_offset = read_integer(_3dw_stream)
+
+        object_count = read_integer(_3dw_stream)
+        object_offset = read_integer(_3dw_stream)
+
+        last_face_id = 0
+        last_object_id = 0
+
+        _3dw_stream.seek(name_offset)
+        for name_idx in range(name_count):
+            _3dw_dict["names"].append(read_null_string(_3dw_stream))
+
+        _3dw_stream.seek(object_offset)
+        for object_idx in range(object_count):
+            index = read_integer(_3dw_stream) - 1
+            size = read_integer(_3dw_stream)
+
+            name = _3dw_dict["names"][index] if 0 <= index < len(_3dw_dict["names"]) else None
+
+            if name == "group":
+
+                flags = read_byte(_3dw_stream)
+                group_index = read_integer(_3dw_stream)
+
+                new_group = {"flags": flags, "group_index": group_index}
+
+                _3dw_dict["groups"][object_idx] = new_group
+
+            elif name == "visgroup":
+                flags = read_byte(_3dw_stream)
+                group_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
+
+                color_r = read_byte(_3dw_stream)
+                color_g = read_byte(_3dw_stream)
+                color_b = read_byte(_3dw_stream)
+
+                new_group = {"name": group_name, "color": (color_r, color_g, color_b)}
+
+                _3dw_dict["visgroups"][object_idx] = new_group
+
+            elif name == "meshreference":
+                flags = read_byte(_3dw_stream)
+
+                group_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
+                object_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
+
+                limb_count = read_byte(_3dw_stream)
+                new_group = {"flags": flags, "group_name": group_name, "object_name": object_name, "limb_count": limb_count}
+
+                _3dw_dict["mesh_references"][object_idx] = new_group
+
+            elif name == "material":
+                flags = read_byte(_3dw_stream)
+                group_index = read_integer(_3dw_stream)
+
+                object_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
+
+                extension_name_index = -1
+                if (flags & 2) != 0:
+                    extension_name_index = read_integer(_3dw_stream)
+
+                new_group = {"flags": flags, "group_index": group_index, "object_name": object_name, "extension_name_index": extension_name_index}
+                _3dw_dict["materials"].append(object_name)
+
+            else:
+                _3dw_stream.seek(size, 1)
+
+        _3dw_stream.seek(object_offset)
+        for i in range(object_count):
+            index = read_integer(_3dw_stream) - 1
+            size = read_integer(_3dw_stream)
+
+            name = _3dw_dict["names"][index] if 0 <= index < len(_3dw_dict["names"]) else None
+            if name == "mesh":
+                entity = {
+                    "classname": "model",
+                    "name": "model",
+                    "flags": 0,
+                    "properties": {},
+                    "group_index": -1,
+                    "visgroup_index": -1,
+                    "color": (0, 0, 0),
+                    "mesh_reference_index": -1,
+                    "origin": (0, 0, 0),
+                    "vertex_colors": []
+                }
+
+                entity["flags"] = read_byte(_3dw_stream)
+                key_count = read_integer(_3dw_stream)
+                for key_idx in range(key_count):
+                    key_name_index = read_integer(_3dw_stream) - 1
+                    key_value_index = read_integer(_3dw_stream) - 1
+
+                    key_name = _3dw_dict["names"][key_name_index]
+                    key_value = _3dw_dict["names"][key_value_index]
+                    entity["properties"][key_name] = key_value
+
+                entity["group_index"] = read_integer(_3dw_stream) - 1
+                entity["visgroup_index"] = read_integer(_3dw_stream) - 1
+#                if visgroup_index in _3dw_dict["visgroups_dict"]:
+#                    entity["visgroups"].append(_3dw_dict["visgroups_dict"][visgroup_index])
+
+                red = read_byte(_3dw_stream)
+                green = read_byte(_3dw_stream)
+                blue = read_byte(_3dw_stream)
+                entity["color"] = (red, green, blue)
+
+                mesh_reference_index = read_integer(_3dw_stream) - 1
+                #if "file" not in entity["properties"]:
+                #    ref = next(q for q in _3dw_dict["mesh_references"] if q[0] == mesh_ref_index)
+                #    entity["properties"]["file"] = ref[1]
+
+                x = read_float(_3dw_stream)
+                z = read_float(_3dw_stream)
+                y = read_float(_3dw_stream)
+                entity["origin"] = (x, y, z)
+
+                pitch = read_float(_3dw_stream)
+                yaw = read_float(_3dw_stream)
+                roll = read_float(_3dw_stream)
+                entity["properties"]["angles"] = (pitch, yaw, roll)
+
+                x_scale = 1.0
+                y_scale = 1.0
+                z_scale = 1.0
+                if not UnkFlags.exclude_scale in UnkFlags(entity["flags"]):
+                    x_scale = read_float(_3dw_stream)
+                    y_scale = read_float(_3dw_stream)
+                    z_scale = read_float(_3dw_stream)
+                
+                entity["properties"]["scale"] = (x_scale, y_scale, z_scale)
+
+                mesh_dict = _3dw_dict["mesh_references"].get(mesh_reference_index)
+                vertex_color_count = 0
+                if mesh_dict is not None:
+                    limb_count = mesh_dict['limb_count']
+                    for limb_idx in range(limb_count):
+                        unk0 = read_integer(_3dw_stream)
+                        vertex_color_count = read_short(_3dw_stream)
+
+                # I believe this is what the next block is but no idea really as I haven't gotten far enough to test it.
+                for color_idx in range(vertex_color_count):
+                    red = read_byte(_3dw_stream)
+                    green = read_byte(_3dw_stream)
+                    blue = read_byte(_3dw_stream)
+                    entity["vertex_colors"].append((red, green, blue))
+
+                _3dw_dict["objects"].append(entity)
+
+            elif name == "entity":
+                entity = {
+                    "classname": None,
+                    "name": None,
+                    "flags": 0,
+                    "properties": {},
+                    "origin": (x, y, z),
+                    "group_index": -1,
+                    "visgroup_index": -1,
+                }
+
+                entity["flags"] = read_byte(_3dw_stream)
+
+                x = read_float(_3dw_stream)
+                z = read_float(_3dw_stream)
+                y = read_float(_3dw_stream)
+                entity["origin"] = (x, y, z)
+
+                key_count = read_integer(_3dw_stream)
+                for key_idx in range(key_count):
+                    key_name_index = read_integer(_3dw_stream) - 1
+                    key_value_index = read_integer(_3dw_stream) - 1
+
+                    key_name = _3dw_dict["names"][key_name_index]
+                    key_value = _3dw_dict["names"][key_value_index]
+                    if _3dw_dict["names"][key_name_index] == "classname":
+                        entity["classname"] = key_name
+                        entity["name"] = key_value
+                    else:
+                        entity["properties"][key_name] = key_value
+
+                entity["group_index"] = read_integer(_3dw_stream) - 1
+                entity["visgroup_index"] = read_integer(_3dw_stream) - 1
+
+#                if visgroup_index in _3dw_dict["visgroups_dict"]:
+#                    entity["visgroups"].append(_3dw_dict["visgroups_dict"][visgroup_index])
+
+                _3dw_dict["objects"].append(entity)
+
+            elif name == "brush":
+                entity = {
+                    "classname": "brush",
+                    "name": "brush",
+                    "flags": 0,
+                    "properties": {},
+                    "group_index": -1,
+                    "visgroup_index": -1,
+                    "color": (0, 0, 0),
+                    "vertices": [],
+                    "faces": []
+                }
+
+                invisible_collision = False
+
+                entity["flags"] = read_byte(_3dw_stream)
+                key_count = read_integer(_3dw_stream)
+                for key_idx in range(key_count):
+                    key_name_index = read_integer(_3dw_stream)
+                    key_value_index = read_integer(_3dw_stream)
+
+                    key_name = _3dw_dict["names"][key_name_index - 1]
+                    if key_name.lower() == "classname":
+                        key_value = _3dw_dict["names"][key_value_index - 1]
+                        if key_value.lower() == "field_hit":
+                            invisible_collision = True
+
+                entity["group_index"] = read_integer(_3dw_stream) - 1
+                entity["visgroup_index"] = read_integer(_3dw_stream) - 1
+
+                red = read_byte(_3dw_stream)
+                green = read_byte(_3dw_stream)
+                blue = read_byte(_3dw_stream)
+                entity["color"] = (red, green, blue)
+
+                vertex_count = read_byte(_3dw_stream)
+                for vertex_idx in range(vertex_count):
+                    x = read_float(_3dw_stream)
+                    z = read_float(_3dw_stream)
+                    y = read_float(_3dw_stream)
+
+                    entity["vertices"].append((x, y, z))
+
+                face_count = read_byte(_3dw_stream)
+                for face_idx in range(face_count):
+                    face = {
+                        "flags": 0,
+                        "plane": (0.0, 0.0, 0.0, 0.0),
+                        "texture_position": (0.0, 0.0),
+                        "texture_scale": (1.0, 1.0),
+                        "texture_rotation": (0.0, 0.0),
+                        "u_plane": (0.0, 0.0, 0.0, 0.0),
+                        "v_plane": (0.0, 0.0, 0.0, 0.0),
+                        "luxel": 0.0,
+                        "smooth_group": 0,
+                        "material_index": 0,
+                        "lightmap_index": 0,
+                        "face_indices": []
+                    }
+
+                    face["flags"] = read_byte(_3dw_stream)
+                    face["plane"] = [read_float(_3dw_stream) for p in range(4)]
+
+                    face["texture_position"] = (read_float(_3dw_stream), read_float(_3dw_stream))
+                    face["texture_scale"] = (read_float(_3dw_stream), read_float(_3dw_stream))
+                    face["texture_rotation"] = (read_float(_3dw_stream), read_float(_3dw_stream))
+
+                    face["u_plane"] = [read_float(_3dw_stream) for p in range(4)]
+                    face["v_plane"] = [read_float(_3dw_stream) for p in range(4)]
+
+                    face["luxel"] = read_float(_3dw_stream)
+
+                    face["smooth_group"] = read_integer(_3dw_stream)
+                    face["material_index"] = read_integer(_3dw_stream) - 1
+                    if (face["flags"] & 16) != 0:
+                        face["lightmap_index"] = read_integer(_3dw_stream)
+
+                    point_count = read_byte(_3dw_stream)
+                    for point_idx in range(point_count):
+                        vertex = {
+                            "vertex_index": 0,
+                            "diffuse_texcoord": (0.0, 0.0),
+                            "lightmap_texcoord": (0.0, 0.0)
+                        }
+
+
+                        vertex["vertex_index"] = read_byte(_3dw_stream)
+                        vertex["diffuse_texcoord"] = (read_float(_3dw_stream), read_float(_3dw_stream))
+                        if (face["flags"] & 16) != 0:
+                            vertex["lightmap_texcoord"] = (read_float(_3dw_stream), read_float(_3dw_stream))
+
+                        face["face_indices"].append(vertex)
+
+                    entity["faces"].append(face)
+
+                _3dw_dict["objects"].append(entity)
+
+            else:
+                _3dw_stream.seek(size, 1)
+
+    return _3dw_dict

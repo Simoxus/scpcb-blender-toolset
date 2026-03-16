@@ -1,15 +1,17 @@
 import re
 import os
 import bpy
+import struct
 import colorsys
 
+from enum import Enum, auto
 from mathutils import Vector
-from enum import Flag, Enum, auto
 
 SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "shader_resources.blend")
 SHADER_NODE_NAMES = ("rmesh_material", "b3d_material", "cb_material")
 
 ROOMSCALE = 0.00625
+LIGHTEXPONENT = 2.8 # Completely made up. No idea if this is right. - Gen
 
 class ObjectType(Enum):
     exclude = 0
@@ -203,3 +205,73 @@ def flip(v):
 
 def clean_string(text):
     return re.sub(r'[^A-Za-z0-9]', '', text)
+
+def read_string(input_stream, encoding="utf-8"):
+    return input_stream.read(read_integer(input_stream)).decode(encoding)
+
+def write_string(input_stream, value, encoding="utf-8"):
+    string_length = len(value)
+    write_integer(input_stream, string_length)
+    input_stream.write(struct.pack('<%ss' % string_length, bytes(value, encoding)))
+
+def read_null_string(input_stream, encoding="utf-8"):
+    s = bytearray()
+    while True:
+        c = input_stream.read(1)
+        if c == b"\x00":
+            break
+        s += c
+    return s.decode(encoding)
+
+def write_null_string(input_stream, value, encoding="utf-8"):
+    string_length = len(value)
+    write_integer(input_stream, string_length)
+    input_stream.write(struct.pack('<%ssx' % string_length, bytes(value, encoding)))
+
+def read_integer(input_stream):
+    return struct.unpack('<I', input_stream.read(4))[0]
+
+def write_integer(input_stream, value):
+    input_stream.write(struct.pack('<I', value))
+
+def read_short(input_stream):
+    return struct.unpack('<H', input_stream.read(2))[0]
+
+def write_short(input_stream, value):
+    input_stream.write(struct.pack('<H', value))
+
+def read_byte(input_stream):
+    return struct.unpack('<B', input_stream.read(1))[0]
+
+def write_byte(input_stream, value):
+    input_stream.write(struct.pack('<B', value))
+
+def read_float(input_stream):
+    return struct.unpack('<f', input_stream.read(4))[0]
+
+def write_float(input_stream, value):
+    input_stream.write(struct.pack('<f', value))
+
+def read_vector(input_stream):
+    return struct.unpack('<3f', input_stream.read(12))
+
+def write_vector(input_stream, value):
+    input_stream.write(struct.pack('<3f', *value))
+
+def read_2d_vector(input_stream):
+    return struct.unpack('<2f', input_stream.read(8))
+
+def write_2d_vector(input_stream, value):
+    input_stream.write(struct.pack('<2f', *value))
+
+def read_uv(input_stream):
+    return struct.unpack('<2f', input_stream.read(8))
+
+def write_uv(input_stream, value):
+    input_stream.write(struct.pack('<2f', *value))
+
+def read_color(input_stream):
+    return struct.unpack('<3B', input_stream.read(3))
+
+def write_color(input_stream, value):
+    input_stream.write(struct.pack('<3B', *value))

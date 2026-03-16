@@ -15,12 +15,10 @@ from .common_functions import (RandomColorGenerator,
                                connect_inputs,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
-                               SHADER_NODE_NAMES)
+                               ROOMSCALE)
 
 def import_mesh(data, node, random_color_gen, local_asset_path):
-    m_scl = Matrix.Scale(0.00625, 4)
-
-    vertices = [m_scl @ Vector(flip(vertex)) for vertex in node["vertices"]]
+    vertices = [ROOMSCALE * Vector(flip(vertex)) for vertex in node["vertices"]]
     mesh = bpy.data.meshes.new("mesh")
     mesh.from_pydata(vertices, [], node["faces"])
 
@@ -111,7 +109,7 @@ def import_node_recursive(context, data, node, random_color_gen, local_asset_pat
     if parent_ob:
         ob_data.parent = parent_ob
 
-    node_transform = Matrix.LocRotScale(Matrix.Scale(0.00625, 4) @ Vector(flip(node["position"])), Euler(node["rotation"]), Vector(flip(node["scale"])))
+    node_transform = Matrix.LocRotScale(ROOMSCALE * Vector(flip(node["position"])), Euler(node["rotation"]), Vector(flip(node["scale"])))
     ob_data.matrix_local = node_transform
     for child_node in node["nodes"]:
         import_node_recursive(context, data, child_node, random_color_gen, local_asset_path, ob_data)

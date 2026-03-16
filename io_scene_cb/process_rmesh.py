@@ -1,6 +1,20 @@
-import struct
-
 from enum import Enum, auto
+from .common_functions import (read_string,
+                               write_string,
+                               read_integer,
+                               write_integer,
+                               read_byte,
+                               write_byte,
+                               read_float,
+                               write_float,
+                               read_vector,
+                               write_vector,
+                               read_2d_vector,
+                               write_2d_vector,
+                               read_uv,
+                               write_uv,
+                               read_color,
+                               write_color)
 
 class ImportFileType(Enum):
     rmesh_auto = 0
@@ -23,58 +37,8 @@ class TextureType(Enum):
     lightmap = auto()
     transparent = auto()
 
-def read_string(rmesh_stream):
-    return rmesh_stream.read(read_unsigned_int(rmesh_stream)).decode('utf-8')
-
-def write_string(rmesh_stream, value):
-    string_length = len(value)
-    write_unsigned_int(rmesh_stream, string_length)
-    rmesh_stream.write(struct.pack('<%ss' % string_length, bytes(value, 'utf-8')))
-
-def read_unsigned_int(rmesh_stream):
-    return struct.unpack('<I', rmesh_stream.read(4))[0]
-
-def write_unsigned_int(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<I', value))
-
-def read_byte(rmesh_stream):
-    return struct.unpack('<B', rmesh_stream.read(1))[0]
-
-def write_byte(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<B', value))
-
-def read_float(rmesh_stream):
-    return struct.unpack('<f', rmesh_stream.read(4))[0]
-
-def write_float(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<f', value))
-
-def read_vector(rmesh_stream):
-    return struct.unpack('<3f', rmesh_stream.read(12))
-
-def write_vector(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<3f', *value))
-
-def read_2d_vector(rmesh_stream):
-    return struct.unpack('<2f', rmesh_stream.read(8))
-
-def write_2d_vector(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<2f', *value))
-
-def read_uv(rmesh_stream):
-    return struct.unpack('<2f', rmesh_stream.read(8))
-
-def write_uv(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<2f', *value))
-
-def read_color(rmesh_stream):
-    return struct.unpack('<3B', rmesh_stream.read(3))
-
-def write_color(rmesh_stream, value):
-    rmesh_stream.write(struct.pack('<3B', *value))
-
 def read_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
-    mesh_count = read_unsigned_int(rmesh_stream)
+    mesh_count = read_integer(rmesh_stream)
     for mesh_idx in range(mesh_count):
         mesh_dict = {
             "vertices": [],
@@ -93,7 +57,7 @@ def read_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
 
                 mesh_dict["textures"].append(texture_dict)
 
-        vertex_count = read_unsigned_int(rmesh_stream)
+        vertex_count = read_integer(rmesh_stream)
         for vertex_idx in range(vertex_count):
             vertex_dict = {}
 
@@ -107,13 +71,13 @@ def read_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
 
             mesh_dict["vertices"].append(vertex_dict)
 
-        triangle_count = read_unsigned_int(rmesh_stream)
+        triangle_count = read_integer(rmesh_stream)
         for triangle_idx in range(triangle_count):
             triangle_dict = {}
 
-            triangle_dict["a"] = read_unsigned_int(rmesh_stream)
-            triangle_dict["b"] = read_unsigned_int(rmesh_stream)
-            triangle_dict["c"] = read_unsigned_int(rmesh_stream)
+            triangle_dict["a"] = read_integer(rmesh_stream)
+            triangle_dict["b"] = read_integer(rmesh_stream)
+            triangle_dict["c"] = read_integer(rmesh_stream)
 
             mesh_dict["triangles"].append(triangle_dict)
 
@@ -157,7 +121,7 @@ def read_rmesh(file_path, file_type):
         read_mesh_data(rmesh_stream, file_type, rmesh_dict["collision_meshes"], True)
 
         if file_type == ImportFileType.rmesh_tb or file_type == ImportFileType.rmesh_salvage:
-            trigger_box_count = read_unsigned_int(rmesh_stream)
+            trigger_box_count = read_integer(rmesh_stream)
             for trigger_box_idx in range(trigger_box_count):
                 trigger = {
                     "meshes": [],
@@ -169,7 +133,7 @@ def read_rmesh(file_path, file_type):
                 trigger["name"] = read_string(rmesh_stream)
                 rmesh_dict["trigger_boxes"].append(trigger)
 
-        entity_count = read_unsigned_int(rmesh_stream)
+        entity_count = read_integer(rmesh_stream)
         for entity_idx in range(entity_count):
             entity_dict = {}
             entity_dict["entity_type"] = read_string(rmesh_stream)
@@ -199,7 +163,7 @@ def read_rmesh(file_path, file_type):
                     entity_dict["scattering"] = read_float(rmesh_stream)
                     entity_dict["ff_array"] = []
                     for ff in range(31):
-                        ff_element = read_unsigned_int(rmesh_stream)
+                        ff_element = read_integer(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
 
             elif entity_dict["entity_type"] == "light_fix":
@@ -214,7 +178,7 @@ def read_rmesh(file_path, file_type):
                     entity_dict["scattering"] = read_float(rmesh_stream)
                     entity_dict["ff_array"] = []
                     for ff in range(31):
-                        ff_element = read_unsigned_int(rmesh_stream)
+                        ff_element = read_integer(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
 
                 else:
@@ -237,17 +201,17 @@ def read_rmesh(file_path, file_type):
                     entity_dict["scattering"] = read_float(rmesh_stream)
                     entity_dict["ff_array"] = []
                     for ff in range(31):
-                        ff_element = read_unsigned_int(rmesh_stream)
+                        ff_element = read_integer(rmesh_stream)
                         entity_dict["ff_array"].append(ff_element)
 
                 else:
                     entity_dict["euler_rotation"] = read_string(rmesh_stream)
-                    entity_dict["inner_cone_angle"] = read_unsigned_int(rmesh_stream)
-                    entity_dict["outer_cone_angle"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["inner_cone_angle"] = read_integer(rmesh_stream)
+                    entity_dict["outer_cone_angle"] = read_integer(rmesh_stream)
 
             elif entity_dict["entity_type"] == "soundemitter":
                 entity_dict["position"] = read_vector(rmesh_stream)
-                entity_dict["id"] = read_unsigned_int(rmesh_stream)
+                entity_dict["id"] = read_integer(rmesh_stream)
                 entity_dict["range"] = read_float(rmesh_stream)
 
             elif entity_dict["entity_type"] == "playerstart":
@@ -267,7 +231,7 @@ def read_rmesh(file_path, file_type):
                 entity_dict["euler_rotation"] = read_vector(rmesh_stream)
                 entity_dict["scale"] = read_vector(rmesh_stream)
                 entity_dict["has_collision"] = read_byte(rmesh_stream)
-                entity_dict["fx"] = read_unsigned_int(rmesh_stream)
+                entity_dict["fx"] = read_integer(rmesh_stream)
                 entity_dict["texture_name"] = read_string(rmesh_stream)
 
             elif entity_dict["entity_type"] == "item":
@@ -293,8 +257,8 @@ def read_rmesh(file_path, file_type):
             elif entity_dict["entity_type"] == "door":
                 if file_type == ImportFileType.rmesh_salvage:
                     entity_dict["position"] = read_vector(rmesh_stream)
-                    entity_dict["door_type"] = read_unsigned_int(rmesh_stream)
-                    entity_dict["key_card_level"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["door_type"] = read_integer(rmesh_stream)
+                    entity_dict["key_card_level"] = read_integer(rmesh_stream)
                     entity_dict["keypad_code"] = read_string(rmesh_stream)
                     entity_dict["angle"] = read_float(rmesh_stream)
                     entity_dict["start_open"] = read_byte(rmesh_stream)
@@ -308,8 +272,8 @@ def read_rmesh(file_path, file_type):
 
                 else:
                     entity_dict["position"] = read_vector(rmesh_stream)
-                    entity_dict["door_type"] = read_unsigned_int(rmesh_stream)
-                    entity_dict["key_card_level"] = read_unsigned_int(rmesh_stream)
+                    entity_dict["door_type"] = read_integer(rmesh_stream)
+                    entity_dict["key_card_level"] = read_integer(rmesh_stream)
                     entity_dict["keypad_code"] = read_string(rmesh_stream)
                     entity_dict["angle"] = read_float(rmesh_stream)
                     entity_dict["start_open"] = read_byte(rmesh_stream)
@@ -323,7 +287,7 @@ def read_rmesh(file_path, file_type):
     return file_type, rmesh_dict
 
 def write_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
-    write_unsigned_int(rmesh_stream, len(section_dict))
+    write_integer(rmesh_stream, len(section_dict))
     for mesh_dict in section_dict:
         if not is_coll:
             for texture_dict in mesh_dict["textures"]:
@@ -331,7 +295,7 @@ def write_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
                 if TextureType(texture_dict["texture_type"]) is not TextureType.none:
                     write_string(rmesh_stream, texture_dict["texture_name"])
 
-        write_unsigned_int(rmesh_stream, len(mesh_dict["vertices"]))
+        write_integer(rmesh_stream, len(mesh_dict["vertices"]))
         for vertex_dict in mesh_dict["vertices"]:
             write_vector(rmesh_stream, vertex_dict["position"])
             if not is_coll:
@@ -341,11 +305,11 @@ def write_mesh_data(rmesh_stream, file_type, section_dict, is_coll=False):
                 if file_type == ExportFileType.rmesh_uer2:
                     write_vector(rmesh_stream, vertex_dict["normal"])
 
-        write_unsigned_int(rmesh_stream, len(mesh_dict["triangles"]))
+        write_integer(rmesh_stream, len(mesh_dict["triangles"]))
         for triangle_dict in mesh_dict["triangles"]:
-            write_unsigned_int(rmesh_stream, triangle_dict["a"])
-            write_unsigned_int(rmesh_stream, triangle_dict["b"])
-            write_unsigned_int(rmesh_stream, triangle_dict["c"])
+            write_integer(rmesh_stream, triangle_dict["a"])
+            write_integer(rmesh_stream, triangle_dict["b"])
+            write_integer(rmesh_stream, triangle_dict["c"])
 
 def write_rmesh(rmesh_dict, output_path, file_type):
     with output_path.open("wb") as rmesh_stream:
@@ -362,12 +326,12 @@ def write_rmesh(rmesh_dict, output_path, file_type):
 
         write_mesh_data(rmesh_stream, file_type, rmesh_dict["collision_meshes"], True)
         if file_type == ExportFileType.rmesh_tb or file_type == ExportFileType.rmesh_salvage:
-            write_unsigned_int(rmesh_stream, len(rmesh_dict["trigger_boxes"]))
+            write_integer(rmesh_stream, len(rmesh_dict["trigger_boxes"]))
             for trigger_box_dict in rmesh_dict["trigger_boxes"]:
                 write_mesh_data(rmesh_stream, file_type, trigger_box_dict["meshes"], True)
                 write_string(rmesh_stream, trigger_box_dict["name"])
 
-        write_unsigned_int(rmesh_stream, len(rmesh_dict["entities"]))
+        write_integer(rmesh_stream, len(rmesh_dict["entities"]))
         for entity_dict in rmesh_dict["entities"]:
             write_string(rmesh_stream, entity_dict["entity_type"])
             if entity_dict["entity_type"] == "screen":
@@ -395,7 +359,7 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                     write_byte(rmesh_stream, entity_dict["casts_shadows"])
                     write_float(rmesh_stream, entity_dict["scattering"])
                     for ff_element in entity_dict["ff_array"]:
-                        write_unsigned_int(rmesh_stream, ff_element)
+                        write_integer(rmesh_stream, ff_element)
 
 
             elif entity_dict["entity_type"] == "light_fix":
@@ -409,7 +373,7 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                     write_byte(rmesh_stream, entity_dict["casts_shadows"])
                     write_float(rmesh_stream, entity_dict["scattering"])
                     for ff_element in entity_dict["ff_array"]:
-                        write_unsigned_int(rmesh_stream, ff_element)
+                        write_integer(rmesh_stream, ff_element)
                 else:
                     write_vector(rmesh_stream, entity_dict["position"])
                     write_string(rmesh_stream, entity_dict["color"])
@@ -429,15 +393,15 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                     write_float(rmesh_stream, entity_dict["inner_cosine"])
                     write_float(rmesh_stream, entity_dict["scattering"])
                     for ff_element in entity_dict["ff_array"]:
-                        write_unsigned_int(rmesh_stream, ff_element)
+                        write_integer(rmesh_stream, ff_element)
                 else:
                     write_string(rmesh_stream, entity_dict["euler_rotation"])
-                    write_unsigned_int(rmesh_stream, entity_dict["inner_cone_angle"])
-                    write_unsigned_int(rmesh_stream, entity_dict["outer_cone_angle"])
+                    write_integer(rmesh_stream, entity_dict["inner_cone_angle"])
+                    write_integer(rmesh_stream, entity_dict["outer_cone_angle"])
 
             elif entity_dict["entity_type"] == "soundemitter":
                 write_vector(rmesh_stream, entity_dict["position"])
-                write_unsigned_int(rmesh_stream, entity_dict["id"])
+                write_integer(rmesh_stream, entity_dict["id"])
                 write_float(rmesh_stream, entity_dict["range"])
 
             elif entity_dict["entity_type"] == "model":
@@ -453,7 +417,7 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                 write_vector(rmesh_stream, entity_dict["euler_rotation"])
                 write_vector(rmesh_stream, entity_dict["scale"])
                 write_byte(rmesh_stream, entity_dict["has_collision"])
-                write_unsigned_int(rmesh_stream, entity_dict["fx"])
+                write_integer(rmesh_stream, entity_dict["fx"])
                 write_string(rmesh_stream, entity_dict["texture_name"])
 
             elif entity_dict["entity_type"] == "item":
@@ -470,8 +434,8 @@ def write_rmesh(rmesh_dict, output_path, file_type):
 
             elif entity_dict["entity_type"] == "door":
                 write_vector(rmesh_stream, entity_dict["position"])
-                write_unsigned_int(rmesh_stream, entity_dict["door_type"])
-                write_unsigned_int(rmesh_stream, entity_dict["key_card_level"])
+                write_integer(rmesh_stream, entity_dict["door_type"])
+                write_integer(rmesh_stream, entity_dict["key_card_level"])
                 write_string(rmesh_stream, entity_dict["keypad_code"])
                 write_float(rmesh_stream, entity_dict["angle"])
                 write_byte(rmesh_stream, entity_dict["start_open"])

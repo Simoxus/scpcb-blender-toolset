@@ -730,6 +730,34 @@ class ImportSMF(Operator, ImportHelper):
             context.window_manager.fileselect_add(self)
             return {'RUNNING_MODAL'}
 
+class Import3DW(Operator, ImportHelper):
+    """Import an 3DW file"""
+    bl_idname = "import_scene.i3dw"
+    bl_label = "Import 3DW"
+    filename_ext = '.3dw'
+
+    filter_glob: StringProperty(
+        default="*.3dw",
+        options={'HIDDEN'},
+        )
+
+    filepath: StringProperty(
+        subtype='FILE_PATH',
+        options={'SKIP_SAVE'}
+        )
+
+    def execute(self, context):
+        from . import scene_3dw
+
+        return scene_3dw.import_scene(context, Path(self.filepath), self.report)
+
+    if (4, 1, 0) <= bpy.app.version:
+        def invoke(self, context, event):
+            if self.filepath:
+                return self.execute(context)
+            context.window_manager.fileselect_add(self)
+            return {'RUNNING_MODAL'}
+
 if (4, 1, 0) <= bpy.app.version:
     class ImportRMESH_FileHandler(FileHandler):
         bl_idname = "RMESH_FH_import"
@@ -770,6 +798,16 @@ if (4, 1, 0) <= bpy.app.version:
         @classmethod
         def poll_drop(cls, context):
             return (context.area and context.area.type == 'VIEW_3D')
+        
+    class Import3DW_FileHandler(FileHandler):
+        bl_idname = "EDW_FH_import"
+        bl_label = "File handler for 3DW import"
+        bl_import_operator = "import_scene.i3dw"
+        bl_file_extensions = "3dw"
+
+        @classmethod
+        def poll_drop(cls, context):
+            return (context.area and context.area.type == 'VIEW_3D')
 
 def menu_func_export(self, context):
     self.layout.operator(ExportRMESH.bl_idname, text='SCP RMESH (.rmesh)')
@@ -781,6 +819,7 @@ def menu_func_import(self, context):
     self.layout.operator(ImportX.bl_idname, text='SCP X (.x)')
     self.layout.operator(ImportB3D.bl_idname, text='SCP B3D (.b3d)')
     self.layout.operator(ImportSMF.bl_idname, text='SCP SMF (.smf)')
+    self.layout.operator(Import3DW.bl_idname, text='SCP 3DW (.3dw)')
 
 def menu_func_cb_shaders(self, context):
     layout = self.layout
@@ -795,6 +834,7 @@ classesscp = [
     ImportB3D,
     ExportB3D,
     ImportSMF,
+    Import3DW,
     CBObjectPropertiesGroup,
     CB_ObjectProps,
     B3DImagePropertiesGroup,
@@ -809,6 +849,7 @@ if (4, 1, 0) <= bpy.app.version:
     classesscp.append(ImportX_FileHandler)
     classesscp.append(ImportB3D_FileHandler)
     classesscp.append(ImportSMF_FileHandler)
+    classesscp.append(Import3DW_FileHandler)
 
 def register():
     for clsscp in classesscp:

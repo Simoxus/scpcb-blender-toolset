@@ -1,22 +1,18 @@
-import struct
-
-def read_vector3d(f):
-    return struct.unpack("fff", f.read(12))
-
-def read_vector2d(f):
-    return struct.unpack("ff", f.read(8))
-
-def read_null_string(f):
-    chars = []
-    while True:
-        c = f.read(1)
-        if c == b'\x00' or c == b'':
-            break
-        chars.append(c.decode('utf8'))
-    return ''.join(chars)
+from .common_functions import (read_null_string,
+                               write_null_string,
+                               read_integer,
+                               write_integer,
+                               read_short,
+                               write_short,
+                               read_byte,
+                               write_byte,
+                               read_vector,
+                               write_vector,
+                               read_2d_vector,
+                               write_2d_vector)
 
 def read_node(smf_stream, node_dict):
-    child_count = struct.unpack("i", smf_stream.read(4))[0]
+    child_count = read_integer(smf_stream)
     for child_idx in range(child_count):
         child_node_dict = {
             "position": (0, 0, 0),
@@ -30,26 +26,28 @@ def read_node(smf_stream, node_dict):
             "faces": [],
             "nodes": []
         }
-        child_node_dict["position"] = read_vector3d(smf_stream)
-        child_node_dict["rotation"] = read_vector3d(smf_stream)
-        child_node_dict["scale"] = read_vector3d(smf_stream)
+        child_node_dict["position"] = read_vector(smf_stream)
+        child_node_dict["rotation"] = read_vector(smf_stream)
+        child_node_dict["scale"] = read_vector(smf_stream)
 
         child_node_dict["texture_group"] = read_null_string(smf_stream)
         child_node_dict["texture_name"] = read_null_string(smf_stream)
 
-        vertex_count = struct.unpack("H", smf_stream.read(2))[0]
+        vertex_count = read_short(smf_stream)
         for vertex_idx in range(vertex_count):
-            child_node_dict["vertices"].append(read_vector3d(smf_stream))
+            child_node_dict["vertices"].append(read_vector(smf_stream))
 
         for vertex_idx in range(vertex_count):
-            child_node_dict["normals"].append(read_vector3d(smf_stream))
+            child_node_dict["normals"].append(read_vector(smf_stream))
 
         for vertex_idx in range(vertex_count):
-            child_node_dict["uvs"].append(read_vector2d(smf_stream))
+            child_node_dict["uvs"].append(read_2d_vector(smf_stream))
 
-        triangle_count = struct.unpack("H", smf_stream.read(2))[0]
+        triangle_count = read_short(smf_stream)
         for face_idx in range(triangle_count):
-            p0, p1, p2 = struct.unpack("HHH", smf_stream.read(6))
+            p0 = read_short(smf_stream)
+            p1 = read_short(smf_stream)
+            p2 = read_short(smf_stream)
             child_node_dict["faces"].append((p0, p1, p2))
 
         node_dict.append(child_node_dict)
@@ -62,8 +60,8 @@ def read_smf(file_path):
         "nodes": []
     }
     with file_path.open("rb") as smf_stream:
-        smf_dict["file_version"] = struct.unpack("H", smf_stream.read(2))[0]
-        smf_dict["file_flags"] = struct.unpack("B", smf_stream.read(1))[0]
+        smf_dict["file_version"] = read_short(smf_stream)
+        smf_dict["file_flags"] = read_byte(smf_stream)
         read_node(smf_stream, smf_dict["nodes"])
 
     return smf_dict
