@@ -1,6 +1,6 @@
 # SCP-CB-Toolset
 
-[Discord for my tools](https://discord.gg/UDBMbK5z)
+[Discord for my tools](https://discord.gg/Z2qHv2XffF)
 
 ## Toolset Description
 A Blender addon for 5.0+ that allows for the following
