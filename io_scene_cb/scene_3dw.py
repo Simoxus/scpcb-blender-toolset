@@ -6,6 +6,7 @@ from pathlib import Path
 from .process_3dw import read_3dw
 from mathutils import Matrix, Vector, Quaternion, Euler
 from .common_functions import (RandomColorGenerator,
+                               get_referenced_collection,
                                get_file,
                                is_string_empty,
                                get_material_name,
@@ -88,6 +89,39 @@ def import_scene(context, filepath, report):
 
     for object_node in data["objects"]:
         import_node_recursive(context, data, object_node, random_color_gen, local_asset_path)
+
+    for terrain_node in data["terrain"]:
+        resolution = terrain_node["resolution"] + 1
+        size = resolution 
+
+        width = terrain_node["width"]
+        height = terrain_node["height"]
+        pos = terrain_node["position"]
+        heights = terrain_node["z_positions"]
+
+        dx = width / resolution
+        dy = height / resolution
+
+        vertices = []
+        faces = []
+
+        index = 0
+        for y in range(size):
+            for x in range(size):
+                z = heights[index]
+                index += 1
+                
+                vertices.append((x, y, z))
+
+        mesh = bpy.data.meshes.new(terrain_node["object_name"])
+        mesh.from_pydata(vertices, [], [])
+        mesh.validate(clean_customdata=True)
+
+        mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
+
+        object_mesh = bpy.data.objects.new("room_mesh", mesh)
+        object_mesh.cb.object_type = str(ObjectType.mesh.value)
+        mesh_collection.objects.link(object_mesh)
 
     report({'INFO'}, "Import completed successfully")
     return {'FINISHED'}

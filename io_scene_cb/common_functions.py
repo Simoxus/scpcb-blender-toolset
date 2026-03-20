@@ -82,6 +82,19 @@ def is_string_empty(string):
 
     return is_empty
 
+def get_referenced_collection(collection_name, parent_collection, hide_render=False, hide_viewport=False):
+    asset_collection = bpy.data.collections.get(collection_name)
+    if asset_collection == None:
+        asset_collection = bpy.data.collections.new(collection_name)
+        parent_collection.children.link(asset_collection)
+        if not parent_collection.name == "Scene Collection":
+            asset_collection.tag_collection.parent = parent_collection
+
+    asset_collection.hide_render = hide_render
+    asset_collection.hide_viewport = hide_viewport
+
+    return asset_collection
+
 def get_file(file_name, use_image_set=True, generate_image_node=True, directory_path=""):
     extension_set = ("bmp", "jpg", "jpeg", "png")
     if not use_image_set:

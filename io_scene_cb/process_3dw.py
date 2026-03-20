@@ -11,7 +11,12 @@ from .common_functions import (read_null_string,
                                read_byte,
                                write_byte,
                                read_float,
-                               write_float)
+                               write_float,
+                               read_vector,
+                               write_vector)
+
+class TerrainFlags(Flag):
+    has_lightmap = auto()
 
 class TransformFlags(Flag):
     exclude_scale = auto()
@@ -35,7 +40,8 @@ def read_3dw(file_path):
         "mesh_references": {},
         "groups": {},
         "visgroups": {},
-        "objects": []
+        "objects": [],
+        "terrain": []
     }
 
     with file_path.open("rb") as _3dw_stream:
@@ -325,11 +331,67 @@ def read_3dw(file_path):
 
             elif name == "terrain":
                 # TODO
+                print(name)
                 print(_3dw_stream.tell())
-                _3dw_stream.seek(size, 1)
+                print(size)
+
+                terrain_dict = {"flags": 0,
+                                "position": (0, 0, 0),
+                                "width": 0.0,
+                                "height": 0.0,
+                                "object_name": "",
+                                "resolution": 0,
+                                "sectors": 0,
+                                "detail_level": 0,
+                                "unk0": 0,
+                                "unk1": 0,
+                                "colors": [],
+                                "z_positions": [],
+                                "unk2": 0,
+                                "unk3": 0
+                                }
+
+                terrain_dict["flags"] = read_byte(_3dw_stream)
+                terrain_dict["position"] = read_vector(_3dw_stream)
+                terrain_dict["width"] = read_float(_3dw_stream)
+                terrain_dict["height"] = read_float(_3dw_stream)
+
+                object_name_index = read_integer(_3dw_stream) - 1
+                terrain_dict["object_name"] = _3dw_dict["names"][object_name_index]
+
+                terrain_dict["resolution"] = read_integer(_3dw_stream)
+                terrain_dict["sectors"] = read_integer(_3dw_stream)
+                terrain_dict["detail_level"] = read_integer(_3dw_stream)
+
+                terrain_dict["unk0"] = read_float(_3dw_stream)
+                terrain_dict["unk1"] = read_integer(_3dw_stream)
+
+
+                if TerrainFlags.has_lightmap in TerrainFlags(terrain_dict["flags"]):
+                    list_length = (terrain_dict["resolution"] * terrain_dict["resolution"])
+                    print(list_length)
+                    for z_idx in range(list_length):
+                        r = read_byte(_3dw_stream)
+                        g = read_byte(_3dw_stream)
+                        b = read_byte(_3dw_stream)
+                        terrain_dict["colors"].append((r, g ,b))
+
+                list_length = (terrain_dict["resolution"] + 1) * (terrain_dict["resolution"] + 1)
+                print(list_length)
+                for z_idx in range(list_length):
+                    z = read_float(_3dw_stream)
+                    terrain_dict["z_positions"].append(z)
+
+                terrain_dict["unk1"] = read_integer(_3dw_stream)
+                terrain_dict["unk3"] = read_integer(_3dw_stream)
+
+                _3dw_dict["terrain"].append(terrain_dict)
+
             elif name == "lightmap":
                 # TODO
+                print(name)
                 print(_3dw_stream.tell())
+                print(size)
                 _3dw_stream.seek(size, 1)
             else:
                 _3dw_stream.seek(size, 1)

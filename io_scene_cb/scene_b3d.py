@@ -981,8 +981,9 @@ def get_node_name(ob):
 def get_scene_objects(context, b3d_data, node_dict, depsgraph, skin_info, key_info, armature_ob, parent_ob=None):
     for ob in bpy.data.objects:
         if ob.parent == parent_ob:
-            if ob.type == "MESH" and ob.parent == armature_ob:
+            if ob.type == "MESH" and armature_ob is not None and ob.parent == armature_ob:
                 continue
+
             transform_matrix = ob.matrix_local
             loc, rot_quat, scl = transform_matrix.decompose()
 
