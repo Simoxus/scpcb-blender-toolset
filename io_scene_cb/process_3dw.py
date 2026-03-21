@@ -18,12 +18,12 @@ from .common_functions import (read_null_string,
 class TerrainFlags(Flag):
     has_lightmap = auto()
 
-class TransformFlags(Flag):
+class MeshFlags(Flag):
     exclude_scale = auto()
     unk1 = auto()
     unk2 = auto()
     unk3 = auto()
-    unk4 = auto()
+    has_vertex_colors = auto()
 
 class MaterialFlags(Flag):
     unk0 = auto()
@@ -98,15 +98,14 @@ def read_3dw(file_path):
 
             elif name == "material":
                 flags = read_byte(_3dw_stream)
-                group_index = read_integer(_3dw_stream)
-
+                group_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
                 object_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
 
-                extension_name_index = -1
+                extension_name = ""
                 if MaterialFlags.has_extension in MaterialFlags(flags):
-                    extension_name_index = read_integer(_3dw_stream)
+                    extension_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
 
-                new_group = {"flags": flags, "group_index": group_index, "object_name": object_name, "extension_name_index": extension_name_index}
+                new_group = {"flags": flags, "group_name": group_index, "object_name": object_name, "extension_name": extension_name}
                 _3dw_dict["materials"].append(object_name)
 
             else:
@@ -129,17 +128,17 @@ def read_3dw(file_path):
                     "color": (0, 0, 0),
                     "mesh_reference_index": -1,
                     "origin": (0, 0, 0),
-                    "vertex_colors": []
+                    "limb_data": []
                 }
 
                 entity["flags"] = read_byte(_3dw_stream)
+                mesh_flags = MeshFlags(entity["flags"])
+
                 key_count = read_integer(_3dw_stream)
                 for key_idx in range(key_count):
-                    key_name_index = read_integer(_3dw_stream) - 1
-                    key_value_index = read_integer(_3dw_stream) - 1
+                    key_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
+                    key_value = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
 
-                    key_name = _3dw_dict["names"][key_name_index]
-                    key_value = _3dw_dict["names"][key_value_index]
                     entity["properties"][key_name] = key_value
 
                 entity["group_index"] = read_integer(_3dw_stream) - 1
@@ -170,7 +169,7 @@ def read_3dw(file_path):
                 x_scale = 1.0
                 y_scale = 1.0
                 z_scale = 1.0
-                if not TransformFlags.exclude_scale in TransformFlags(entity["flags"]):
+                if not MeshFlags.exclude_scale in mesh_flags:
                     x_scale = read_float(_3dw_stream)
                     y_scale = read_float(_3dw_stream)
                     z_scale = read_float(_3dw_stream)
@@ -181,16 +180,18 @@ def read_3dw(file_path):
                 if mesh_dict is not None:
                     limb_count = mesh_dict['limb_count']
                     for limb_idx in range(limb_count):
-                        unk0 = read_integer(_3dw_stream)
-                        vertex_color_count = read_short(_3dw_stream)
-                        vertex_color_list = []
-                        for color_idx in range(vertex_color_count):
-                            red = read_byte(_3dw_stream)
-                            green = read_byte(_3dw_stream)
-                            blue = read_byte(_3dw_stream)
-                            vertex_color_list.append((red, green, blue))
+                        limb_dict = {"material_index": -1, "vertex_colors": []}
 
-                        entity["vertex_colors"].append(vertex_color_list)
+                        limb_dict["material_index"] = read_integer(_3dw_stream)
+                        if MeshFlags.has_vertex_colors in mesh_flags:
+                            vertex_count = read_short(_3dw_stream)
+                            for color_idx in range(vertex_count):
+                                red = read_byte(_3dw_stream)
+                                green = read_byte(_3dw_stream)
+                                blue = read_byte(_3dw_stream)
+                                limb_dict["vertex_colors"].append((red, green, blue))
+
+                        entity["limb_data"].append(limb_dict)
 
                 _3dw_dict["objects"].append(entity)
 
@@ -246,19 +247,13 @@ def read_3dw(file_path):
                     "faces": []
                 }
 
-                invisible_collision = False
-
                 entity["flags"] = read_byte(_3dw_stream)
                 key_count = read_integer(_3dw_stream)
                 for key_idx in range(key_count):
-                    key_name_index = read_integer(_3dw_stream)
-                    key_value_index = read_integer(_3dw_stream)
+                    key_name = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
+                    key_value = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
 
-                    key_name = _3dw_dict["names"][key_name_index - 1]
-                    if key_name.lower() == "classname":
-                        key_value = _3dw_dict["names"][key_value_index - 1]
-                        if key_value.lower() == "field_hit":
-                            invisible_collision = True
+                    entity["properties"][key_name] = key_value
 
                 entity["group_index"] = read_integer(_3dw_stream) - 1
                 entity["visgroup_index"] = read_integer(_3dw_stream) - 1
@@ -356,15 +351,14 @@ def read_3dw(file_path):
                 terrain_dict["width"] = read_float(_3dw_stream)
                 terrain_dict["height"] = read_float(_3dw_stream)
 
-                object_name_index = read_integer(_3dw_stream) - 1
-                terrain_dict["object_name"] = _3dw_dict["names"][object_name_index]
+                terrain_dict["object_name"] = _3dw_dict["names"][read_integer(_3dw_stream) - 1]
 
                 terrain_dict["resolution"] = read_integer(_3dw_stream)
                 terrain_dict["sectors"] = read_integer(_3dw_stream)
                 terrain_dict["detail_level"] = read_integer(_3dw_stream)
 
-                terrain_dict["unk0"] = read_float(_3dw_stream)
-                terrain_dict["unk1"] = read_integer(_3dw_stream)
+                terrain_dict["lightmap_resolution"] = read_float(_3dw_stream)
+                terrain_dict["layer_count"] = read_integer(_3dw_stream)
 
 
                 if TerrainFlags.has_lightmap in TerrainFlags(terrain_dict["flags"]):

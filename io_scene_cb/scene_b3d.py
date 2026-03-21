@@ -686,18 +686,21 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
 
                 texture_entries = [lightmap_node, diffuse_node]
                 for texture_entry_idx, texture_entry in enumerate(texture_entries):
+                    is_lightmap = False
+                    if texture_entry_idx == 0:
+                        is_lightmap = True
+
                     image_name = ""
                     texture_dict_idx = -1
                     if not texture_entry:
-                        # Limiting it to 2 because honestly I think the max inputs on this game is 2. Everything else is derived from the diffuse name
-                        # Check goes away during rigged exports to allow SCP 1048a to export with its third texture id that I'm pretty sure does nothing - Gen
-                        if armature_ob is None and texture_entry_idx < 2:
-                            texture_id_list.append(texture_dict_idx)
-                        continue
+                        layer_uv = layer_uv_0
+                        if is_lightmap:
+                            layer_uv = layer_uv_1
 
-                    texture_type_val = 0
-                    if texture_entry_idx == 0:
-                        texture_type_val = 1
+                        if layer_uv is not None:
+                            texture_id_list.append(texture_dict_idx)
+
+                        continue
 
                     mapping_node = get_linked_node(texture_entry, "Vector", "MAPPING")
                     tx = ty = tz = 0.0
@@ -749,7 +752,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                             fx += TextureFXFlags.store_texture_in_vram.value
                         if img.cb.force_high_color_textures:
                             fx += TextureFXFlags.force_high_color_textures.value
-                        if texture_type_val:
+                        if is_lightmap:
                             fx += TextureFXFlags.uses_lightmap_uv.value
 
                         texture_dict = {
