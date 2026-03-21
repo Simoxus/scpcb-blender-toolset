@@ -142,11 +142,13 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
         x = 0
         if not door_state == DoorState.closed:
             x = 1.1528
+
         #Values on the right are hardcoded door01.x model dimensions at roomscale 1. Just easier than having a setup to calculate it from the model file.
         #Values on the left are from the bb game code. - Gen
-        sx = (204.0 * ROOMSCALE) * ROOMSCALE / (11.0814 * ROOMSCALE)
-        sy = (16.0 * ROOMSCALE) * ROOMSCALE / (1.05759 * ROOMSCALE)
-        sz = (312.0 * ROOMSCALE) * ROOMSCALE / (24.2875 * ROOMSCALE)
+        sx = (204.0 * ROOMSCALE) * (1 / (11.0814 * ROOMSCALE))
+        sy = (16.0 * ROOMSCALE) * (1 /(1.05759 * ROOMSCALE))
+        sz = (312.0 * ROOMSCALE) * (1 / (24.2875 * ROOMSCALE))
+
         if door_halved:
             ob_matrix = Matrix.LocRotScale(Vector((x, 0, 0)), Euler((0, 0, 0)), Vector((sx, sy, sz)))
             create_object(ob_bm, door_ob_data, ob_matrix, DoorPath)

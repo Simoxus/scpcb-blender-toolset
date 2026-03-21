@@ -294,6 +294,8 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph, bone=None):
         mat_idx = tri.material_index
         mesh_dict["material_indices"].append(mat_idx)
         for loop_index in tri.loops:
+            mat_index = tri.material_index
+
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
             loop_normal = flip(loop.normal)
@@ -313,7 +315,7 @@ def process_mesh(ob_dict, bone_transforms, armature, ob, depsgraph, bone=None):
 
             original_index = original_vertex_map[pos_key]
 
-            expanded_key = (pos_key, uv, loop_normal)
+            expanded_key = (pos_key, uv, loop_normal, mat_index)
 
             if expanded_key not in vertex_map:
                 vertex_map[expanded_key] = len(mesh_dict["vertices"])

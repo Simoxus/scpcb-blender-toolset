@@ -348,6 +348,8 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
         vertex_map = mesh_section["vertex_map"]
         tri_indices = []
         for loop_index in tri.loops:
+            mat_index = tri.material_index
+
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
             i, j, k = loop.normal
@@ -381,9 +383,9 @@ def gather_mesh_data(ob, depsgraph, section_data, file_type, is_collision=False)
             color = (int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
 
             if file_type == ExportFileType.rmesh_uer2:
-                key = str((round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal))
+                key = str((mat_index, round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color, loop_normal))
             else:
-                key = str((round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color))
+                key = str((mat_index, round(pos.x, 6), round(pos.y, 6), round(pos.z, 6), uv_render, uv_lightmap, color))
             if key not in vertex_map:
                 vertex_map[key] = len(mesh_section["vertices"])
                 vert_dict = {"position": tuple(pos), "uv_render": uv_render, "uv_lightmap": uv_lightmap, "color": color}

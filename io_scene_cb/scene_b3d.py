@@ -91,6 +91,7 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
 
     uv_count = len(node["uvs"][0]) / 2
     layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+    layer_alpha = mesh.color_attributes.new("alpha", "BYTE_COLOR", "CORNER")
     layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
     if uv_count > 1:
         layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
@@ -116,7 +117,9 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
 
 
             if rgba_count > 0:
-                layer_color.data[loop_index].color = node["rgba"][vert_index]
+                r, g, b, a = node["rgba"][vert_index]
+                layer_color.data[loop_index].color = (r, g, b, 1)
+                layer_alpha.data[loop_index].color = (a, a, a, 1)
 
     if normal_count > 0:
         mesh.normals_split_custom_set(loop_normals)
@@ -592,19 +595,24 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
     ob_eval = ob.evaluated_get(depsgraph)
     mesh = ob_eval.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
     mesh.calc_loop_triangles()
-    mesh.transform(ob.matrix_world)
+    if armature_ob is not None:
+        # If there is an armature then any mesh data is being moved to the root and we need to apply the transform to make sure it visually stays the same. - Gen
+        mesh.transform(ob.matrix_world)
 
     uv_layer_count = len(mesh.uv_layers)
     color_layer_count = len(mesh.color_attributes)
     layer_uv_0 = mesh.uv_layers.get("uvmap_render")
     layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
     layer_color = mesh.color_attributes.get("color")
+    layer_alpha = mesh.color_attributes.get("alpha")
     if uv_layer_count > 0 and not layer_uv_0:
         layer_uv_0 = mesh.uv_layers[0]
     if uv_layer_count > 1 and not layer_uv_1:
         layer_uv_1 = mesh.uv_layers[1]
     if color_layer_count > 0 and not layer_color:
         layer_color = mesh.color_attributes[0]
+    if color_layer_count > 1 and not layer_alpha:
+        layer_alpha = mesh.color_attributes[1]
 
     mesh_dict = {
         "brush_id": -1,
@@ -793,6 +801,8 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
 
         tri_indices = []
         for loop_index in tri.loops:
+            mat_index = tri.material_index
+
             loop = mesh.loops[loop_index]
             v = mesh.vertices[loop.vertex_index]
             x, y, z = (1.0 / ROOMSCALE) * v.co
@@ -810,10 +820,22 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                 u1, v1 = layer_uv_1.data[loop_index].uv
                 uv_lightmap = (u1, 1 - v1)
 
-            color = (0, 0, 0, 0)
+            color = (1, 1, 1, 1)
             if layer_color:
-                r, g, b, a = layer_color.data[loop_index].color
+                if layer_color.domain == 'POINT':
+                    r, g, b, a = layer_color.data[loop.vertex_index].color
+                elif layer_color.domain == 'CORNER':
+                    r, g, b, a = layer_color.data[loop_index].color
+                
                 color = (r, g, b, a)
+                if layer_alpha:
+                    # If someone uses color in a greyscale channel that's their own damn fault.
+                    if layer_color.domain == 'POINT':
+                        ar, ag, ab, aa = layer_alpha.data[loop.vertex_index].color
+                    elif layer_color.domain == 'CORNER':
+                        ar, ag, ab, aa = layer_alpha.data[loop_index].color
+                        
+                    color = (r, g, b, ar)
 
             v_skins = set()
             for vertex_group in v.groups:
@@ -821,7 +843,7 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                 weight = vertex_group.weight
                 v_skins.add((group_index, weight))
 
-            key = (round(pos[0], 6), round(pos[1], 6), round(pos[2], 6), uv_render, uv_lightmap, color, loop_normal)
+            key = (mat_index, round(pos[0], 6), round(pos[1], 6), round(pos[2], 6), uv_render, uv_lightmap, color, loop_normal)
             if key not in vertex_map:
                 vertex_map_index = len(mesh_dict["vertices"])
                 vertex_map[key] = vertex_map_index
