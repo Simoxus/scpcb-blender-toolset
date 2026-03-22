@@ -197,7 +197,7 @@ def read_rmesh(file_path, file_type):
                     entity_dict["sprite_scale"] = read_float(rmesh_stream)
                     entity_dict["casts_shadows"] = read_byte(rmesh_stream)
                     entity_dict["direction"] = read_2d_vector(rmesh_stream)
-                    entity_dict["inner_cosine"] = read_float(rmesh_stream)
+                    entity_dict["outer_cone_angle"] = read_float(rmesh_stream)
                     entity_dict["scattering"] = read_float(rmesh_stream)
                     entity_dict["ff_array"] = []
                     for ff in range(31):
@@ -390,7 +390,7 @@ def write_rmesh(rmesh_dict, output_path, file_type):
                     write_float(rmesh_stream, entity_dict["sprite_scale"])
                     write_byte(rmesh_stream, entity_dict["casts_shadows"])
                     write_2d_vector(rmesh_stream, entity_dict["direction"])
-                    write_float(rmesh_stream, entity_dict["inner_cosine"])
+                    write_float(rmesh_stream, entity_dict["outer_cone_angle"])
                     write_float(rmesh_stream, entity_dict["scattering"])
                     for ff_element in entity_dict["ff_array"]:
                         write_integer(rmesh_stream, ff_element)

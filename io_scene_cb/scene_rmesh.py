@@ -553,7 +553,7 @@ def export_scene(context, filepath, file_type, report):
                 entity_dict["sprite_scale"] = ob.cb.sprite_scale
                 entity_dict["casts_shadows"] = ob.data.use_shadow
                 entity_dict["direction"] = [p, y]
-                entity_dict["inner_cosine"] = degrees(ob.data.spot_size)
+                entity_dict["outer_cone_angle"] = degrees(ob.data.spot_size)
                 entity_dict["scattering"] = ob.data.spot_blend
                 entity_dict["ff_array"] = []
                 for ff in range(31):
@@ -1040,7 +1040,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
                     x, y = entity_dict["direction"]
 
                     rotation = [x, y, 0]
-                    object_data.spot_size = radians(entity_dict["inner_cosine"])
+                    object_data.spot_size = radians(entity_dict["outer_cone_angle"])
                     object_data.spot_blend = entity_dict["scattering"]
 
                 else:

@@ -90,13 +90,14 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
                 material_indicies.append(mesh.materials.keys().index(brush_mat.name))
 
     uv_count = len(node["uvs"][0]) / 2
-    layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
-    layer_alpha = mesh.color_attributes.new("alpha", "BYTE_COLOR", "CORNER")
     layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
     if uv_count > 1:
         layer_uv_1 = mesh.uv_layers.new(name="uvmap_lightmap")
 
     material_count = len(material_indicies)
+    loop_count = len(mesh.loops)
+    layer_color_list = [(1, 1, 1, 1) for i in range(loop_count)]
+    layer_alpha_list = [(1, 1, 1, 1) for i in range(loop_count)]
     for poly_idx, poly in enumerate(mesh.polygons):
         poly.use_smooth = True
         if material_count > poly_idx:
@@ -115,11 +116,21 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
             if uv_count > 1:
                 layer_uv_1.data[loop_index].uv = (U1, 1 - V1)
 
-
             if rgba_count > 0:
                 r, g, b, a = node["rgba"][vert_index]
-                layer_color.data[loop_index].color = (r, g, b, 1)
-                layer_alpha.data[loop_index].color = (a, a, a, 1)
+                layer_color_list[loop_index] = (r, g, b, 1)
+                layer_alpha_list[loop_index] = (a, a, a, 1)
+
+    if rgba_count > 0:
+        layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+        for color_idx in range(loop_count):
+            r, g, b, a = layer_color_list[color_idx]
+            layer_color.data[color_idx].color = (r, g, b, a)
+
+        layer_alpha = mesh.color_attributes.new("alpha", "BYTE_COLOR", "CORNER")
+        for color_idx in range(loop_count):
+            r, g, b, a = layer_alpha_list[color_idx]
+            layer_alpha.data[color_idx].color = (r, g, b, a)
 
     if normal_count > 0:
         mesh.normals_split_custom_set(loop_normals)
