@@ -51,7 +51,7 @@ class MaterialFXFlags(Flag):
     flatshaded = auto()
     disable_fog = auto()
     disable_backface_culling = auto()
-    unk5 = auto()
+    use_vertex_color_alpha_as_transparency = auto()
 
 class MaterialBlendEnum(Enum):
     alpha = 0
@@ -679,8 +679,8 @@ def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
                         mat_fx += MaterialFXFlags.disable_fog.value
                     if node_group.inputs["Disable Backface Culling"].default_value:
                         mat_fx += MaterialFXFlags.disable_backface_culling.value
-                    if node_group.inputs["Unknown 5"].default_value:
-                        mat_fx += MaterialFXFlags.unk5.value
+                    if node_group.inputs["Use Vertex Color Alpha As Transparency"].default_value:
+                        mat_fx += MaterialFXFlags.use_vertex_color_alpha_as_transparency.value
 
                 elif bdsf_principled:
                     lightmap_node = None
@@ -1143,8 +1143,8 @@ def set_material_properties(b3d_node, material_dict):
             b3d_node.inputs["Disable Fog"].default_value = True
         if MaterialFXFlags.disable_backface_culling in mat_flags:
             b3d_node.inputs["Disable Backface Culling"].default_value = True
-        if MaterialFXFlags.unk5 in mat_flags:
-            b3d_node.inputs["Unknown 5"].default_value = True
+        if MaterialFXFlags.use_vertex_color_alpha_as_transparency in mat_flags:
+            b3d_node.inputs["Use Vertex Color Alpha As Transparency"].default_value = True
 
         b3d_node.inputs["Use Overlay"].default_value = True
         b3d_node.inputs["Use Shine"].default_value = True
@@ -1380,6 +1380,16 @@ def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_da
 
             if fullbright_materials:
                 b3d_node.inputs["Is Fullbright"].default_value = True
+
+            mat_flags = MaterialFXFlags(material_dict["fx"])
+            if MaterialFXFlags.use_vertex_color_alpha_as_transparency in mat_flags:
+                attr_node = material.node_tree.nodes.new("ShaderNodeVertexColor")
+                attr_node.location = (-720.0, 0)
+
+                connect_inputs(material.node_tree, attr_node, "Color", b3d_node, "Diffuse Map Alpha")
+                material.surface_render_method = 'BLENDED'
+                attr_node.layer_name = "alpha"
+
 
             valid_texture_id_count = 0
             for tid_element in material_dict["tids"]:
