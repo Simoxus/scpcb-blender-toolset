@@ -401,8 +401,8 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                         context.scene.render.fps = int(anim_dict["fps"])
 
                         strip = track.strips.new(name=action.name, start=int(action.frame_start), action=action)
-                        if sequence_element["start"] == sequence_element["end"]:
-                            strip.frame_end = sequence_element["start"] + 0.1
+                        if action.frame_start == action.frame_end:
+                            strip.frame_end = action.frame_start + 0.1
                             #strip.action_frame_end = sequence_element["start"] - 0.9
 
                         strips.append(strip)
