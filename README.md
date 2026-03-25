@@ -2,11 +2,17 @@
 
 [Discord for my tools](https://discord.gg/Z2qHv2XffF)
 
+Please consider supporting me on KoFi at the following link.
+
+https://ko-fi.com/general101
+
 ## Toolset Description
 A Blender addon for 5.0+ that allows for the following
 * Import and export RMESH files for the original release of SCP Containment Breach and UER 1.5.6
 * Import and export rigid X files for the original release of SCP Containment Breach
 * Import and export B3D files for the original release of SCP Containment Breach and UER
+* Import SMF files from 3D World Studio
+* Import 3DW files from 3D World Studio. This is limited and is only to add lights culled by CBRE
 
 ## Credits
 
