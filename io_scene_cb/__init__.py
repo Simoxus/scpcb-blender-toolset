@@ -586,6 +586,18 @@ class ImportRMESH(Operator, ImportHelper):
         default = False,
         )
 
+    geometry_only: BoolProperty(
+        name ="Geometry Only",
+        description = "Import only mesh geometry, skipping all entities, lights, sounds, and other scene objects",
+        default = False,
+        )
+
+    split_by_material: BoolProperty(
+        name ="Split by Material",
+        description = "Create a separate object for each texture",
+        default = False,
+        )
+
     filter_glob: StringProperty(
         default="*.rmesh;*.rm",
         options={'HIDDEN'},
@@ -599,7 +611,7 @@ class ImportRMESH(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.fullbright_materials, self.report)
+        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.fullbright_materials, self.report, self.geometry_only, self.split_by_material)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):

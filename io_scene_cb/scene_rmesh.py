@@ -833,7 +833,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
 
     return mesh
 
-def import_scene(context, filepath, file_type, fullbright_materials, report):
+def import_scene(context, filepath, file_type, fullbright_materials, report, geometry_only=False, split_by_material=False):
     file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
@@ -869,22 +869,46 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
         has_entity_data = True
 
     if has_mesh_data:
-        mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
+        if split_by_material:
+            for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
+                tex_name = ""
+                if len(mesh_dict["textures"]) > 1 and mesh_dict["textures"][1]["texture_name"]:
+                    tex_name = mesh_dict["textures"][1]["texture_name"]
+                elif len(mesh_dict["textures"]) > 0 and mesh_dict["textures"][0]["texture_name"]:
+                    tex_name = mesh_dict["textures"][0]["texture_name"]
 
-        full_mesh = bpy.data.meshes.new("room_mesh")
-        object_mesh = bpy.data.objects.new("room_mesh", full_mesh)
-        object_mesh.cb.object_type = str(ObjectType.mesh.value)
-        mesh_collection.objects.link(object_mesh)
+                obj_name = os.path.splitext(os.path.basename(tex_name))[0] if tex_name else "mesh_%s" % mesh_idx
 
-        bm = bmesh.new()
-        for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
-            temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
+                single_mesh = bpy.data.meshes.new(obj_name)
+                object_mesh = bpy.data.objects.new(obj_name, single_mesh)
+                object_mesh.cb.object_type = str(ObjectType.mesh.value)
+                context.scene.collection.objects.link(object_mesh)
 
-            bm.from_mesh(temp_mesh)
-            bpy.data.meshes.remove(temp_mesh)
+                bm = bmesh.new()
+                temp_mesh = generate_mesh_data(mesh_dict, single_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
+                bm.from_mesh(temp_mesh)
+                bpy.data.meshes.remove(temp_mesh)
+                bm.to_mesh(single_mesh)
+                bm.free()
 
-        bm.to_mesh(full_mesh)
-        bm.free()
+                if single_mesh.materials:
+                    single_mesh.materials[0].name = obj_name
+
+        else:
+            mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
+            full_mesh = bpy.data.meshes.new("room_mesh")
+            object_mesh = bpy.data.objects.new("room_mesh", full_mesh)
+            object_mesh.cb.object_type = str(ObjectType.mesh.value)
+            mesh_collection.objects.link(object_mesh)
+
+            bm = bmesh.new()
+            for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
+                temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
+                bm.from_mesh(temp_mesh)
+                bpy.data.meshes.remove(temp_mesh)
+
+            bm.to_mesh(full_mesh)
+            bm.free()
 
     if file_type == ImportFileType.rmesh_salvage:
         has_render_data = False
@@ -943,7 +967,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report):
         items_ini = configparser.ConfigParser()
         items_ini.read(items_ini_path)
 
-    if has_entity_data:
+    if has_entity_data and not geometry_only:
         entity_collection = get_referenced_collection("entities", context.scene.collection, False)
         entity_meshes = {}
         for entity_idx, entity_dict in enumerate(rmesh_dict["entities"]):
