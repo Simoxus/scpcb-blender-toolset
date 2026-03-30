@@ -9,7 +9,7 @@ from .process_rmesh import ImportFileType
 from mathutils import Matrix, Vector, Euler
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
-from .common_functions import ROOMSCALE, ObjectType, get_output_material_node, get_linked_node, SHADER_NODE_NAMES
+from .common_functions import ROOMSCALE, ObjectType, get_output_material_node, get_linked_node, connect_inputs, SHADER_NODE_NAMES
 
 # Notes
 # Room scale seems to be 0.00390625
@@ -409,40 +409,8 @@ def get_used_materials(mesh):
 
     return used_materials
 
-def get_lightmap_image_node(mat):
-    lightmap_node = None
-    output_material_node = get_output_material_node(mat)
-
-    node_group = get_linked_node(output_material_node, "Surface", "GROUP")
-    if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
-        lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
-
-    if lightmap_node is None:
-        for node in mat.node_tree.nodes:
-            if node.type == 'TEX_IMAGE':
-                img = node.image
-                if not img:
-                    continue
-
-                if img.source == 'FILE' and img.filepath:
-                    filename = os.path.basename(bpy.path.abspath(img.filepath))
-                    if "_lm" in filename.lower():
-                        lightmap_node = node
-                        break
-
-                elif img.source == 'GENERATED':
-                    filename = os.path.basename(bpy.path.abspath(img.name))
-                    if "_lm" in filename.lower():
-                        lightmap_node = node
-                        break
-
-    if lightmap_node is None:
-        lightmap_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
-        lightmap_node.location = (-720.0, -320.0)
-
-    return lightmap_node
-
 def bake_lightmaps(context):
+    bpy.ops.wm.console_toggle()
     selected_obs = context.selected_objects
     depsgraph = context.evaluated_depsgraph_get()
 
@@ -457,6 +425,21 @@ def bake_lightmaps(context):
                 mesh_group = ob_groups[mesh_name] = []
             mesh_group.append(ob)
 
+    material_settings = {}
+    for mat in bpy.data.materials:
+        output_material_node = get_output_material_node(mat)
+        node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+        if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
+            material_settings[mat.name] = {"is_fullbright": node_group.inputs["Is Fullbright"].default_value, 
+                                           "use_shine": node_group.inputs["Use Shine"].default_value, 
+                                           "use_specular_mask": node_group.inputs["Use Specular Mask"].default_value, 
+                                           "use_normal": node_group.inputs["Use Normal"].default_value}
+
+            node_group.inputs["Is Fullbright"].default_value = True
+            node_group.inputs["Use Shine"].default_value = False
+            node_group.inputs["Use Specular Mask"].default_value = False
+            node_group.inputs["Use Normal"].default_value = False
+
     bpy.ops.object.select_all(action='DESELECT')
     for mesh_name, ob_group in ob_groups.items():
         mesh = ob_group[0].data
@@ -469,19 +452,76 @@ def bake_lightmaps(context):
             image_name = "%s_lm%s" % (ob.data.name, ob_idx)
 
             image = bpy.data.images.get(image_name)
-            if image:
+            if image and image.has_data:
                 image.scale(res, res)
             else:
                 image = bpy.data.images.new(image_name, width=res, height=res)
 
             for mat in used_materials:
-                lightmap_node = get_lightmap_image_node(mat)
-                print(lightmap_node)
-                if lightmap_node:
-                    lightmap_node.image = image
-                    mat.node_tree.nodes.active = lightmap_node
+                lightmap_node = None
+                output_material_node = get_output_material_node(mat)
+
+                node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+                if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
+                    lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+                    if lightmap_node is not None:
+                        for link in node_group.inputs["Light Map"].links:
+                            mat.node_tree.links.remove(link)
+
+                if lightmap_node is None:
+                    for node in mat.node_tree.nodes:
+                        if node.type == 'TEX_IMAGE':
+                            img = node.image
+                            if not img:
+                                continue
+
+                            if img.source == 'FILE' and img.filepath:
+                                filename = os.path.basename(bpy.path.abspath(img.filepath))
+                                if "_lm" in filename.lower():
+                                    lightmap_node = node
+                                    break
+
+                            elif img.source == 'GENERATED':
+                                filename = os.path.basename(bpy.path.abspath(img.name))
+                                if "_lm" in filename.lower():
+                                    lightmap_node = node
+                                    break
+
+                if lightmap_node is None:
+                    lightmap_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                    lightmap_node.location = (-720.0, -320.0)
+
+                lightmap_node.image = image
+                lightmap_node.select = True
 
             run_bake(context, ob, generate_vertex_colors=ob.cb.is_per_vertex)
+
+            for mat in used_materials:
+                output_material_node = get_output_material_node(mat)
+
+                node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+                if node_group and node_group.node_tree.name in SHADER_NODE_NAMES and not node_group.inputs["Diffuse Map Alpha"].is_linked:
+                    lightmap_node = None
+                    for node in mat.node_tree.nodes:
+                        if node.type == 'TEX_IMAGE':
+                            img = node.image
+                            if not img:
+                                continue
+
+                            if img.source == 'FILE' and img.filepath:
+                                filename = os.path.basename(bpy.path.abspath(img.filepath))
+                                if "_lm" in filename.lower():
+                                    lightmap_node = node
+                                    break
+
+                            elif img.source == 'GENERATED':
+                                filename = os.path.basename(bpy.path.abspath(img.name))
+                                if "_lm" in filename.lower():
+                                    lightmap_node = node
+                                    break
+
+                    if lightmap_node is not None:
+                        connect_inputs(mat.node_tree, lightmap_node, "Color", node_group, "Light Map")
 
             save_path = os.path.join(bpy.path.abspath("//"), "lightmaps", f"{image_name}.png")
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -489,3 +529,15 @@ def bake_lightmaps(context):
             image.filepath_raw = save_path
             image.file_format = 'PNG'
             image.save()
+
+    for mat in bpy.data.materials:
+        mat_settings = material_settings.get(mat.name)
+        if mat_settings is not None:
+            output_material_node = get_output_material_node(mat)
+            node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+            if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
+                node_group.inputs["Is Fullbright"].default_value = mat_settings["is_fullbright"]
+                node_group.inputs["Use Shine"].default_value = mat_settings["use_shine"]
+                node_group.inputs["Use Specular Mask"].default_value = mat_settings["use_specular_mask"]
+                node_group.inputs["Use Normal"].default_value = mat_settings["use_normal"]
+
