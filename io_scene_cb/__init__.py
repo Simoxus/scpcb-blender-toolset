@@ -569,7 +569,7 @@ class ImportRMESH(Operator, ImportHelper):
     filename_ext = ''
 
     file_type: EnumProperty(
-        name="File Type:",
+        name="File Type",
         description="What game was the model file made for",
         items=[ ('0', "Auto", "Attempt to automatically get the correct file type. May cause problems if the app is trying to guess between UER and release files."),
                 ('1', "RMESH", "Import an RMESH intended for the original SCP CB"),
@@ -580,15 +580,33 @@ class ImportRMESH(Operator, ImportHelper):
             ]
         )
 
+    import_meshes: BoolProperty(
+        name="Meshes",
+        description="Import mesh geometry",
+        default=True,
+    )
+
+    import_collisions: BoolProperty(
+        name="Collisions",
+        description="Import collision meshes",
+        default=True,
+    )
+
+    import_trigger_boxes: BoolProperty(
+        name="Trigger Boxes",
+        description="Import trigger box meshes",
+        default=True,
+    )
+
+    import_entities: BoolProperty(
+        name="Entities",
+        description="Import entities such as lights, sounds, models, doors, and items",
+        default=True,
+    )
+
     fullbright_materials: BoolProperty(
         name ="Enable Fullbright Materials",
-        description = "Materials will include the lightmap images but not use them in the display",
-        default = False,
-        )
-
-    geometry_only: BoolProperty(
-        name ="Geometry Only",
-        description = "Import only mesh geometry, skipping all entities, lights, sounds, and other scene objects",
+        description = "Materials will include the lightmap images, but not use them in the display",
         default = False,
         )
 
@@ -597,6 +615,12 @@ class ImportRMESH(Operator, ImportHelper):
         description = "Create a separate object for each texture",
         default = False,
         )
+
+    use_principled_bsdf: BoolProperty(
+        name="Use Principled BSDF",
+        description="Use a standard Principled BSDF shader instead of the custom shader",
+        default=False,
+    )
 
     filter_glob: StringProperty(
         default="*.rmesh;*.rm",
@@ -608,10 +632,43 @@ class ImportRMESH(Operator, ImportHelper):
         options={'SKIP_SAVE'}
         )
 
+    def draw(self, context):
+        layout = self.layout
+
+        layout.prop(self, "file_type")
+
+        box = layout.box()
+        box.label(text="General", icon='SETTINGS')
+        box.prop(self, "import_meshes")
+        box.prop(self, "import_collisions")
+        box.prop(self, "import_trigger_boxes")
+        box.prop(self, "import_entities")
+
+        box = layout.box()
+        box.label(text="Meshes", icon='MESH_DATA')
+        box.prop(self, "split_by_material")
+
+        box = layout.box()
+        box.label(text="Materials", icon='MATERIAL')
+        box.prop(self, "fullbright_materials")
+        box.prop(self, "use_principled_bsdf")
+
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.fullbright_materials, self.report, self.geometry_only, self.split_by_material)
+        return scene_rmesh.import_scene(
+            context,
+            Path(self.filepath),
+            self.file_type,
+            self.report,
+            self.split_by_material,
+            self.import_meshes,
+            self.import_collisions,
+            self.import_trigger_boxes,
+            self.import_entities,
+            self.fullbright_materials,
+            self.use_principled_bsdf
+        )
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):

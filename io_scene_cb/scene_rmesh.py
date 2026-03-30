@@ -684,7 +684,7 @@ def export_scene(context, filepath, file_type, report):
     report({'INFO'}, "Export completed successfully")
     return {'FINISHED'}
 
-def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, is_collision=False):
+def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, is_collision=False, use_principled_bsdf=False):
     mesh_name = "temp_mesh"
     if mesh_data is None:
         mesh_name = "mesh"
@@ -709,14 +709,22 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         output_material_node = get_output_material_node(mat)
         output_material_node.location = Vector((0.0, 0.0))
 
-        rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "cb_material")
-        rmesh_node.name = "RMESH Material"
-        rmesh_node.location = (-440.0, 0.0)
-
-        connect_inputs(mat.node_tree, rmesh_node, "Shader", output_material_node, "Surface")
-
-        if fullbright_materials:
-            rmesh_node.inputs["Is Fullbright"].default_value = True
+        if use_principled_bsdf:
+            bsdf_node = mat.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+            bsdf_node.name = "Principled BSDF"
+            bsdf_node.location = (-440.0, 0.0)
+            connect_inputs(mat.node_tree, bsdf_node, "BSDF", output_material_node, "Surface")
+            shader_input_node = bsdf_node
+            shader_color_input = "Base Color"
+        else:
+            rmesh_node = get_shader_node(mat.node_tree, SHADER_RESOURCES, "cb_material")
+            rmesh_node.name = "RMESH Material"
+            rmesh_node.location = (-440.0, 0.0)
+            connect_inputs(mat.node_tree, rmesh_node, "Shader", output_material_node, "Surface")
+            if fullbright_materials:
+                rmesh_node.inputs["Is Fullbright"].default_value = True
+            shader_input_node = rmesh_node
+            shader_color_input = "Diffuse Map"
 
         texture_lightmap = None
         diffuse_type = TextureType.none
@@ -739,10 +747,11 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                     texture_lightmap.image.alpha_mode = 'CHANNEL_PACKED'
                     texture_lightmap.location = (-720.0, -320.0)
 
-                    connect_inputs(mat.node_tree, texture_lightmap, "Color", rmesh_node, "Light Map")
-                    mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_lightmap)
-                    uv_node.uv_map = "uvmap_lightmap"
-                    mapping_node.vector_type = 'TEXTURE'
+                    if not use_principled_bsdf:
+                        connect_inputs(mat.node_tree, texture_lightmap, "Color", shader_input_node, "Light Map")
+                        mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_lightmap)
+                        uv_node.uv_map = "uvmap_lightmap"
+                        mapping_node.vector_type = 'TEXTURE'
 
                 elif len(texture_dict["texture_name"]) > 0:
                     error_log.add('Failed to retrive "%s"' % texture_dict["texture_name"])
@@ -763,9 +772,9 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                     texture_diffuse.image.alpha_mode = 'CHANNEL_PACKED'
                     texture_diffuse.location = (-720.0, 0.0)
 
-                    connect_inputs(mat.node_tree, texture_diffuse, "Color", rmesh_node, "Diffuse Map")
+                    connect_inputs(mat.node_tree, texture_diffuse, "Color", shader_input_node, shader_color_input)
                     if diffuse_type == TextureType.transparent:
-                        connect_inputs(mat.node_tree, texture_diffuse, "Alpha", rmesh_node, "Diffuse Map Alpha")
+                        connect_inputs(mat.node_tree, texture_diffuse, "Alpha", shader_input_node, "Diffuse Map Alpha")
 
                     mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_diffuse)
                     uv_node.uv_map = "uvmap_render"
@@ -781,7 +790,9 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                         texture_bump.interpolation = 'Cubic'
                         texture_bump.image.colorspace_settings.name = 'Non-Color'
                         texture_bump.location = (-720.0, -640.0)
-                        connect_inputs(mat.node_tree, texture_bump, "Color", rmesh_node, "Normal Map")
+
+                        if not use_principled_bsdf:
+                            connect_inputs(mat.node_tree, texture_bump, "Color", shader_input_node, "Normal Map")
 
                         mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_bump)
                         uv_node.uv_map = "uvmap_render"
@@ -792,7 +803,9 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
                         texture_glow.image = texture_glow_data
                         texture_glow.image.alpha_mode = 'CHANNEL_PACKED'
                         texture_glow.location = (-720.0, -1140)
-                        connect_inputs(mat.node_tree, texture_glow, "Color", rmesh_node, "Emission Map")
+
+                        if not use_principled_bsdf:
+                            connect_inputs(mat.node_tree, texture_glow, "Color", shader_input_node, "Emission Map")
 
                         mapping_node, uv_node = generate_texture_mapping(mat.node_tree, texture_glow)
                         uv_node.uv_map = "uvmap_render"
@@ -833,7 +846,18 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
 
     return mesh
 
-def import_scene(context, filepath, file_type, fullbright_materials, report, geometry_only=False, split_by_material=False):
+def import_scene(
+        context,
+        filepath,
+        file_type,
+        report,
+        split_by_material=False,
+        import_meshes=True,
+        import_collisions=True,
+        import_trigger_boxes=True,
+        import_entities=True,
+        fullbright_materials=False,
+        use_principled_bsdf=False):
     file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
@@ -868,7 +892,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
     if len(rmesh_dict["entities"]) > 0:
         has_entity_data = True
 
-    if has_mesh_data:
+    if has_mesh_data and import_meshes:
         if split_by_material:
             for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
                 tex_name = ""
@@ -885,7 +909,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
                 context.scene.collection.objects.link(object_mesh)
 
                 bm = bmesh.new()
-                temp_mesh = generate_mesh_data(mesh_dict, single_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
+                temp_mesh = generate_mesh_data(mesh_dict, single_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
                 bm.from_mesh(temp_mesh)
                 bpy.data.meshes.remove(temp_mesh)
                 bm.to_mesh(single_mesh)
@@ -903,7 +927,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
 
             bm = bmesh.new()
             for mesh_idx, mesh_dict in enumerate(rmesh_dict["meshes"]):
-                temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
+                temp_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
                 bm.from_mesh(temp_mesh)
                 bpy.data.meshes.remove(temp_mesh)
 
@@ -926,7 +950,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
 
             bm = bmesh.new()
             for render_idx, render_dict in enumerate(rmesh_dict["render_meshes"]):
-                temp_render = generate_mesh_data(render_dict, render_mesh, render_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials)
+                temp_render = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
 
                 bm.from_mesh(temp_render)
                 bpy.data.meshes.remove(temp_render)
@@ -934,15 +958,15 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
             bm.to_mesh(render_mesh)
             bm.free()
 
-    if has_collision_data:
+    if has_collision_data and import_collisions:
         collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
         for collision_idx, collision_dict in enumerate(rmesh_dict["collision_meshes"]):
-            collision_mesh = generate_mesh_data(collision_dict, None, collision_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, True)
+            collision_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
             collision_ob = bpy.data.objects.new("collision_%s" % collision_idx, collision_mesh)
             collision_ob.cb.object_type = str(ObjectType.collision.value)
             collision_collection.objects.link(collision_ob)
 
-    if file_type == ImportFileType.rmesh_tb or file_type == ImportFileType.rmesh_salvage:
+    if (file_type == ImportFileType.rmesh_tb or file_type == ImportFileType.rmesh_salvage) and import_trigger_boxes:
         has_tb_data = False
         for tb_group_dict in rmesh_dict["trigger_boxes"]:
             for tb_dict in tb_group_dict["meshes"]:
@@ -955,7 +979,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
             for trigger_box_idx, trigger_box_dict in enumerate(rmesh_dict["trigger_boxes"]):
                 for trigger_idx, trigger_dict in enumerate(trigger_box_dict["meshes"]):
                     trigger_name = "trigger_g%st%s" % (trigger_box_idx, trigger_idx)
-                    trigger_mesh = generate_mesh_data(trigger_dict, None, trigger_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, True)
+                    trigger_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
                     trigger_mesh_object_mesh = bpy.data.objects.new(trigger_name, trigger_mesh)
                     trigger_mesh_object_mesh.cb.object_type = str(ObjectType.trigger_box.value)
                     trigger_mesh_object_mesh.cb.trigger_group = trigger_box_dict["name"]
@@ -967,7 +991,7 @@ def import_scene(context, filepath, file_type, fullbright_materials, report, geo
         items_ini = configparser.ConfigParser()
         items_ini.read(items_ini_path)
 
-    if has_entity_data and not geometry_only:
+    if has_entity_data and import_entities:
         entity_collection = get_referenced_collection("entities", context.scene.collection, False)
         entity_meshes = {}
         for entity_idx, entity_dict in enumerate(rmesh_dict["entities"]):
