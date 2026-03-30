@@ -14,20 +14,21 @@ import bpy
 from pathlib import Path
 from .common_functions import get_shader_node, SHADER_RESOURCES, ObjectType
 from .scene_rmesh import update_object
+from .object_helper import connect_lightmaps, disconnect_lightmaps, bake_lightmaps
 
 from bpy.types import (
         PropertyGroup,
         Operator,
         Panel
         )
+
 from bpy.props import (
         IntProperty,
         BoolProperty,
         EnumProperty,
         FloatProperty,
         StringProperty,
-        PointerProperty,
-        CollectionProperty
+        PointerProperty
         )
 
 from bpy_extras.io_utils import (
@@ -75,6 +76,18 @@ class CBObjectPropertiesGroup(PropertyGroup):
                     ('12', "Entity Door", "Object is valid for CB-S"),
                 )
         )
+
+    is_per_vertex: BoolProperty(
+        name ="Bake To Vertex Colors",
+        description = "Use vertex colors for this object. Otherwise we bake to a texture",
+        default = False,
+        )
+    
+    lightmap_group: StringProperty(
+            name = "Lightmap Group",
+            description="Group for this lightmap. Appends lm# to the object name if left empty",
+            default="",
+    )
 
     is_uer: BoolProperty(
         name ="Is UER variant",
@@ -231,6 +244,46 @@ class CBObjectPropertiesGroup(PropertyGroup):
         description = "???"
         )
 
+class CB_OT_ConnectLightmaps(Operator):
+    bl_idname = "cb.connect_lms"
+    bl_label = "Connect Light Maps"
+    bl_description = "Reconnect lightmap textures"
+
+    def execute(self, context):
+        connect_lightmaps()
+        return {'FINISHED'}
+
+class CB_OT_DisconnectLightmaps(Operator):
+    bl_idname = "cb.disconnect_lms"
+    bl_label = "Remove Light Maps"
+    bl_description = "Disconnect lightmap textures"
+
+    def execute(self, context):
+        disconnect_lightmaps()
+        return {'FINISHED'}
+    
+class CB_OT_BakeLightmaps(Operator):
+    bl_idname = "cb.bake_lms"
+    bl_label = "Bake Light Maps"
+    bl_description = "Bake lightmap textures"
+
+    def execute(self, context):
+        bake_lightmaps(context)
+        return {'FINISHED'}
+
+class CB_PT_MapHelper(Panel):
+    bl_label = "CB Tools"
+    bl_idname = "CB_PT_MapHelper"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "CB Tools"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("cb.connect_lms", icon="LINKED")
+        layout.operator("cb.disconnect_lms", icon="UNLINKED")
+        layout.operator("cb.bake_lms")
+
 class B3DImagePropertiesGroup(PropertyGroup):
     color: BoolProperty(
         name ="Color",
@@ -331,6 +384,16 @@ class B3DIMAGE_PT_SceneProps(Panel):
         layout.prop(props, "store_texture_in_vram")
         layout.prop(props, "force_high_color_textures")
         layout.prop(props, "blend_type")
+
+def render_mesh(context, layout, active_property):
+    box = layout.split()
+    col = box.column(align=True)
+    row = col.row()
+    row.label(text='Bake To Vertex Colors:')
+    row.prop(active_property, "is_per_vertex", text='')
+    row = col.row()
+    row.label(text='Lightmap Group:')
+    row.prop(active_property, "lightmap_group", text='')
 
 def render_trigger(context, layout, active_property):
     box = layout.split()
@@ -468,8 +531,8 @@ def render_entity_door(context, layout, active_property):
     row.label(text='Button B:')
     row.prop(active_property, "button_b_ob", text='')
 
-class CBOB_OT_UpdateOb(Operator):
-    bl_idname = "cbob.update_ob"
+class CB_OT_UpdateOb(Operator):
+    bl_idname = "cb.update_ob"
     bl_label = "Update Object"
     bl_description = "When clicked the active object in the scene is update to match the entity settings set"
 
@@ -506,7 +569,9 @@ class CB_ObjectProps(Panel):
         row.label(text='Object Type:')
         row.prop(ob_cb, "object_type", text='')
         object_type = ObjectType(int(ob_cb.object_type))
-        if object_type == ObjectType.trigger_box:
+        if object_type == ObjectType.mesh:
+            render_mesh(context, layout, ob_cb)
+        elif object_type == ObjectType.trigger_box:
             render_trigger(context, layout, ob_cb)
         elif object_type == ObjectType.entity_screen:
             render_screen(context, layout, ob_cb)
@@ -622,6 +687,12 @@ class ImportRMESH(Operator, ImportHelper):
         default=False,
     )
 
+    use_light_radius: BoolProperty(
+        name ="Use Light Radius",
+        description = "Uses the range from the light entity for the radius entry directly. Is set to 0 otherwise. Disabling this seems more accurate but you lose soft shadows. Disabling it will also mean reimports can't rebuilt the light settings correctly",
+        default = True,
+        )
+
     filter_glob: StringProperty(
         default="*.rmesh;*.rm",
         options={'HIDDEN'},
@@ -639,6 +710,7 @@ class ImportRMESH(Operator, ImportHelper):
 
         box = layout.box()
         box.label(text="General", icon='SETTINGS')
+        box.prop(self, "use_light_radius")
         box.prop(self, "import_meshes")
         box.prop(self, "import_collisions")
         box.prop(self, "import_trigger_boxes")
@@ -656,19 +728,9 @@ class ImportRMESH(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.import_scene(
-            context,
-            Path(self.filepath),
-            self.file_type,
-            self.report,
-            self.split_by_material,
-            self.import_meshes,
-            self.import_collisions,
-            self.import_trigger_boxes,
-            self.import_entities,
-            self.fullbright_materials,
-            self.use_principled_bsdf
-        )
+        return scene_rmesh.import_scene(context, Path(self.filepath), self.file_type, self.fullbright_materials, self.use_light_radius, 
+                                        self.split_by_material, self.import_meshes, self.import_collisions, self.import_trigger_boxes, self.import_entities, 
+                                        self.use_principled_bsdf, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):
@@ -749,6 +811,12 @@ class ImportB3D(Operator, ImportHelper):
         default = False,
         )
 
+    use_light_radius: BoolProperty(
+        name ="Use Light Radius",
+        description = "Uses the range from the light entity for the radius entry directly. Is set to 0 otherwise. Disabling this seems more accurate but you lose soft shadows. Disabling it will also mean reimports can't rebuilt the light settings correctly",
+        default = True,
+        )
+
     filter_glob: StringProperty(
         default="*.b3d",
         options={'HIDDEN'},
@@ -762,7 +830,7 @@ class ImportB3D(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_b3d
 
-        return scene_b3d.import_scene(context, Path(self.filepath), self.fullbright_materials, self.report)
+        return scene_b3d.import_scene(context, Path(self.filepath), self.fullbright_materials, self.use_light_radius, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):
@@ -805,6 +873,12 @@ class Import3DW(Operator, ImportHelper):
     bl_label = "Import 3DW"
     filename_ext = '.3dw'
 
+    use_light_radius: BoolProperty(
+        name ="Use Light Radius",
+        description = "Uses the range from the light entity for the radius entry directly. Is set to 0 otherwise. Disabling this seems more accurate but you lose soft shadows. Disabling it will also mean reimports can't rebuilt the light settings correctly",
+        default = True,
+        )
+
     filter_glob: StringProperty(
         default="*.3dw",
         options={'HIDDEN'},
@@ -818,7 +892,7 @@ class Import3DW(Operator, ImportHelper):
     def execute(self, context):
         from . import scene_3dw
 
-        return scene_3dw.import_scene(context, Path(self.filepath), self.report)
+        return scene_3dw.import_scene(context, Path(self.filepath), self.use_light_radius, self.report)
 
     if (4, 1, 0) <= bpy.app.version:
         def invoke(self, context, event):
@@ -910,7 +984,11 @@ classesscp = [
     B3DIMAGE_PT_SceneProps,
     CBRMAT_OT_CBShader,
     SCPCBAddonPrefs,
-    CBOB_OT_UpdateOb
+    CB_OT_UpdateOb,
+    CB_OT_ConnectLightmaps,
+    CB_OT_DisconnectLightmaps,
+    CB_OT_BakeLightmaps,
+    CB_PT_MapHelper
 ]
 
 if (4, 1, 0) <= bpy.app.version:

@@ -18,17 +18,23 @@ from .common_functions import (RandomColorGenerator,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
                                ROOMSCALE,
-                               LIGHTEXPONENT,
                                ObjectType)
 
-def import_node_recursive(context, data, node, random_color_gen, local_asset_path, parent_ob=None):
+def import_node_recursive(context, data, node, use_light_radius, random_color_gen, local_asset_path, parent_ob=None):
     if node["classname"] == "classname" and node["name"] == "light":
         light_data = bpy.data.lights.new(node["classname"], "POINT")
         object_mesh = bpy.data.objects.new(node["classname"], light_data)
         context.collection.objects.link(object_mesh)
 
-        light_data.shadow_soft_size = ROOMSCALE * float(node["properties"].get("range", 0))
-        light_data.energy = float(node["properties"].get("intensity", 0)) * (light_data.shadow_soft_size ** LIGHTEXPONENT) 
+        if use_light_radius:
+            light_data.shadow_soft_size = ROOMSCALE * float(node["properties"].get("range", 0))
+            light_data.energy = float(node["properties"].get("intensity", 0))
+            light_data.normalize = False
+        else:
+            light_data.shadow_soft_size = 0
+            light_data.energy = float(node["properties"].get("intensity", 0)) * (ROOMSCALE * float(node["properties"].get("range", 0)))
+            light_data.normalize = False
+
         light_color = node["properties"].get("color")
         if light_color is not None:
             r, g, b = light_color.split(" ")
@@ -45,8 +51,16 @@ def import_node_recursive(context, data, node, random_color_gen, local_asset_pat
         object_mesh = bpy.data.objects.new(node["classname"], spotlight_data)
         context.collection.objects.link(object_mesh)
 
-        spotlight_data.shadow_soft_size = ROOMSCALE * float(node["properties"].get("range", 0))
-        spotlight_data.energy = float(node["properties"].get("intensity", 0)) * (spotlight_data.shadow_soft_size ** LIGHTEXPONENT) 
+        if use_light_radius:
+            spotlight_data.shadow_soft_size = ROOMSCALE * float(node["properties"].get("range", 0))
+            spotlight_data.energy = float(node["properties"].get("intensity", 0))
+            spotlight_data.normalize = False
+        else:
+            spotlight_data.shadow_soft_size = 0
+            spotlight_data.energy = float(node["properties"].get("intensity", 0)) * (ROOMSCALE * float(node["properties"].get("range", 0)))
+            spotlight_data.normalize = False
+
+
         light_color = node["properties"].get("color")
         if light_color is not None:
             r, g, b = light_color.split(" ")
@@ -74,8 +88,7 @@ def import_node_recursive(context, data, node, random_color_gen, local_asset_pat
 
         object_mesh.cb.object_type = str(ObjectType.entity_spotlight.value)
 
-
-def import_scene(context, filepath, report):
+def import_scene(context, filepath, use_light_radius, report):
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
 
     local_asset_path = ""
@@ -88,7 +101,7 @@ def import_scene(context, filepath, report):
     random_color_gen = RandomColorGenerator() # generates a random sequence of colors
 
     for object_node in data["objects"]:
-        import_node_recursive(context, data, object_node, random_color_gen, local_asset_path)
+        import_node_recursive(context, data, object_node, use_light_radius, random_color_gen, local_asset_path)
 
     for terrain_node in data["terrain"]:
         resolution = terrain_node["resolution"] + 1

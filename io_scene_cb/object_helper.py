@@ -2,14 +2,14 @@ import os
 import bpy
 import bmesh
 
-from math import radians
+from math import radians, ceil, log2, sqrt
 from pathlib import Path
 from enum import Enum, auto
 from .process_rmesh import ImportFileType
 from mathutils import Matrix, Vector, Euler
 from .scene_x import import_scene as import_x
 from .scene_b3d import import_scene as import_b3d
-from .common_functions import ROOMSCALE
+from .common_functions import ROOMSCALE, ObjectType, get_output_material_node, get_linked_node, SHADER_NODE_NAMES
 
 # Notes
 # Room scale seems to be 0.00390625
@@ -57,7 +57,7 @@ def create_object(ob_bm, ob_data, ob_transform, model_path):
         temp_data = bpy.data.meshes.new("door_entity")
         bm = bmesh.new()
         is_simple=True
-        import_b3d(bpy.context, model_path, False, print, bm, ob_data, is_simple)
+        import_b3d(bpy.context, model_path, False, True, print, bm, ob_data, is_simple)
         for f in bm.faces:
             f.material_index = material_count + f.material_index
 
@@ -240,3 +240,252 @@ def create_door(door_type=DoorType.normal, button_type=ButtonType.normal, door_s
             button_b_ob.matrix_world = ob_b_matrix
 
     return door_ob, button_a_ob, button_b_ob
+
+def connect_lightmaps():
+    for mat in bpy.data.materials:
+        if not mat.use_nodes or not mat.node_tree:
+            continue
+
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+
+        output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+        if not output_node:
+            continue
+
+        surface_input = output_node.inputs.get("Surface")
+        if not surface_input or not surface_input.is_linked:
+            continue
+
+        shader_node = surface_input.links[0].from_node
+        if not (shader_node.type == 'GROUP' and shader_node.node_tree and shader_node.node_tree.name == "cb_material"):
+            continue
+
+        lightmap_input = shader_node.inputs.get("Light Map")
+        if not lightmap_input:
+            continue
+
+        if lightmap_input.is_linked:
+            continue
+
+        alpha_input = shader_node.inputs.get("Diffuse Map Alpha")
+        if not alpha_input:
+            continue
+
+        if alpha_input.is_linked:
+            continue
+
+        lm_node = None
+        for node in nodes:
+            if (node.type == 'TEX_IMAGE' and node.image and "lm" in node.image.name.lower()):
+                lm_node = node
+                break
+
+        if not lm_node:
+            continue
+
+        color_output = lm_node.outputs.get("Color")
+        if color_output:
+            links.new(color_output, lightmap_input)
+
+def disconnect_lightmaps():
+    for mat in bpy.data.materials:
+        if not mat.use_nodes or not mat.node_tree:
+            continue
+
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+
+
+        output_node = None
+        for node in nodes:
+            if node.type == 'OUTPUT_MATERIAL':
+                output_node = node
+                break
+
+        if not output_node:
+            continue
+
+        surface_input = output_node.inputs.get("Surface")
+        if not surface_input or not surface_input.is_linked:
+            continue
+
+        shader_node = surface_input.links[0].from_node
+        if shader_node.type == 'GROUP' and shader_node.node_tree and shader_node.node_tree.name == "cb_material":
+            lightmap_input = shader_node.inputs.get("Light Map")
+            if not lightmap_input or not lightmap_input.is_linked:
+                continue
+
+            tex_image_node = None
+            for link in lightmap_input.links:
+                from_node = link.from_node
+                if from_node.type == 'TEX_IMAGE':
+                    tex_image_node = from_node
+
+                links.remove(link)
+
+            if tex_image_node:
+                nodes.active = tex_image_node
+
+MIN_RES = 32
+MAX_RES = 4096
+TEXEL_DENSITY = 128
+
+def get_object_surface_area(obj, depsgraph):
+    eval_obj = obj.evaluated_get(depsgraph)
+    mesh = eval_obj.to_mesh()
+
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+
+    scale = obj.matrix_world.to_scale()
+    scale_factor = scale.x * scale.y * scale.z
+
+    area = sum(f.calc_area() for f in bm.faces) * scale_factor
+
+    bm.free()
+    eval_obj.to_mesh_clear()
+
+    return area
+
+def next_power_of_two(x):
+    return 2 ** ceil(log2(x))
+
+def compute_lightmap_resolution(area):
+    texels = area * (TEXEL_DENSITY ** 2)
+    resolution = sqrt(texels)
+    resolution = next_power_of_two(resolution)
+    resolution = max(MIN_RES, min(MAX_RES, resolution))
+
+    return int(resolution)
+
+def run_bake(context, lightmap_ob, generate_vertex_colors=False, render_name="uvmap_render", lightmap_name="uvmap_lightmap"):
+    lightmap_ob.select_set(True)
+    context.view_layer.objects.active = lightmap_ob
+    uv_layers = lightmap_ob.data.uv_layers
+    if generate_vertex_colors:
+        color_attribute = lightmap_ob.data.attributes.active_color
+        if lightmap_ob.data.attributes.active_color == None:
+            color_attribute = lightmap_ob.data.attributes.new(name="color", type="BYTE_COLOR", domain="POINT")
+            lightmap_ob.data.attributes.active_color_name = "color"
+            lightmap_ob.data.attributes.render_color_index = 0
+
+        uv_layers[render_name].active_render = True
+        uv_layers[render_name].active = True 
+        target_name = 'VERTEX_COLORS'
+        bake_layer = render_name
+    else:
+        uv_layers[render_name].active_render = True
+        uv_layers[lightmap_name].active = True 
+        target_name = 'IMAGE_TEXTURES'
+        bake_layer = lightmap_name
+
+    bpy.context.view_layer.update()
+    context.scene.render.engine = 'CYCLES'
+    
+    bpy.ops.object.bake(
+        type='DIFFUSE',
+        pass_filter={'DIRECT','INDIRECT'}, 
+        margin=context.scene.render.bake.margin,
+        margin_type=context.scene.render.bake.margin_type, 
+        use_clear=True,
+        use_selected_to_active=False,
+        target=target_name,
+        uv_layer=bake_layer
+    )
+    
+    lightmap_ob.select_set(False)
+    context.view_layer.objects.active = None
+
+def get_used_materials(mesh):
+    used_materials = set()
+
+    for poly in mesh.polygons:
+        idx = poly.material_index
+        if 0 <= idx < len(mesh.materials):
+            mat = mesh.materials[idx]
+            if mat:
+                used_materials.add(mat)
+
+    return used_materials
+
+def get_lightmap_image_node(mat):
+    lightmap_node = None
+    output_material_node = get_output_material_node(mat)
+
+    node_group = get_linked_node(output_material_node, "Surface", "GROUP")
+    if node_group and node_group.node_tree.name in SHADER_NODE_NAMES:
+        lightmap_node = get_linked_node(node_group, "Light Map", "TEX_IMAGE")
+
+    if lightmap_node is None:
+        for node in mat.node_tree.nodes:
+            if node.type == 'TEX_IMAGE':
+                img = node.image
+                if not img:
+                    continue
+
+                if img.source == 'FILE' and img.filepath:
+                    filename = os.path.basename(bpy.path.abspath(img.filepath))
+                    if "_lm" in filename.lower():
+                        lightmap_node = node
+                        break
+
+                elif img.source == 'GENERATED':
+                    filename = os.path.basename(bpy.path.abspath(img.name))
+                    if "_lm" in filename.lower():
+                        lightmap_node = node
+                        break
+
+    if lightmap_node is None:
+        lightmap_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
+        lightmap_node.location = (-720.0, -320.0)
+
+    return lightmap_node
+
+def bake_lightmaps(context):
+    selected_obs = context.selected_objects
+    depsgraph = context.evaluated_depsgraph_get()
+
+    ob_groups = {}
+    for ob in selected_obs:
+        cb_type = ObjectType(int(ob.cb.object_type))
+        uv_layer_count = len(ob.data.uv_layers)
+        if ob.type == "MESH" and cb_type == ObjectType.mesh and uv_layer_count >= 2:
+            mesh_name = ob.data.name
+            mesh_group = ob_groups.get(mesh_name)
+            if mesh_group is None:
+                mesh_group = ob_groups[mesh_name] = []
+            mesh_group.append(ob)
+
+    bpy.ops.object.select_all(action='DESELECT')
+    for mesh_name, ob_group in ob_groups.items():
+        mesh = ob_group[0].data
+        used_materials = get_used_materials(mesh)
+        for ob_idx, ob in enumerate(ob_group):
+            area = get_object_surface_area(ob, depsgraph)
+            res = compute_lightmap_resolution(area)
+            res = max(32, min(4096, res))
+
+            image_name = "%s_lm%s" % (ob.data.name, ob_idx)
+
+            image = bpy.data.images.get(image_name)
+            if image:
+                image.scale(res, res)
+            else:
+                image = bpy.data.images.new(image_name, width=res, height=res)
+
+            for mat in used_materials:
+                lightmap_node = get_lightmap_image_node(mat)
+                print(lightmap_node)
+                if lightmap_node:
+                    lightmap_node.image = image
+                    mat.node_tree.nodes.active = lightmap_node
+
+            run_bake(context, ob, generate_vertex_colors=ob.cb.is_per_vertex)
+
+            save_path = os.path.join(bpy.path.abspath("//"), "lightmaps", f"{image_name}.png")
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+            image.filepath_raw = save_path
+            image.file_format = 'PNG'
+            image.save()

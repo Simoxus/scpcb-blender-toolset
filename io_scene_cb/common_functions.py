@@ -10,7 +10,6 @@ SHADER_RESOURCES = os.path.join(os.path.dirname(os.path.realpath(__file__)), "sh
 SHADER_NODE_NAMES = ("rmesh_material", "b3d_material", "cb_material")
 
 ROOMSCALE = 0.00625
-LIGHTEXPONENT = 2.8 # Completely made up. No idea if this is right. - Gen
 
 class ObjectType(Enum):
     exclude = 0

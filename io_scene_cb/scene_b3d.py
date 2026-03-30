@@ -21,8 +21,7 @@ from .common_functions import (RandomColorGenerator,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
                                SHADER_NODE_NAMES,
-                               ROOMSCALE,
-                               LIGHTEXPONENT)
+                               ROOMSCALE)
 
 class TextureFXFlags(Flag):
     color = auto()
@@ -123,6 +122,8 @@ def import_mesh(node, material_list, is_simple=False, ob_data=None):
 
     if rgba_count > 0:
         layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+        mesh.attributes.active_color_name = "color"
+        mesh.attributes.render_color_index = 0
         for color_idx in range(loop_count):
             r, g, b, a = layer_color_list[color_idx]
             layer_color.data[color_idx].color = (r, g, b, a)
@@ -311,7 +312,7 @@ def get_bone_distance(node, parent_ob):
 
     return bone_distance
 
-def import_node_recursive(context, data, node, material_list, armature=None, strips=None, has_skeleton=False, parent_ob=None, last_mesh=None, is_simple=False, bm=None, ob_data=None, bm_transform=None, world_transform=None):
+def import_node_recursive(context, data, node, material_list, armature=None, strips=None, has_skeleton=False, use_light_radius=True, parent_ob=None, last_mesh=None, is_simple=False, bm=None, ob_data=None, bm_transform=None, world_transform=None):
     has_skin = bool(node.get("bones"))
     has_key = node.get("key") is not None
     has_mesh = node.get("mesh") is not None
@@ -491,12 +492,18 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], light_data)
                 context.collection.objects.link(object_mesh)
 
-                light_data.shadow_soft_size = ROOMSCALE * result["range"]
-                light_data.energy = result["intensity"] * (light_data.shadow_soft_size ** LIGHTEXPONENT) 
-
                 r, g, b = result["color"]
                 light_data.color = (r / 255, g / 255, b / 255)
                 object_mesh.cb.linear_falloff = result["linearfalloff"]
+
+                if use_light_radius:
+                    light_data.shadow_soft_size = ROOMSCALE * result["range"]
+                    light_data.energy = result["intensity"]
+                    light_data.normalize = False
+                else:
+                    light_data.shadow_soft_size = 0
+                    light_data.energy = result["intensity"] * (ROOMSCALE * result["range"])
+                    light_data.normalize = False
 
                 object_mesh.cb.object_type = str(ObjectType.entity_light.value)
 
@@ -505,8 +512,6 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 object_mesh = bpy.data.objects.new(result["classname"], spotlight_data)
                 context.collection.objects.link(object_mesh)
 
-                spotlight_data.shadow_soft_size = ROOMSCALE * result["range"]
-                spotlight_data.energy = result["intensity"] * (spotlight_data.shadow_soft_size ** LIGHTEXPONENT) 
                 r, g, b = result["color"]
                 spotlight_data.color = (r / 255, g / 255, b / 255)
 
@@ -518,6 +523,15 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
                 spotlight_data.spot_blend = max(0.0, min(1.0, 1.0 - ratio))
 
                 object_mesh.cb.linear_falloff = result["linearfalloff"]
+
+                if use_light_radius:
+                    spotlight_data.shadow_soft_size = ROOMSCALE * result["range"]
+                    spotlight_data.energy = result["intensity"]
+                    spotlight_data.normalize = False
+                else:
+                    spotlight_data.shadow_soft_size = 0
+                    spotlight_data.energy = result["intensity"] * (ROOMSCALE * result["range"])
+                    spotlight_data.normalize = False
 
                 object_mesh.cb.object_type = str(ObjectType.entity_spotlight.value)
 
@@ -600,7 +614,7 @@ def import_node_recursive(context, data, node, material_list, armature=None, str
         world_transform = world_transform @ node_transform
 
         for child_node in node["nodes"]:
-            import_node_recursive(context, data, child_node, material_list, armature, strips, has_skeleton, object_mesh, last_mesh, world_transform=world_transform)
+            import_node_recursive(context, data, child_node, material_list, armature, strips, has_skeleton, use_light_radius, object_mesh, last_mesh, world_transform=world_transform)
 
 def get_mesh(b3d_data, ob, depsgraph, armature_ob=None):
     ob_eval = ob.evaluated_get(depsgraph)
@@ -989,7 +1003,7 @@ def get_node_name(ob):
 
         light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
         light_range = "range=%s" % ((1.0 / ROOMSCALE) * ob.data.shadow_soft_size)
-        light_intensity = "intensity=%s" % (ob.data.energy / (ob.data.shadow_soft_size ** LIGHTEXPONENT))
+        light_intensity = "intensity=%s" % ob.data.energy
         light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
         node_name = "classname=light\r\n%s\r\n%s\r\n%s\r\n%s" % (light_color, light_intensity, light_range, light_linear_falloff)
     elif object_type_enum == ObjectType.entity_spotlight:
@@ -999,7 +1013,7 @@ def get_node_name(ob):
         light_angles = "angles=%s %s %s" % (0, 0, 0)
         light_color = "color=%s %s %s" % (int(r * 255), int(g * 255), int(b * 255))
         light_range = "range=%s" % ((1.0 / ROOMSCALE) * ob.data.shadow_soft_size)
-        light_intensity = "intensity=%s" % (ob.data.energy / (ob.data.shadow_soft_size ** LIGHTEXPONENT))
+        light_intensity = "intensity=%s" % ob.data.energy
         light_inner_cone_angle = "innerconeangle=%s" % int(ob.data.spot_blend * outer_deg)
         light_outer_cone_angle = "outerconeangle=%s" % int(outer_deg)
         light_linear_falloff = "linearfalloff=%s" % int(ob.cb.linear_falloff)
@@ -1326,7 +1340,7 @@ def find_bones(node, bone_check_list, uv_counts):
     for child_node in node["nodes"]:
         find_bones(child_node, bone_check_list, uv_counts)
 
-def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
+def import_scene(context, filepath, fullbright_materials, use_light_radius, report, bm=None, ob_data=None, is_simple=False, error_log=None, random_color_gen=None):
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
 
     local_asset_path = ""
@@ -1354,19 +1368,13 @@ def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_da
     if texture_dict is not None:
         texture_count = len(texture_dict)
 
-    has_lightmap_data = False
-    for uv_count in uv_counts:
-        if uv_count > 2:
-            has_lightmap_data = True
-
     if material_dict is not None:
         for material_dict in data["materials"]:
             material = bpy.data.materials.new(material_dict["name"])
             material.diffuse_color = random_color_gen.next()
 
             material.use_nodes = True
-            for node in material.node_tree.nodes:
-                material.node_tree.nodes.remove(node)
+            material.node_tree.nodes.clear()
 
             output_material_node = get_output_material_node(material)
             output_material_node.location = Vector((0.0, 0.0))
@@ -1501,7 +1509,7 @@ def import_scene(context, filepath, fullbright_materials, report, bm=None, ob_da
             break
 
     for child_node in data["nodes"]:
-        import_node_recursive(context, data, child_node, material_list, armature_ob, strips, has_skeleton, is_simple=is_simple, bm=bm, ob_data=ob_data)
+        import_node_recursive(context, data, child_node, material_list, armature_ob, strips, has_skeleton, use_light_radius, is_simple=is_simple, bm=bm, ob_data=ob_data)
 
     if not is_simple:
         if context.view_layer.objects.active is not None:

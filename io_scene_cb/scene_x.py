@@ -35,8 +35,7 @@ def generate_materials(materials_dict, random_color_gen, mesh, is_simple, ob_dat
             ob_data.materials.append(material)
 
         material.use_nodes = True
-        for node in material.node_tree.nodes:
-            material.node_tree.nodes.remove(node)
+        material.node_tree.nodes.clear()
 
         output_material_node = get_output_material_node(material)
         output_material_node.location = Vector((0.0, 0.0))

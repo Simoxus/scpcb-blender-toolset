@@ -25,8 +25,7 @@ from .common_functions import (RandomColorGenerator,
                                generate_texture_mapping,
                                SHADER_RESOURCES,
                                SHADER_NODE_NAMES,
-                               ROOMSCALE,
-                               LIGHTEXPONENT)
+                               ROOMSCALE)
 
 MIN_BUTTON_LENGTH = 0.01
 
@@ -42,7 +41,7 @@ def update_object(context, report):
             bm = bmesh.new()
             is_simple=True
             if model_path.lower().endswith(".b3d"):
-                import_b3d(context, Path(model_path), True, report, bm, ob.data, is_simple)
+                import_b3d(context, Path(model_path), True, True, report, bm, ob.data, is_simple)
 
             else:
                 import_x(context, Path(model_path), report, bm, ob.data, is_simple)
@@ -83,7 +82,7 @@ def update_object(context, report):
                     bm = bmesh.new()
                     is_simple=True
                     if model_path.lower().endswith(".b3d"):
-                        import_b3d(context, Path(model_path), True, report, bm, ob.data, is_simple)
+                        import_b3d(context, Path(model_path), True, True, report, bm, ob.data, is_simple)
 
                     else:
                         import_x(context, Path(model_path), report, bm, ob.data, is_simple)
@@ -524,7 +523,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["position"] = tuple((1.0 / ROOMSCALE) * Vector(flip(loc)))
             entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
             entity_dict["range"] = (1.0 / ROOMSCALE) * ob.data.shadow_soft_size
-            entity_dict["intensity"] =  ob.data.energy / (ob.data.shadow_soft_size ** LIGHTEXPONENT)
+            entity_dict["intensity"] =  ob.data.energy
             if file_type == ExportFileType.rmesh_uer2:
                 entity_dict["has_sprite"] = ob.cb.has_sprite
                 entity_dict["sprite_scale"] = ob.cb.sprite_scale
@@ -545,7 +544,7 @@ def export_scene(context, filepath, file_type, report):
             entity_dict["position"] = tuple((1.0 / ROOMSCALE) * Vector(flip(loc)))
             entity_dict["color"] = "%s %s %s" % (round(r * 255), round(g * 255), round(b * 255))
             entity_dict["range"] = (1.0 / ROOMSCALE) * ob.data.shadow_soft_size
-            entity_dict["intensity"] =  ob.data.energy / (ob.data.shadow_soft_size ** LIGHTEXPONENT)
+            entity_dict["intensity"] =  ob.data.energy
 
             if file_type == ExportFileType.rmesh_uer2:
                 p, y, r = get_blitz_rot(rot, True)
@@ -703,8 +702,7 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         mesh_data.materials.append(mat)
 
         mat.use_nodes = True
-        for node in mat.node_tree.nodes:
-            mat.node_tree.nodes.remove(node)
+        mat.node_tree.nodes.clear()
 
         output_material_node = get_output_material_node(mat)
         output_material_node.location = Vector((0.0, 0.0))
@@ -820,6 +818,8 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
         layer_uv_1 = mesh.uv_layers.get("uvmap_lightmap")
         if not layer_color:
             layer_color = mesh.color_attributes.new("color", "BYTE_COLOR", "CORNER")
+            mesh.attributes.active_color_name = "color"
+            mesh.attributes.render_color_index = 0
         if not layer_uv_0:
             layer_uv_0 = mesh.uv_layers.new(name="uvmap_render")
         if not layer_uv_1:
@@ -846,18 +846,8 @@ def generate_mesh_data(mesh_dict, mesh_data, mesh_idx, local_asset_path, random_
 
     return mesh
 
-def import_scene(
-        context,
-        filepath,
-        file_type,
-        report,
-        split_by_material=False,
-        import_meshes=True,
-        import_collisions=True,
-        import_trigger_boxes=True,
-        import_entities=True,
-        fullbright_materials=False,
-        use_principled_bsdf=False):
+def import_scene(context, filepath, file_type, fullbright_materials, use_light_radius, split_by_material, import_meshes, import_collisions, 
+                 import_trigger_boxes, import_entities, use_principled_bsdf, report):
     file_type, rmesh_dict = read_rmesh(filepath, ImportFileType(int(file_type)))
 
     game_path = Path(bpy.context.preferences.addons[__package__].preferences.game_path)
@@ -918,6 +908,9 @@ def import_scene(
                 if single_mesh.materials:
                     single_mesh.materials[0].name = obj_name
 
+                object_mesh.data.attributes.active_color_name = "color"
+                object_mesh.data.attributes.render_color_index = 0
+
         else:
             mesh_collection = get_referenced_collection("meshes", context.scene.collection, False)
             full_mesh = bpy.data.meshes.new("room_mesh")
@@ -933,6 +926,9 @@ def import_scene(
 
             bm.to_mesh(full_mesh)
             bm.free()
+
+            object_mesh.data.attributes.active_color_name = "color"
+            object_mesh.data.attributes.render_color_index = 0
 
     if file_type == ImportFileType.rmesh_salvage:
         has_render_data = False
@@ -950,7 +946,7 @@ def import_scene(
 
             bm = bmesh.new()
             for render_idx, render_dict in enumerate(rmesh_dict["render_meshes"]):
-                temp_render = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
+                temp_render = generate_mesh_data(render_dict, render_mesh, render_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
 
                 bm.from_mesh(temp_render)
                 bpy.data.meshes.remove(temp_render)
@@ -961,7 +957,7 @@ def import_scene(
     if has_collision_data and import_collisions:
         collision_collection = get_referenced_collection("collisions", context.scene.collection, True)
         for collision_idx, collision_dict in enumerate(rmesh_dict["collision_meshes"]):
-            collision_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
+            collision_mesh = generate_mesh_data(collision_dict, None, collision_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, True, use_principled_bsdf=use_principled_bsdf)
             collision_ob = bpy.data.objects.new("collision_%s" % collision_idx, collision_mesh)
             collision_ob.cb.object_type = str(ObjectType.collision.value)
             collision_collection.objects.link(collision_ob)
@@ -979,7 +975,7 @@ def import_scene(
             for trigger_box_idx, trigger_box_dict in enumerate(rmesh_dict["trigger_boxes"]):
                 for trigger_idx, trigger_dict in enumerate(trigger_box_dict["meshes"]):
                     trigger_name = "trigger_g%st%s" % (trigger_box_idx, trigger_idx)
-                    trigger_mesh = generate_mesh_data(mesh_dict, full_mesh, mesh_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, use_principled_bsdf=use_principled_bsdf)
+                    trigger_mesh = generate_mesh_data(trigger_dict, None, trigger_idx, local_asset_path, random_color_gen, error_log, file_type, report, fullbright_materials, True, use_principled_bsdf=use_principled_bsdf)
                     trigger_mesh_object_mesh = bpy.data.objects.new(trigger_name, trigger_mesh)
                     trigger_mesh_object_mesh.cb.object_type = str(ObjectType.trigger_box.value)
                     trigger_mesh_object_mesh.cb.trigger_group = trigger_box_dict["name"]
@@ -1034,6 +1030,7 @@ def import_scene(
 
             elif entity_dict["entity_type"] == "waypoint":
                 object_mesh = bpy.data.objects.new("%s waypoint" % entity_idx, None)
+                object_mesh.empty_display_size = ROOMSCALE * 1
                 object_mesh.cb.object_type = str(ObjectType.entity_waypoint.value)
                 entity_collection.objects.link(object_mesh)
                 loc = ROOMSCALE * Vector(flip(entity_dict["position"]))
@@ -1051,9 +1048,15 @@ def import_scene(
                 rot = Quaternion()
                 scl = Vector((1, 1, 1))
                 object_mesh.matrix_world = Matrix.LocRotScale(loc, rot, scl)
+                if use_light_radius:
+                    object_data.shadow_soft_size = ROOMSCALE * entity_dict["range"]
+                    object_data.energy = entity_dict["intensity"]
+                    object_data.normalize = False
+                else:
+                    object_data.shadow_soft_size = 0
+                    object_data.energy = entity_dict["intensity"] * (ROOMSCALE * entity_dict["range"])
+                    object_data.normalize = False
 
-                object_data.shadow_soft_size = ROOMSCALE * entity_dict["range"]
-                object_data.energy = entity_dict["intensity"] * (object_data.shadow_soft_size ** LIGHTEXPONENT) 
                 r, g, b = entity_dict["color"].split(" ")
                 object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
 
@@ -1073,9 +1076,15 @@ def import_scene(
                 object_mesh = bpy.data.objects.new("%s spotlight" % entity_idx, object_data)
                 object_mesh.cb.object_type = str(ObjectType.entity_spotlight.value)
                 entity_collection.objects.link(object_mesh)
+                if use_light_radius:
+                    object_data.shadow_soft_size = ROOMSCALE * entity_dict["range"]
+                    object_data.energy = entity_dict["intensity"]
+                    object_data.normalize = False
+                else:
+                    object_data.shadow_soft_size = 0
+                    object_data.energy = entity_dict["intensity"] * (ROOMSCALE * entity_dict["range"])
+                    object_data.normalize = False
 
-                object_data.shadow_soft_size = ROOMSCALE * entity_dict["range"]
-                object_data.energy = entity_dict["intensity"] * (object_data.shadow_soft_size ** LIGHTEXPONENT) 
                 r, g, b = entity_dict["color"].split(" ")
                 object_data.color = (int(r) / 255, int(g) / 255, int(b) / 255)
                 if file_type == ImportFileType.rmesh_uer or file_type == ImportFileType.rmesh_uer2:
@@ -1123,6 +1132,7 @@ def import_scene(
 
             elif entity_dict["entity_type"] == "playerstart":
                 object_mesh = bpy.data.objects.new("%s playerstart" % entity_idx, None)
+                object_mesh.empty_display_size = ROOMSCALE * 1
                 object_mesh.cb.object_type = str(ObjectType.exclude.value)
                 entity_collection.objects.link(object_mesh)
 
@@ -1147,7 +1157,7 @@ def import_scene(
                     bm = bmesh.new()
                     is_simple=True
                     if model_path.lower().endswith(".b3d"):
-                        import_b3d(context, Path(model_path), fullbright_materials, report, bm, ob_data, is_simple, error_log, random_color_gen)
+                        import_b3d(context, Path(model_path), fullbright_materials, use_light_radius, report, bm, ob_data, is_simple, error_log, random_color_gen)
 
                     else:
                         import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
@@ -1156,6 +1166,9 @@ def import_scene(
                     bm.free()
 
                 object_mesh = bpy.data.objects.new("%s %s" % (entity_idx, entity_dict["entity_type"]), ob_data)
+                if ob_data is None:
+                    object_mesh.empty_display_size = ROOMSCALE * 1
+
                 if is_uer_prop:
                     object_mesh.cb.is_uer = True
 
@@ -1203,7 +1216,7 @@ def import_scene(
                             bm = bmesh.new()
                             is_simple=True
                             if model_path.lower().endswith(".b3d"):
-                                import_b3d(context, Path(model_path), fullbright_materials, report, bm, ob_data, is_simple, error_log, random_color_gen)
+                                import_b3d(context, Path(model_path), fullbright_materials, use_light_radius, report, bm, ob_data, is_simple, error_log, random_color_gen)
 
                             else:
                                 import_x(context, Path(model_path), report, bm, ob_data, is_simple, error_log, random_color_gen)
@@ -1212,6 +1225,9 @@ def import_scene(
                             bm.free()
 
                 object_mesh = bpy.data.objects.new("%s item" % entity_idx, ob_data)
+                if ob_data is None:
+                    object_mesh.empty_display_size = ROOMSCALE * 1
+
                 object_mesh.cb.object_type = str(ObjectType.entity_item.value)
                 entity_collection.objects.link(object_mesh)
 
