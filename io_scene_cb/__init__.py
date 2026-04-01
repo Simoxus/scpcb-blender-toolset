@@ -83,9 +83,9 @@ class CBObjectPropertiesGroup(PropertyGroup):
         default = False,
         )
     
-    lightmap_group: StringProperty(
-            name = "Lightmap Group",
-            description="Group for this lightmap. Appends lm# to the object name if left empty",
+    lightmap_name_override: StringProperty(
+            name = "Lightmap Name Override",
+            description="Replaces the name used for the lightmap entry at export time if a texture node is connected to the lightmap slot. Useful for instances with multiple materials",
             default="",
     )
 
@@ -392,8 +392,8 @@ def render_mesh(context, layout, active_property):
     row.label(text='Bake To Vertex Colors:')
     row.prop(active_property, "is_per_vertex", text='')
     row = col.row()
-    row.label(text='Lightmap Group:')
-    row.prop(active_property, "lightmap_group", text='')
+    row.label(text='Lightmap Name Override:')
+    row.prop(active_property, "lightmap_name_override", text='')
 
 def render_trigger(context, layout, active_property):
     box = layout.split()
@@ -457,7 +457,7 @@ def render_entity_model(context, layout, active_property):
     box = layout.split()
     col = box.column(align=True)
     row = col.row()
-    row.operator("cbob.update_ob")
+    row.operator("cb.update_ob")
     row = col.row()
     row.label(text='Is UER Variant:')
     row.prop(active_property, "is_uer", text='')
@@ -617,6 +617,12 @@ class ExportRMESH(Operator, ExportHelper):
             ]
         )
 
+    use_lightmap_name_override: BoolProperty(
+        name="Use Lightmap Name Override",
+        description="Uses the name set in the lightmap name property instead of the actual name in the linked lightmap node. Allows you to set seperate lightmaps for instances.",
+        default=True,
+    )
+
     filter_glob: StringProperty(
         default="*.rmesh;*.rm",
         options={'HIDDEN'},
@@ -625,7 +631,7 @@ class ExportRMESH(Operator, ExportHelper):
     def execute(self, context):
         from . import scene_rmesh
 
-        return scene_rmesh.export_scene(context, Path(self.filepath), self.file_type, self.report)
+        return scene_rmesh.export_scene(context, Path(self.filepath), self.file_type, self.use_lightmap_name_override, self.report)
 
 class ImportRMESH(Operator, ImportHelper):
     """Import an RMESH file"""

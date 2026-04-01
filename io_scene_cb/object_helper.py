@@ -451,6 +451,8 @@ def bake_lightmaps(context):
 
             image_name = "%s_lm%s" % (ob.data.name, ob_idx)
 
+            ob.cb.lightmap_name_override = image_name
+
             image = bpy.data.images.get(image_name)
             if image and image.has_data:
                 image.scale(res, res)
@@ -523,12 +525,13 @@ def bake_lightmaps(context):
                     if lightmap_node is not None:
                         connect_inputs(mat.node_tree, lightmap_node, "Color", node_group, "Light Map")
 
-            save_path = os.path.join(bpy.path.abspath("//"), "lightmaps", f"{image_name}.png")
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            if not ob.cb.is_per_vertex:
+                save_path = os.path.join(bpy.path.abspath("//"), "lightmaps", f"{image_name}.png")
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-            image.filepath_raw = save_path
-            image.file_format = 'PNG'
-            image.save()
+                image.filepath_raw = save_path
+                image.file_format = 'PNG'
+                image.save_render(save_path)
 
     for mat in bpy.data.materials:
         mat_settings = material_settings.get(mat.name)
@@ -541,3 +544,4 @@ def bake_lightmaps(context):
                 node_group.inputs["Use Specular Mask"].default_value = mat_settings["use_specular_mask"]
                 node_group.inputs["Use Normal"].default_value = mat_settings["use_normal"]
 
+    bpy.ops.wm.console_toggle()
